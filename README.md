@@ -1,19 +1,18 @@
-Universal Text-to-Speech System with Online and Offline Capabilities
+# Çevrimiçi ve Çevrimdışı Yeteneklere Sahip Evrensel Metin Okuma Sistemi
 
-## Project Overview
+## Proje Özeti
 
-This library provides a unified interface for various text-to-speech synthesis systems, enabling seamless switching between online and offline engines based on requirements and internet connectivity.
+Bu kütüphane, çeşitli metin okuma (sentezleme) sistemleri için birleşik bir arayüz sağlar. Gereksinimlere ve internet bağlantı durumuna bağlı olarak, çevrimiçi ve çevrimdışı motorlar arasında kesintisiz geçiş yapılmasına olanak tanır.
 
-Key Features:
-- Online synthesis through Google TTS
-- Offline synthesis using espeak and Piper
-- Unified interface for all engines
-- Multi-language support
-- Multiple audio output formats
-- CLI and Python API
+Temel Özellikler:
+- Google TTS aracılığıyla çevrimiçi sentezleme
+- espeak ve Piper kullanarak çevrimdışı sentezleme
+- Tüm motorlar için tek ve birleşik arayüz
+- Çoklu dil desteği
+- Birden fazla ses çıkış formatı
+- CLI (Komut Satırı Arayüzü) ve Python API desteği
 
-## Installation
-
+## Kurulum
 ```bash
 # System dependencies (Linux)
 sudo apt install espeak espeak-data libespeak1 python3-pip
@@ -21,9 +20,9 @@ sudo apt install espeak espeak-data libespeak1 python3-pip
 pip install -r requirements.txt
 ```
 
-## Usage
+## Kullanım
 
-### Basic examples
+### Basit Örnek
 
 ```bash
 # Google TTS (online)
@@ -64,7 +63,7 @@ print(f"File created: {filename}")
 audio_bytes = text_to_speech_bytes("Hello world!", engine="gtts")
 ```
 
-## Project structure
+## Proje Mimarisi
 
 ```
 text-to-speech/
@@ -95,9 +94,9 @@ text-to-speech/
 
 ```
 
-### Installing dependencies
+## Bağımlılıkların Kurulumu
 
-Install runtime (user) dependencies:
+Çalışma zamanı (kullanıcı) bağımlılıklarını yükleyin:
 
 ```bash
 pip install -r requirements.txt
