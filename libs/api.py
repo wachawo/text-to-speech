@@ -21,7 +21,7 @@ from typing import Union, Optional, cast
 import logging
 
 # Import exceptions for export
-from .exceptions import EngineNotAvailableError
+from .exceptions import EngineNotAvailableError, TTSException, ValidationError
 
 # Import dynamic engine loader
 sys.path.insert(0, str(Path(__file__).parent.parent))
