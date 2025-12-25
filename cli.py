@@ -29,6 +29,7 @@ License: MIT
 
 import argparse
 import os
+import shutil
 import sys
 import logging
 import re
@@ -140,6 +141,7 @@ def rec_worker(
     lang: str,
     q: "queue.Queue[QUEUE_ITEM]",
     tmp_suffix: str,
+    tmp_dir: Optional[str] = None,
 ) -> None:
     """Generating audio`s and packing its in row (idx, tmp_path, bytes)."""
     from libs.api import text_to_speech_bytes
@@ -150,7 +152,7 @@ def rec_worker(
         except Exception as e:
             logger.error(f"TTS error on chunk {i}: {e}")
             audio_bytes = b""
-        fd, tmp_path = tempfile.mkstemp(suffix=tmp_suffix)
+        fd, tmp_path = tempfile.mkstemp(suffix=tmp_suffix, dir=tmp_dir)
         os.close(fd)
         try:
             with open(tmp_path, "wb") as f:
@@ -460,6 +462,8 @@ def main() -> int:
 
         ext = "mp3" if engine == "gtts" else "wav"
         tmp_suffix = f".{ext}"
+        tmp_dir = args.audio_dir or config["audio_directory"]
+
 
         out_is_stdout = "stdout" in output_formats
         out_is_file = "file" in output_formats
@@ -469,7 +473,7 @@ def main() -> int:
 
         rec = threading.Thread(
             target=rec_worker,
-            args=(chunks, engine, language, q, tmp_suffix),
+            args=(chunks, engine, language, q, tmp_suffix, tmp_dir),
             daemon=True,
         )
         play = threading.Thread(
@@ -491,8 +495,13 @@ def main() -> int:
                     ext2 = f".{ext}"
                 for i, p in enumerate(collected_paths, start=1):
                     dst = f"{base}_{i:03d}{ext2}"
-                    os.replace(p, dst)
-                    saved_files.append(dst)
+                    try:
+                        shutil.copy2(p, dst)  # copy temp file to destination
+                        os.unlink(p)           # delete original temp file
+                        saved_files.append(dst)
+                    except Exception as e:
+                        logger.error(f"Failed to save chunk {i} to {dst}: {e}")
+
             else:
                 out_dir = (
                     output_filename
@@ -503,8 +512,13 @@ def main() -> int:
                 for i, p in enumerate(collected_paths, start=1):
                     fname = generate_timestamp_filename(f"part_{i:03d}_", ext)
                     dst = os.path.join(out_dir, fname)
-                    os.replace(p, dst)
-                    saved_files.append(dst)
+                    try:
+                        shutil.copy2(p, dst)
+                        os.unlink(p)
+                        saved_files.append(dst)
+                    except Exception as e:
+                        logger.error(f"Failed to save chunk {i} to {dst}: {e}")
+
 
             if "stdout" not in output_formats:
                 for fpath in saved_files:
