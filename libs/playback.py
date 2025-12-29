@@ -71,6 +71,8 @@ def play_file(filename: str) -> None:
 
         while mixer.music.get_busy():
             pygame.time.wait(100)
+        mixer.music.unload()
+        mixer.quit()
     except Exception as e:
         raise TTSException(f"Audio playback failed: {e}")
 
