@@ -50,11 +50,7 @@ try:
         generate_timestamp_filename,
         ensure_audio_directory,
     )
-    from libs.exceptions import (
-        TTSException,
-        ValidationError,
-        EngineNotAvailableError
-    )
+    from libs.exceptions import TTSException, ValidationError, EngineNotAvailableError
 except ImportError as e:
     logger.error(f"Failed to import TTS library: {e}")
     sys.exit(1)
