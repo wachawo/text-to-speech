@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 TTS Library Tests - Functional Test Suite
 
@@ -22,13 +23,17 @@ from unittest.mock import patch
 import logging
 from typing import List, Any, Callable
 
-# Configure logging for tests
-logging.basicConfig(
-    handlers=[logging.StreamHandler(sys.stderr)],
-    level=logging.WARNING,
-    format="%(asctime)s.%(msecs)03d [%(levelname)s]: (%(name)s.%(funcName)s) - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+LOGGING = {
+    "handlers": [
+        logging.StreamHandler(),
+        # RotatingFileHandler(filename=f'{LOGS_DIR}/app.log', maxBytes=1024*1024*10, backupCount=3),
+        # logging.FileHandler(filename=f"{LOGS_DIR}/app.log"),
+    ],
+    "format": "%(asctime)s.%(msecs)03d [%(levelname)s]: (%(name)s.%(funcName)s) %(message)s",
+    "level": logging.INFO,
+    "datefmt": "%Y-%m-%d %H:%M:%S",
+}
+logging.basicConfig(**LOGGING)  # type: ignore
 logger = logging.getLogger(__name__)
 
 try:
