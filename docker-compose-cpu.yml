@@ -2,8 +2,8 @@ services:
   ttssrv:
     build:
       context: ./ttssrv
-      dockerfile: Dockerfile
-    image: ttssrv_gpu
+      dockerfile: Dockerfile-cpu     # CPU-only image. For GPU use docker-compose.yml.
+    image: ttssrv_cpu
     pull_policy: build
     container_name: ttssrv
     hostname: ttssrv
@@ -24,8 +24,6 @@ services:
       COQUITTS_PATH:              /opt/.coquitts
       COQUITTS_MODEL:             ${COQUITTS_MODEL:-tts_models/multilingual/multi-dataset/xtts_v2}
       COQUITTS_SAMPLE:            /opt/ttsgen.wav
-      NVIDIA_VISIBLE_DEVICES:     "all"
-      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
     ports:
       - "${TTS_PORT:-5000}:5000"
     volumes:
@@ -53,14 +51,6 @@ services:
       nofile:
         soft: 65535
         hard: 65535
-    # GPU passthrough — requires nvidia-container-toolkit on host.
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
     entrypoint: ["/bin/sh", "-c"]
     command:
       - "python3 /opt/ttssrv/app1.py"

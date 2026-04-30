@@ -31,11 +31,10 @@ venv.bak/
 
 # Environment variables / configuration
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
+!.env.example
 ttsgen.conf
+ttsgen.wav
 
 # Audio files
 audio/

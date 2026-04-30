@@ -39,19 +39,35 @@ sudo apt install espeak espeak-data libespeak1
 pip install git+https://github.com/wachawo/text-to-speech.git
 
 # Specific tag, branch, or commit
-pip install git+https://github.com/wachawo/text-to-speech.git@v0.2.0
+pip install git+https://github.com/wachawo/text-to-speech.git@v0.2.1
 pip install git+https://github.com/wachawo/text-to-speech.git@main
 ```
 
-That installs the CLI plus the lightweight engines (`gtts`, `pyttsx3`). For heavier engines and their model files, use `ttsgen --install <engine>` after the base install (see [Optional engine model downloads](#optional-engine-model-downloads) below).
+That installs the CLI **with only lightweight deps** (~10 MB: gtts, pyttsx3, pygame, sounddevice, numpy). **`torch`, `coqui-tts`, `bark`, and CUDA wheels are NOT pulled** — they're only fetched by `ttsgen --install <engine>` for `silerotts`/`coquitts`/`barktts` (see [Optional engine model downloads](#optional-engine-model-downloads) below).
 
-After install, three console scripts are on your `$PATH`:
+After install, four console scripts are on your `$PATH`:
 
 ```bash
-ttsgen "Hello world"          # synthesize and play (or save with --file)
+ttsgen "Hello world"          # synthesize locally — play (or save with --file)
 echo "..." | ttsplay          # play raw audio bytes from stdin
 ttsrec ~/voice.wav            # record a voice sample from microphone
+ttsapi "Hello world"          # send to a remote ttssrv via HTTP (TTS_URL/TTS_TOKEN from config)
 ```
+
+The HTTP server `ttssrv` is **not** a console-script — it's deployed via Docker (see below) or run as `python3 ttssrv/app1.py` from a clone.
+
+#### Extras for specific engines
+
+```bash
+pip install "text-to-speech[piper]  @ git+https://github.com/wachawo/text-to-speech.git"   # piper-tts
+pip install "text-to-speech[silero] @ git+https://github.com/wachawo/text-to-speech.git"   # torch + torchaudio + omegaconf
+pip install "text-to-speech[coqui]  @ git+https://github.com/wachawo/text-to-speech.git"   # coqui-tts + torch (Python 3.9–3.12)
+pip install "text-to-speech[bark]   @ git+https://github.com/wachawo/text-to-speech.git"   # bark (git) + scipy
+pip install "text-to-speech[api]    @ git+https://github.com/wachawo/text-to-speech.git"   # Flask stack to run ttssrv/app1.py outside Docker
+pip install "text-to-speech[all]    @ git+https://github.com/wachawo/text-to-speech.git"   # piper + silero + api
+```
+
+`[coqui]` and CUDA wheels: prefer `ttsgen --install coquitts` — it picks the right torch index (cpu / cu121) and persists the model dir to `~/.config/ttsgen.conf`.
 
 ### Install for development
 
@@ -184,38 +200,48 @@ audio_bytes = text_to_speech_bytes("Hello world!", engine="gtts", language="en")
 buf = text_to_speech_bytesio("Hello world!", engine="pipertts")
 ```
 
-### HTTP API + Docker
+### HTTP server (`ttssrv`) and client (`ttsapi`)
 
-A Flask API server is included. Bring it up with Docker Compose:
+The Flask server (`ttssrv`) preloads the engine once at startup, then serves synthesis requests with a `queue.Queue`-based pool (concurrency limit = `TTS_POOL_SIZE`). Two Docker variants:
 
 ```bash
+# GPU (CUDA 12.1, requires nvidia-container-toolkit on host)
 docker compose up --build -d
 
-# Health
-curl http://localhost:5000/api/health
-
-# List available engines (depends on what's installed in the image)
-curl http://localhost:5000/api/engines
-
-# GET — engine and language are optional, default to TTS_ENGINE/TTS_LANGUAGE from .env
-curl -o out.mp3 "http://localhost:5000/api/tts?text=Hello%20world&engine=gtts"
-
-# POST
-curl -X POST http://localhost:5000/api/ttsgen \
-  -H "Content-Type: application/json" \
-  -d '{"text":"Привет мир","engine":"gtts","language":"ru"}' \
-  -o ru.mp3
+# CPU-only (no nvidia libs, smaller image)
+docker compose -f docker-compose-cpu.yml up --build -d
 ```
 
-The container service is named `tts_api` on network `tts_network`. To enable heavier engines in the API container, uncomment the relevant lines in `api/requirements.txt` and rebuild with `docker compose build`.
-
-To run the API without Docker:
+Direct HTTP usage:
 
 ```bash
-pip install "text-to-speech[api] @ git+https://github.com/wachawo/text-to-speech.git"
-python -m api.app1
-# or, after editable install:
-python api/app1.py
+curl http://localhost:5000/api/health
+# {"status":"ok","engine":"coquitts","pool_size":1,"available":1}
+
+curl http://localhost:5000/api/engines \
+  -H "Authorization: Bearer $TTS_TOKEN"
+
+curl -X POST http://localhost:5000/api/tts \
+  -H "Authorization: Bearer $TTS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Hello world","engine":"gtts"}' -o out.mp3
+```
+
+Or via the matching client `ttsapi` — mirror of `ttsgen` with the same flags, but synthesis runs on the server:
+
+```bash
+ttsapi --list                                          # GET /api/engines
+ttsapi "Hello world"                                   # POST /api/tts → play
+ttsapi -i long.txt --output play,file --file out.mp3   # chunked, multi-output
+ttsapi "Привет" --engine coquitts --language ru
+```
+
+`ttsapi` reads `TTS_URL` and `TTS_TOKEN` from the same config chain as `ttsgen` (`./ttsgen.conf` > `~/.config/ttsgen.conf` > `.env`). Default URL is `http://localhost:5000`. Empty `TTS_TOKEN` disables auth.
+
+Run server without Docker (after `pip install -e .` or `pip install git+...`):
+
+```bash
+ttssrv
 ```
 
 ## Adding a new engine
@@ -249,7 +275,8 @@ text-to-speech/
 ├── ttsplay.py                   # stdin player (`ttsplay` command)
 ├── ttsrec.py                    # microphone recorder (`ttsrec` command)
 ├── pyproject.toml            # Package config and dependencies
-├── docker-compose.yml        # tts_api service definition
+├── docker-compose.yml        # ttssrv service (GPU)
+├── docker-compose-cpu.yml    # ttssrv service (CPU-only)
 ├── engines/                  # Pluggable TTS engines
 │   ├── __init__.py           #   Dynamic loader
 │   ├── gtts.py
@@ -263,12 +290,14 @@ text-to-speech/
 │   ├── tools.py              #   Validation, config, pipelines
 │   ├── playback.py           #   pygame wrapper
 │   └── exceptions.py
-├── api/                      # Flask HTTP API
-│   ├── app1.py
+├── ttssrv/                   # Flask HTTP server (`ttssrv` console script)
+│   ├── __init__.py
+│   ├── app1.py               #   Endpoints, pool, token auth
 │   ├── validators.py
 │   ├── gu.py
-│   ├── Dockerfile
-│   └── requirements.txt
+│   ├── Dockerfile            #   GPU image (CUDA 12.1)
+│   └── Dockerfile-cpu        #   CPU-only image
+├── ttsapi.py                 # HTTP client (`ttsapi` console script — mirror of ttsgen)
 ├── install/                  # Engine installers (`ttsgen --install <engine>`)
 │   ├── __init__.py           #   Dispatcher
 │   ├── common.py             #   pip / download / prompt helpers
@@ -304,7 +333,6 @@ python -m pytest test_tts.py -v
 
 # Lint / typecheck / format
 flake8 .
-mypy .
 black .
 
 # List engines available in the current environment

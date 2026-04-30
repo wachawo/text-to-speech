@@ -1,22 +1,35 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Flask API server for TTS — accepts text, returns audio file."""
+"""Flask TTS server — preloads engine, exposes HTTP API for synthesis.
 
+Architecture mirrors `speech-to-text/stt_server.py`:
+- `init_engine_pool()` warms up the default engine and seeds a `queue.Queue` with
+  N tokens for concurrency control. Per-request: acquire token, synthesize via
+  `text_to_speech_bytes()` (engine-level `_TTS_CACHE` hits), release token.
+- Heavy model load happens once at startup, not per-request.
+- The actual TTS is the same `libs.api.text_to_speech_bytes` ttsgen uses;
+  this server is a thin HTTP veneer over the offline pipeline.
+"""
+
+import functools
 import io
 import logging
 import os
+import queue
 import sys
+import time
 import traceback
 from datetime import date, datetime
 from pathlib import Path
 
 import pytz
+import werkzeug.exceptions
+from dotenv import find_dotenv, load_dotenv
 from flask import Flask, jsonify, request, send_file
 from flask.json.provider import DefaultJSONProvider
 from flask_cors import CORS
 from marshmallow import ValidationError as MarshmallowValidationError
 from werkzeug.middleware.proxy_fix import ProxyFix
-import werkzeug.exceptions
 
 # Local imports — project root must be on sys.path so engines/ and libs/ resolve
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -31,37 +44,61 @@ from libs.exceptions import (  # noqa: E402
     ValidationError,
 )
 
-from api.validators import TtsRequestSchema  # noqa: E402
+from ttssrv.validators import TtsRequestSchema  # noqa: E402
 
-from dotenv import load_dotenv, find_dotenv
 load_dotenv(find_dotenv())
 
 # Config
 TRUE_VALUES = ("1", "true", "yes", "on", "enabled")
-FLASK_HOST            = os.getenv("FLASK_HOST", "0.0.0.0")
-FLASK_PORT            = int(os.getenv("FLASK_PORT", "5000"))
-FLASK_DEBUG           = os.getenv("FLASK_DEBUG", "False").lower() in TRUE_VALUES
-SECRET_KEY            = os.getenv("SECRET_KEY", "SuP3rS3cr3tK3y!")
-TIMEZONE              = pytz.timezone(os.getenv("TZ", "America/New_York"))
+TTS_HOST              = os.getenv("TTS_HOST", "0.0.0.0")
+TTS_PORT              = int(os.getenv("TTS_PORT", "5000"))
+TTS_DEBUG             = os.getenv("TTS_DEBUG", "False").lower() in TRUE_VALUES
+TTS_TOKEN             = os.getenv("TTS_TOKEN", "").strip()
+TTS_POOL_SIZE         = int(os.getenv("TTS_POOL_SIZE", "1"))
 TTS_ENGINE_DEFAULT    = os.getenv("TTS_ENGINE", "gtts")
 TTS_LANGUAGE_DEFAULT  = os.getenv("TTS_LANGUAGE", "en")
+TIMEZONE              = pytz.timezone(os.getenv("TZ", "America/New_York"))
 DATETIME_FMT          = "%Y-%m-%d %H:%M:%S"
 
 # Logging
 LOGGING = {
-    "handlers": [
-        logging.StreamHandler(),
-    ],
-    "format":  "%(asctime)s.%(msecs)03d [%(levelname)s]: (%(name)s) %(message)s",
-    "level":   logging.INFO,
-    "datefmt": "%Y-%m-%d %H:%M:%S",
+    "handlers": [logging.StreamHandler()],
+    "format":   "%(asctime)s.%(msecs)03d [%(levelname)s]: (%(name)s.%(funcName)s) %(message)s",
+    "level":    logging.INFO,
+    "datefmt":  "%Y-%m-%d %H:%M:%S",
 }
 logging.basicConfig(**LOGGING)  # type: ignore[arg-type]
 logger = logging.getLogger(__name__)
 
+# Engine pool — semaphore tokens; the actual model is cached inside engine module
+# (see engines/coquitts.py:_TTS_CACHE). Pool limits concurrent synthesis calls.
+ENGINE_POOL: queue.Queue = queue.Queue()
+
+
+def init_engine_pool(size: int = TTS_POOL_SIZE) -> None:
+    """Warm the default engine cache and seed pool with N tokens."""
+    if size < 1:
+        logger.info("TTS_POOL_SIZE=0 → unlimited concurrency, no warmup")
+        return
+
+    if TTS_ENGINE_DEFAULT not in ("gtts", "pyttsx3"):
+        logger.info(f"Warming up {TTS_ENGINE_DEFAULT}...")
+        t0 = time.monotonic()
+        try:
+            text_to_speech_bytes(text=".", engine=TTS_ENGINE_DEFAULT, language=TTS_LANGUAGE_DEFAULT)
+            logger.info(f"Warmup OK ({time.monotonic() - t0:.2f}s)")
+        except Exception as exc:
+            logger.warning(
+                f"Warmup failed: {type(exc).__name__}: {exc} — will retry on first request"
+            )
+
+    for i in range(size):
+        ENGINE_POOL.put(i)
+    logger.info(f"Pool ready: {size} slot(s) for {TTS_ENGINE_DEFAULT}")
+
 
 class JSONProvider(DefaultJSONProvider):
-    """Custom JSON provider — datetime/date serialized as 'YYYY-MM-DD HH:MM:SS'."""
+    """Custom JSON provider — datetime/date as 'YYYY-MM-DD HH:MM:SS'."""
 
     def default(self, o):
         if isinstance(o, (datetime, date)):
@@ -73,17 +110,25 @@ app = Flask(__name__)
 app.json = JSONProvider(app)
 app.url_map.strict_slashes = False
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_host=1)
-app.config.from_object(__name__)
-app.config.update(dict(
-    SECRET_KEY=SECRET_KEY,
-    JSON_DATETIME_FORMAT=DATETIME_FMT,
-    JSON_SORT_KEYS=False,
-))
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 
-def detect_audio_mime(audio_bytes: bytes) -> tuple[str, str]:
-    """Return (mimetype, extension) by sniffing audio bytes header."""
+def token_required(fn):
+    """Validate `Authorization: Bearer <TTS_TOKEN>`. Bypass when TTS_TOKEN is empty."""
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not TTS_TOKEN:
+            return fn(*args, **kwargs)
+        header = request.headers.get("Authorization", "")
+        if not header.startswith("Bearer "):
+            return jsonify({"error": "Missing Bearer token"}), 401
+        if header[len("Bearer "):].strip() != TTS_TOKEN:
+            return jsonify({"error": "Invalid token"}), 401
+        return fn(*args, **kwargs)
+    return wrapper
+
+
+def detect_audio_mime(audio_bytes: bytes) -> "tuple[str, str]":
     if audio_bytes.startswith(b"ID3") or audio_bytes[0:2] == b"\xff\xfb":
         return "audio/mpeg", "mp3"
     if audio_bytes.startswith(b"RIFF"):
@@ -92,11 +137,9 @@ def detect_audio_mime(audio_bytes: bytes) -> tuple[str, str]:
 
 
 def parse_tts_payload() -> dict:
-    """Read tts request from JSON body or query string and validate."""
     payload = request.get_json(silent=True) if request.is_json else None
     if not payload:
         payload = request.args.to_dict()
-
     schema = TtsRequestSchema()
     errors = schema.validate(payload)
     if errors:
@@ -104,23 +147,25 @@ def parse_tts_payload() -> dict:
     return schema.load(payload)
 
 
-@app.before_request
-def before_request():
-    pass
-
-
 @app.after_request
 def after_request(resp):
-    logger.info(f"{request.method} {request.path}: {resp.status_code} {resp.status}")
+    log_fn = logger.debug if request.path == "/api/health" else logger.info
+    log_fn(f"{request.method} {request.path}: {resp.status_code} {resp.status}")
     return resp
 
 
 @app.route("/api/health", methods=["GET"])
 def health():
-    return jsonify({"status": "ok"}), 200
+    return jsonify({
+        "status":    "ok",
+        "engine":    TTS_ENGINE_DEFAULT,
+        "pool_size": TTS_POOL_SIZE,
+        "available": ENGINE_POOL.qsize(),
+    }), 200
 
 
 @app.route("/api/engines", methods=["GET"])
+@token_required
 def engines_list():
     available = list(get_available_engines().keys())
     return jsonify({
@@ -130,6 +175,7 @@ def engines_list():
 
 
 @app.route("/api/tts", methods=["GET", "POST"])
+@token_required
 def tts_generate():
     data = parse_tts_payload()
     text     = data["text"]
@@ -138,10 +184,20 @@ def tts_generate():
 
     logger.info(f"TTS request: engine={engine} language={language} chars={len(text)}")
 
-    audio_bytes = text_to_speech_bytes(text=text, engine=engine, language=language)
+    slot = None
+    if TTS_POOL_SIZE > 0:
+        try:
+            slot = ENGINE_POOL.get(timeout=120)
+        except queue.Empty:
+            return jsonify({"error": "All engine slots busy (timeout)"}), 503
+    try:
+        audio_bytes = text_to_speech_bytes(text=text, engine=engine, language=language)
+    finally:
+        if slot is not None:
+            ENGINE_POOL.put(slot)
+
     mimetype, ext = detect_audio_mime(audio_bytes)
     timestamp = datetime.now(TIMEZONE).strftime("%Y%m%d_%H%M%S")
-
     return send_file(
         io.BytesIO(audio_bytes),
         mimetype=mimetype,
@@ -170,9 +226,7 @@ def handle_engine_not_available(error):
 
 @app.errorhandler(TTSException)
 def handle_tts_exception(error):
-    logger.error(
-        f"{type(error).__name__}: {str(error)}\n{traceback.format_exc()}"
-    )
+    logger.error(f"{type(error).__name__}: {str(error)}\n{traceback.format_exc()}")
     return jsonify({"error": f"{type(error).__name__}: {str(error)}"}), 500
 
 
@@ -190,23 +244,27 @@ def not_found(error):
 def handle_exception(exc):
     if isinstance(exc, werkzeug.exceptions.HTTPException):
         return jsonify({"error": exc.name, "message": exc.description}), exc.code
-    logger.error(
-        f"{type(exc).__name__}: {str(exc)}\n{traceback.format_exc()}"
-    )
+    logger.error(f"{type(exc).__name__}: {str(exc)}\n{traceback.format_exc()}")
     response = jsonify({"error": f"{type(exc).__name__}: {str(exc)}"})
     response.status_code = 500
     return response
 
 
-def main():
-    logger.info(f"Starting TTS API on {FLASK_HOST}:{FLASK_PORT} debug={FLASK_DEBUG} default_engine={TTS_ENGINE_DEFAULT}")
-    if FLASK_DEBUG:
-        app.run(host=FLASK_HOST, port=FLASK_PORT, debug=FLASK_DEBUG)
+def main() -> int:
+    logger.info(
+        f"Starting TTS server on {TTS_HOST}:{TTS_PORT} "
+        f"debug={TTS_DEBUG} engine={TTS_ENGINE_DEFAULT} pool={TTS_POOL_SIZE} "
+        f"auth={'on' if TTS_TOKEN else 'off'}"
+    )
+    init_engine_pool()
+    if TTS_DEBUG:
+        app.run(host=TTS_HOST, port=TTS_PORT, debug=True)
     else:
         import uvicorn
         from asgiref.wsgi import WsgiToAsgi
-        uvicorn.run(WsgiToAsgi(app), host=FLASK_HOST, port=FLASK_PORT, log_level="info")
+        uvicorn.run(WsgiToAsgi(app), host=TTS_HOST, port=TTS_PORT, log_level="info")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

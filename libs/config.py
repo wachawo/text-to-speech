@@ -54,6 +54,17 @@ DEFAULT_USER_CONFIG = """\
 # PIPERTTS_PATH=.pipertts
 # SILEROTTS_PATH=.silerotts
 # BARKTTS_PATH=.barktts
+
+# HTTP client (used by `ttsapi` to reach a remote `ttssrv`)
+# TTS_URL=http://localhost:5000
+# TTS_TOKEN=
+
+# HTTP server (used by `ttssrv` and docker-compose.yml)
+# TTS_HOST=0.0.0.0
+# TTS_PORT=5000
+# TTS_DEBUG=False
+# TTS_TOKEN=SuP3rS3cr3tK3y!
+# TTS_POOL_SIZE=1
 """
 
 

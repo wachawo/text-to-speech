@@ -1,0 +1,23 @@
+# Server runtime dependencies for `ttssrv` (mirrors `[api]` extra in pyproject.toml).
+# Heavy ML deps (torch, torchaudio, coqui-tts) are installed separately by the
+# Dockerfile from a CUDA-aware index — see ttssrv/Dockerfile and Dockerfile-cpu.
+
+# Web stack
+Flask==2.3.3
+flask-cors==4.0.0
+marshmallow==3.20.1
+gunicorn==21.2.0
+uvicorn==0.23.2
+asgiref==3.7.2
+pytz>=2023.3
+
+# Lightweight TTS engines (always available on the server)
+gtts==2.3.0
+pyttsx3==2.90
+
+# Shared infra
+python-dotenv>=1.0.0
+requests>=2.28.0
+sounddevice
+numpy
+pygame==2.5.2
