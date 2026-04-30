@@ -97,6 +97,11 @@ def install(non_interactive: bool = False) -> int:
         warn("Installation cancelled.")
         return 0
 
+    info(
+        "Note: Bark caches models in ~/.cache/suno/bark_v0/ (hardcoded by upstream); "
+        "setting BARKTTS_PATH won't relocate the cache, only the engine config."
+    )
+
     install_torch(non_interactive)
 
     info("\nInstalling Bark from GitHub...")

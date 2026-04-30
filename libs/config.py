@@ -95,6 +95,30 @@ def load_config() -> None:
         load_dotenv(legacy_env, override=False)
 
 
+def persist_config_value(key: str, value: str) -> None:
+    """Set or update KEY=VALUE in ~/.config/ttsgen.conf, uncommenting if needed.
+
+    Used by installers to remember the chosen model directory so the engine
+    finds it at synthesis time.
+    """
+    ensure_user_config()
+    lines = USER_CONFIG_PATH.read_text().splitlines()
+    out: list = []
+    replaced = False
+    for line in lines:
+        bare = line.lstrip().lstrip("#").strip()
+        if bare.startswith(f"{key}=") and not replaced:
+            out.append(f"{key}={value}")
+            replaced = True
+        else:
+            out.append(line)
+    if not replaced:
+        if out and out[-1].strip() != "":
+            out.append("")
+        out.append(f"{key}={value}")
+    USER_CONFIG_PATH.write_text("\n".join(out) + "\n")
+
+
 def main():
     pass
 

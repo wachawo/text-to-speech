@@ -45,11 +45,18 @@ pip install git+https://github.com/wachawo/text-to-speech.git@main
 
 That installs the CLI plus the lightweight engines (`gtts`, `pyttsx3`). For heavier engines and their model files, use `ttsgen --install <engine>` after the base install (see [Optional engine model downloads](#optional-engine-model-downloads) below).
 
-After install, two console scripts are on your `$PATH`:
+After install, three console scripts are on your `$PATH`:
 
 ```bash
-ttsgen "Hello world"
-echo "..." | ttsplay
+ttsgen "Hello world"          # synthesize and play (or save with --file)
+echo "..." | ttsplay          # play raw audio bytes from stdin
+ttsrec ~/voice.wav            # record a voice sample from microphone (needs [recorder] extra)
+```
+
+For `ttsrec` install the recorder extra:
+
+```bash
+pip install "text-to-speech[recorder] @ git+https://github.com/wachawo/text-to-speech.git"
 ```
 
 ### Install for development
@@ -246,6 +253,7 @@ Full guide: [`docs/ENGINES.md`](docs/ENGINES.md).
 text-to-speech/
 ├── ttsgen.py                    # CLI entry-point (`ttsgen` command)
 ├── ttsplay.py                   # stdin player (`ttsplay` command)
+├── ttsrec.py                    # microphone recorder (`ttsrec` command)
 ├── pyproject.toml            # Package config and dependencies
 ├── docker-compose.yml        # tts_api service definition
 ├── engines/                  # Pluggable TTS engines

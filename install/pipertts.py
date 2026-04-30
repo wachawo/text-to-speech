@@ -13,6 +13,7 @@ from install.common import (
     pip_install,
     project_root,
     prompt_text,
+    resolve_models_dir,
     success,
     warn,
 )
@@ -31,8 +32,14 @@ VOICES = {
 }
 
 
-def models_dir() -> Path:
-    return Path(os.getenv("PIPERTTS_PATH") or (project_root() / ".pipertts"))
+def models_dir(non_interactive: bool = False) -> Path:
+    return resolve_models_dir(
+        engine_label="Piper TTS",
+        env_key="PIPERTTS_PATH",
+        default_dir=Path.home() / ".local" / "share" / "ttsgen" / "pipertts",
+        project_dir=project_root() / ".pipertts",
+        non_interactive=non_interactive,
+    )
 
 
 def select_voices(non_interactive: bool) -> List[str]:
@@ -80,8 +87,7 @@ def install(non_interactive: bool = False) -> int:
     info("Piper TTS Installer")
     pip_install(["piper-tts"])
 
-    target = models_dir()
-    target.mkdir(parents=True, exist_ok=True)
+    target = models_dir(non_interactive=non_interactive)
     info(f"Models directory: {target}")
 
     voices = select_voices(non_interactive)

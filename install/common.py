@@ -124,6 +124,109 @@ def in_virtualenv() -> bool:
     return bool(os.environ.get("VIRTUAL_ENV")) or sys.prefix != getattr(sys, "base_prefix", sys.prefix)
 
 
+def resolve_file_path(
+    label: str,
+    env_key: str,
+    default_path: Path,
+    project_path: Path,
+    non_interactive: bool = False,
+) -> Path:
+    """Like resolve_models_dir but for a single FILE path. Persists choice to ~/.config/ttsgen.conf."""
+    existing = os.environ.get(env_key, "").strip()
+    if existing:
+        target = Path(os.path.expanduser(existing)).resolve()
+        info(f"{label}: {target} (from {env_key})")
+        return target
+
+    if non_interactive:
+        target = default_path
+    else:
+        options = [
+            f"Default: {default_path}",
+            f"Current directory: {project_path}",
+            "Custom path (enter manually)",
+        ]
+        choice = choose_from(f"\nWhere should {label} be stored?", options, default=1)
+        if choice == 1:
+            target = default_path
+        elif choice == 2:
+            target = project_path
+        else:
+            raw = prompt_text("Enter file path", default=str(default_path))
+            target = Path(os.path.expanduser(raw)).resolve()
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    os.environ[env_key] = str(target)
+
+    try:
+        from libs.config import persist_config_value
+        persist_config_value(env_key, str(target))
+        info(f"Saved {env_key}={target} to ~/.config/ttsgen.conf")
+    except Exception as exc:
+        warn(f"Could not persist {env_key} to config: {type(exc).__name__}: {exc}")
+
+    return target
+
+
+def resolve_models_dir(
+    engine_label: str,
+    env_key: str,
+    default_dir: Path,
+    project_dir: Path,
+    non_interactive: bool = False,
+) -> Path:
+    """Ask user where to store model files. Persists choice to ~/.config/ttsgen.conf.
+
+    Priority:
+        1. If `env_key` already set in env (CLI flag, .env, ttsgen.conf) → use that, no prompt.
+        2. Non-interactive mode → use `default_dir` silently.
+        3. Interactive 3-way prompt (default / project-local / custom path).
+
+    The chosen path is written back to os.environ AND persisted to ~/.config/ttsgen.conf
+    so that synthesis-time engines find the same location later.
+    """
+    existing = os.environ.get(env_key, "").strip()
+    if existing:
+        target = Path(os.path.expanduser(existing)).resolve()
+        target.mkdir(parents=True, exist_ok=True)
+        info(f"{engine_label} models: {target} (from {env_key})")
+        return target
+
+    if non_interactive:
+        target = default_dir
+    else:
+        options = [
+            f"Default: {default_dir}",
+            f"Project-local: {project_dir}",
+            "Custom directory (enter path)",
+        ]
+        choice = choose_from(
+            f"\nWhere do you want to store {engine_label} models?",
+            options,
+            default=1,
+        )
+        if choice == 1:
+            target = default_dir
+        elif choice == 2:
+            target = project_dir
+        else:
+            raw = prompt_text("Enter directory path", default=str(default_dir))
+            target = Path(os.path.expanduser(raw)).resolve()
+
+    target.mkdir(parents=True, exist_ok=True)
+    os.environ[env_key] = str(target)
+
+    # Persist so synthesis time sees the same location.
+    try:
+        from libs.config import persist_config_value
+        persist_config_value(env_key, str(target))
+        info(f"Saved {env_key}={target} to ~/.config/ttsgen.conf")
+    except Exception as exc:
+        warn(f"Could not persist {env_key} to config: {type(exc).__name__}: {exc}")
+
+    return target
+
+
 def warn_no_venv(non_interactive: bool = False) -> bool:
     """If not in venv, warn and ask to continue. Returns True to continue."""
     if in_virtualenv():

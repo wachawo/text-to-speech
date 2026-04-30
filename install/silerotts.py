@@ -12,6 +12,7 @@ from install.common import (
     pip_install,
     project_root,
     prompt_text,
+    resolve_models_dir,
     success,
     warn,
     warn_no_venv,
@@ -20,32 +21,14 @@ from install.common import (
 logger = logging.getLogger(__name__)
 
 
-def resolve_models_dir(non_interactive: bool) -> Path:
-    """Ask user where to keep models (or use PROJECT/.silerotts in non-interactive)."""
-    default_dir = project_root() / ".silerotts"
-    if non_interactive:
-        default_dir.mkdir(parents=True, exist_ok=True)
-        return default_dir
-
-    options = [
-        f"Default: .silerotts/ (in project directory)",
-        "Standard: ~/.cache/torch/hub/ (default Silero location)",
-        "Custom directory",
-    ]
-    choice = choose_from("\nWhere do you want to store Silero models?", options, default=1)
-    if choice == 1:
-        default_dir.mkdir(parents=True, exist_ok=True)
-        os.environ["SILEROTTS_MODELS"] = str(default_dir)
-        return default_dir
-    if choice == 2:
-        target = Path.home() / ".cache" / "torch" / "hub"
-        target.mkdir(parents=True, exist_ok=True)
-        return target
-    custom = prompt_text("Enter custom directory path", default=str(default_dir))
-    target = Path(os.path.expanduser(custom)).resolve()
-    target.mkdir(parents=True, exist_ok=True)
-    os.environ["SILEROTTS_MODELS"] = str(target)
-    return target
+def get_silero_dir(non_interactive: bool) -> Path:
+    return resolve_models_dir(
+        engine_label="Silero TTS",
+        env_key="SILEROTTS_PATH",
+        default_dir=Path.home() / ".cache" / "torch" / "hub",
+        project_dir=project_root() / ".silerotts",
+        non_interactive=non_interactive,
+    )
 
 
 def install_torch(non_interactive: bool) -> None:
@@ -102,7 +85,7 @@ def install(non_interactive: bool = False) -> int:
         warn("Installation cancelled.")
         return 0
 
-    models_dir = resolve_models_dir(non_interactive)
+    models_dir = get_silero_dir(non_interactive)
     info(f"Models directory: {models_dir}")
 
     install_torch(non_interactive)

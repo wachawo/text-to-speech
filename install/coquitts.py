@@ -9,6 +9,7 @@ import name for API compatibility but supports Python 3.12+.
 PyTorch 2.6+ workaround for xtts_v2 checkpoints (add_safe_globals) still applies — see predownload_model().
 """
 
+import io
 import logging
 import os
 import subprocess
@@ -23,6 +24,8 @@ from install.common import (
     pip_install,
     project_root,
     prompt_yes_no,
+    resolve_file_path,
+    resolve_models_dir,
     success,
     warn,
     warn_no_venv,
@@ -69,7 +72,15 @@ def predownload_model(model_name: str) -> int:
 
         from TTS.api import TTS
         info(f"\nDownloading {model_name}...")
-        TTS(model_name, progress_bar=True, gpu=False)
+        # Coqui's TTS() asks an in-process `input("y/n")` license confirmation for some
+        # models (e.g. xtts_v2). Our installer already collected user consent before
+        # calling this function, so feed "y" automatically.
+        original_stdin = sys.stdin
+        sys.stdin = io.StringIO("y\n" * 10)
+        try:
+            TTS(model_name, progress_bar=True, gpu=False)
+        finally:
+            sys.stdin = original_stdin
         success("Download complete!")
         return 0
     except Exception as exc:
@@ -87,6 +98,25 @@ def install(non_interactive: bool = False) -> int:
     if not warn_no_venv(non_interactive):
         warn("Installation cancelled.")
         return 0
+
+    # Where to store coqui models (Coqui reads TTS_HOME env var; we tunnel it through COQUITTS_PATH).
+    target = resolve_models_dir(
+        engine_label="Coqui TTS",
+        env_key="COQUITTS_PATH",
+        default_dir=Path.home() / ".local" / "share" / "tts",
+        project_dir=project_root() / ".coquitts",
+        non_interactive=non_interactive,
+    )
+    os.environ["TTS_HOME"] = str(target)
+
+    # Where to store the voice sample WAV (xtts_v2 needs it at synthesis time).
+    resolve_file_path(
+        label="voice sample WAV (COQUITTS_SAMPLE, used by xtts_v2)",
+        env_key="COQUITTS_SAMPLE",
+        default_path=Path.home() / ".local" / "share" / "ttsgen" / "ttsgen.wav",
+        project_path=Path.cwd() / "ttsgen.wav",
+        non_interactive=non_interactive,
+    )
 
     info("\nInstalling coqui-tts (Idiap fork — actively maintained, supports Python 3.12+)...")
     # Original `coqpit` (0.x) conflicts with the fork's `coqpit-config` package.

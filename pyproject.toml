@@ -61,6 +61,11 @@ bark = [
     "scipy",
     "numpy",
 ]
+recorder = [
+    # Microphone recording for `ttsrec` — used to capture xtts_v2 voice samples.
+    "sounddevice",
+    "numpy",
+]
 api = [
     "Flask==2.3.3",
     "flask-cors==4.0.0",
@@ -92,9 +97,10 @@ Documentation = "https://github.com/wachawo/text-to-speech/tree/main/docs"
 [project.scripts]
 ttsgen  = "ttsgen:main"
 ttsplay = "ttsplay:main"
+ttsrec  = "ttsrec:main"
 
 [tool.setuptools]
-py-modules = ["ttsgen", "ttsplay"]
+py-modules = ["ttsgen", "ttsplay", "ttsrec"]
 
 [tool.setuptools.packages.find]
 where   = ["."]
