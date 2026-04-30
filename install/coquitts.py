@@ -21,6 +21,7 @@ from install.common import (
     choose_from,
     error,
     info,
+    install_torch_choice,
     pip_install,
     project_root,
     prompt_yes_no,
@@ -119,6 +120,10 @@ def install(non_interactive: bool = False) -> int:
         non_interactive=non_interactive,
     )
 
+    # Install torch from the official PyTorch index (cpu / cu121) — the default PyPI
+    # index ships cu13 wheels which fail on NVIDIA drivers below ~580.
+    install_torch_choice(non_interactive=non_interactive)
+
     info("\nInstalling coqui-tts (Idiap fork — actively maintained, supports Python 3.12+)...")
     # Original `coqpit` (0.x) conflicts with the fork's `coqpit-config` package.
     # If the original is present, remove it first so coqui-tts installs cleanly.
@@ -127,11 +132,9 @@ def install(non_interactive: bool = False) -> int:
         check=False,
         capture_output=True,
     )
-    # torch + torchaudio are not declared as coqui-tts dependencies (env is expected to
-    # provide them). xtts.py at module load does `import torchaudio`, so it must be present.
-    # `coqui-tts[codec]` pulls torchcodec — required by coqui-tts when running under PyTorch 2.9+.
+    # `coqui-tts[codec]` pulls torchcodec — required by coqui-tts under PyTorch 2.9+.
     # transformers 5.x removed `isin_mps_friendly`; coqui-tts < 0.28 still imports it.
-    pip_install(["coqui-tts[codec]", "torch>=2.0", "torchaudio", "transformers>=4.46,<5.0"])
+    pip_install(["coqui-tts[codec]", "transformers>=4.46,<5.0"])
 
     # Resolve model from env (COQUITTS_MODEL) — primary source of truth.
     env_model = os.environ.get("COQUITTS_MODEL", "").strip()
@@ -140,9 +143,9 @@ def install(non_interactive: bool = False) -> int:
         info(f"\nUsing model from COQUITTS_MODEL env: {env_model}")
         if "xtts" in env_model.lower():
             warn("\nIMPORTANT: License Agreement")
-            print("The xtts model requires accepting a license:")
-            print("  - Non-commercial use: CPML license (https://coqui.ai/cpml)")
-            print("  - Commercial use: Requires commercial license from Coqui")
+            logger.info("The xtts model requires accepting a license:")
+            logger.info("  - Non-commercial use: CPML license (https://coqui.ai/cpml)")
+            logger.info("  - Commercial use: Requires commercial license from Coqui")
             accept = prompt_yes_no(
                 "\nDo you accept the non-commercial CPML license?",
                 default=non_interactive,
@@ -171,9 +174,9 @@ def install(non_interactive: bool = False) -> int:
 
     if choice == 1:
         warn("\nIMPORTANT: License Agreement")
-        print("The xtts_v2 model requires accepting a license:")
-        print("  - Non-commercial use: CPML license (https://coqui.ai/cpml)")
-        print("  - Commercial use: Requires commercial license from Coqui")
+        logger.info("The xtts_v2 model requires accepting a license:")
+        logger.info("  - Non-commercial use: CPML license (https://coqui.ai/cpml)")
+        logger.info("  - Commercial use: Requires commercial license from Coqui")
         if not prompt_yes_no("\nDo you accept the non-commercial CPML license?", default=False):
             warn("License not accepted. Skipping model download.")
         else:
@@ -188,8 +191,8 @@ def install(non_interactive: bool = False) -> int:
 
     success("\nInstallation complete!")
     info("Usage:")
-    print('  ttsgen "Hello world" --engine coquitts')
-    print('  ttsgen "Привет мир" --engine coquitts --language ru')
+    logger.info('  ttsgen "Hello world" --engine coquitts')
+    logger.info('  ttsgen "Привет мир" --engine coquitts --language ru')
     return 0
 
 

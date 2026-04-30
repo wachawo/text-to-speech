@@ -90,16 +90,27 @@ def record_wav(output: Path, duration: int, rate: int) -> None:
     import sounddevice as sd
 
     output.parent.mkdir(parents=True, exist_ok=True)
-    print(f"Recording {duration}s at {rate} Hz → {output}")
-    print("Speak after the beep...")
+    logger.info(f"Recording {duration}s at {rate} Hz → {output}")
+    logger.info("Speak after the beep...")
     for i in range(3, 0, -1):
-        print(f"  {i}...", flush=True)
+        logger.info(f"  {i}...")
         time.sleep(1)
-    print("  REC", flush=True)
+    logger.info("  REC")
 
     audio = sd.rec(int(duration * rate), samplerate=rate, channels=1, dtype="int16")
     sd.wait()
-    print("  done")
+    logger.info("  done")
+
+    # Quick silence check — int16 max is 32767. Anything below ~5% peak is "silent".
+    peak = int(abs(audio).max())
+    if peak < 1000:
+        logger.warning(
+            f"Recording is nearly silent (peak amplitude: {peak}/32767). "
+            f"Check that your microphone is selected and not muted. "
+            f"List devices with: python -c 'import sounddevice; print(sounddevice.query_devices())'"
+        )
+    else:
+        logger.info(f"  peak amplitude: {peak}/32767 ({peak * 100 // 32767}%)")
 
     import wave
     with wave.open(str(output), "wb") as w:
@@ -118,30 +129,30 @@ def main() -> int:
         try:
             input(f"Press Enter to start recording {args.duration}s into {output}, or Ctrl+C to abort. ")
         except (KeyboardInterrupt, EOFError):
-            print("\nAborted.", file=sys.stderr)
+            logger.warning("Aborted.")
             return 1
 
     try:
         record_wav(output, args.duration, args.rate)
     except KeyboardInterrupt:
-        print("\nRecording interrupted.", file=sys.stderr)
+        logger.warning("Recording interrupted.")
         return 1
     except Exception as exc:
         import traceback
-        logger.error(f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}")
+        logger.error(f"{type(exc).__name__}: {str(exc)}\n{traceback.format_exc()}")
         return 1
 
     if not output.exists() or output.stat().st_size == 0:
-        print(f"Output file is empty or missing: {output}", file=sys.stderr)
+        logger.error(f"Output file is empty or missing: {output}")
         return 1
 
-    print(f"\nSaved {output.stat().st_size // 1024} KB to {output}")
+    logger.info(f"Saved {output.stat().st_size // 1024} KB to {output}")
 
     # Persist this path as COQUITTS_SAMPLE so `ttsgen --engine coquitts` finds it.
     try:
         from libs.config import persist_config_value
         persist_config_value("COQUITTS_SAMPLE", str(output))
-        print(f"COQUITTS_SAMPLE={output} written to ~/.config/ttsgen.conf")
+        logger.info(f"COQUITTS_SAMPLE={output} written to ~/.config/ttsgen.conf")
     except Exception as exc:
         logger.warning(f"Could not persist COQUITTS_SAMPLE: {type(exc).__name__}: {exc}")
 

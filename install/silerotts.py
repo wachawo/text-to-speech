@@ -9,6 +9,7 @@ from pathlib import Path
 from install.common import (
     choose_from,
     info,
+    install_torch_choice,
     pip_install,
     project_root,
     prompt_text,
@@ -31,32 +32,6 @@ def get_silero_dir(non_interactive: bool) -> Path:
     )
 
 
-def install_torch(non_interactive: bool) -> None:
-    if non_interactive:
-        info("\nInstalling PyTorch (CPU)...")
-        pip_install(
-            ["torch", "torchaudio"],
-            extra_args=["--index-url", "https://download.pytorch.org/whl/cpu"],
-        )
-        return
-
-    options = [
-        "CPU only (recommended, works on all systems)",
-        "GPU with CUDA (faster, requires NVIDIA GPU)",
-    ]
-    choice = choose_from("\nSelect installation type:", options, default=1)
-    if choice == 2:
-        info("\nInstalling PyTorch with CUDA support...")
-        pip_install(
-            ["torch", "torchaudio"],
-            extra_args=["--index-url", "https://download.pytorch.org/whl/cu118"],
-        )
-    else:
-        info("\nInstalling PyTorch (CPU)...")
-        pip_install(
-            ["torch", "torchaudio"],
-            extra_args=["--index-url", "https://download.pytorch.org/whl/cpu"],
-        )
 
 
 def predownload(models_dir: Path, languages: list) -> None:
@@ -88,7 +63,7 @@ def install(non_interactive: bool = False) -> int:
     models_dir = get_silero_dir(non_interactive)
     info(f"Models directory: {models_dir}")
 
-    install_torch(non_interactive)
+    install_torch_choice(non_interactive=non_interactive)
 
     info("\nInstalling additional dependencies...")
     pip_install(["omegaconf"])
@@ -123,8 +98,8 @@ def install(non_interactive: bool = False) -> int:
 
     success("\nInstallation complete!")
     info("Usage:")
-    print('  ttsgen "Hello world" --engine silerotts')
-    print('  ttsgen "Привет мир" --engine silerotts --language ru')
+    logger.info('  ttsgen "Hello world" --engine silerotts')
+    logger.info('  ttsgen "Привет мир" --engine silerotts --language ru')
     return 0
 
 

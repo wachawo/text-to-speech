@@ -43,19 +43,16 @@ def main():
     try:
         # Check if stdin has data
         if sys.stdin.isatty():
-            print("Error: No input data", file=sys.stderr)
-            print(
-                "Usage: python ttsgen.py 'text' --format bytesio | python ttsplay.py",
-                file=sys.stderr,
-            )
-            print("   or: cat audio.wav | python ttsplay.py", file=sys.stderr)
+            logger.error("No input data")
+            logger.error("Usage: ttsgen 'text' --stdout | ttsplay")
+            logger.error("   or: cat audio.wav | ttsplay")
             return 1
 
         # Read binary data from stdin
         audio_data = sys.stdin.buffer.read()
 
         if not audio_data:
-            print("Error: No audio data received", file=sys.stderr)
+            logger.error("No audio data received")
             return 1
 
         # Detect format
@@ -66,19 +63,20 @@ def main():
         else:
             format_type = "Unknown"
 
-        print(f"Playing {len(audio_data)} bytes ({format_type})...", file=sys.stderr)
+        logger.info(f"Playing {len(audio_data)} bytes ({format_type})...")
 
         # Play audio
         play_audio(audio_data)
 
-        print("Playback completed", file=sys.stderr)
+        logger.info("Playback completed")
         return 0
 
     except KeyboardInterrupt:
-        print("\nPlayback interrupted", file=sys.stderr)
+        logger.warning("Playback interrupted")
         return 1
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+    except Exception as exc:
+        import traceback
+        logger.error(f"{type(exc).__name__}: {str(exc)}\n{traceback.format_exc()}")
         return 1
 
 

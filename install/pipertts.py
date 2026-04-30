@@ -47,11 +47,12 @@ def select_voices(non_interactive: bool) -> List[str]:
     codes = list(VOICES.keys())
     if non_interactive:
         return codes
-    print("\nSelect languages to download (space-separated, e.g. '1 2', or 6 for all):")
+    menu = ["\nSelect languages to download (space-separated, e.g. '1 2', or 6 for all):"]
     for i, code in enumerate(codes, start=1):
         _, _, label = VOICES[code]
-        print(f"  {i}) {label}")
-    print(f"  {len(codes) + 1}) All languages")
+        menu.append(f"  {i}) {label}")
+    menu.append(f"  {len(codes) + 1}) All languages")
+    logger.info("\n".join(menu))
     raw = prompt_text("Your choice", default=str(len(codes) + 1)).strip()
     if not raw:
         return codes
@@ -97,8 +98,8 @@ def install(non_interactive: bool = False) -> int:
     success("\nInstallation complete!")
     info(f"Models in: {target}")
     info("Usage:")
-    print('  ttsgen "Hello world" --engine pipertts')
-    print('  ttsgen "Привет мир" --engine pipertts --language ru')
+    logger.info('  ttsgen "Hello world" --engine pipertts')
+    logger.info('  ttsgen "Привет мир" --engine pipertts --language ru')
     return 0
 
 

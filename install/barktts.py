@@ -11,6 +11,7 @@ from install.common import (
     choose_from,
     error,
     info,
+    install_torch_choice,
     pip_install,
     project_root,
     prompt_yes_no,
@@ -33,31 +34,6 @@ def check_disk_space(non_interactive: bool) -> bool:
     return True
 
 
-def install_torch(non_interactive: bool) -> None:
-    if non_interactive:
-        info("\nInstalling PyTorch (CPU)...")
-        pip_install(
-            ["torch", "torchaudio"],
-            extra_args=["--index-url", "https://download.pytorch.org/whl/cpu"],
-        )
-        return
-    options = [
-        "CPU only (works but VERY slow — 60–180s per sentence)",
-        "GPU with CUDA (recommended — 10–30s per sentence)",
-    ]
-    choice = choose_from("\nSelect installation type:", options, default=1)
-    if choice == 2:
-        info("\nInstalling PyTorch with CUDA support...")
-        pip_install(
-            ["torch", "torchaudio"],
-            extra_args=["--index-url", "https://download.pytorch.org/whl/cu118"],
-        )
-    else:
-        info("\nInstalling PyTorch (CPU)...")
-        pip_install(
-            ["torch", "torchaudio"],
-            extra_args=["--index-url", "https://download.pytorch.org/whl/cpu"],
-        )
 
 
 def predownload() -> int:
@@ -102,7 +78,7 @@ def install(non_interactive: bool = False) -> int:
         "setting BARKTTS_PATH won't relocate the cache, only the engine config."
     )
 
-    install_torch(non_interactive)
+    install_torch_choice(non_interactive=non_interactive)
 
     info("\nInstalling Bark from GitHub...")
     pip_install(["git+https://github.com/suno-ai/bark.git"])
@@ -125,9 +101,9 @@ def install(non_interactive: bool = False) -> int:
 
     success("\nInstallation complete!")
     info("Usage:")
-    print('  ttsgen "Hello world" --engine barktts')
-    print('  ttsgen "That\'s funny [laugh]" --engine barktts')
-    print('  ttsgen "Hello" --engine barktts --file output.wav')
+    logger.info('  ttsgen "Hello world" --engine barktts')
+    logger.info('  ttsgen "That\'s funny [laugh]" --engine barktts')
+    logger.info('  ttsgen "Hello" --engine barktts --file output.wav')
     return 0
 
 

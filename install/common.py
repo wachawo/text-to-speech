@@ -21,19 +21,19 @@ RED    = "\033[0;31m"
 
 
 def info(msg: str) -> None:
-    print(f"{BLUE}{msg}{RESET}")
+    logger.info(f"{BLUE}{msg}{RESET}")
 
 
 def success(msg: str) -> None:
-    print(f"{GREEN}{msg}{RESET}")
+    logger.info(f"{GREEN}{msg}{RESET}")
 
 
 def warn(msg: str) -> None:
-    print(f"{YELLOW}{msg}{RESET}")
+    logger.warning(f"{YELLOW}{msg}{RESET}")
 
 
 def error(msg: str) -> None:
-    print(f"{RED}{msg}{RESET}", file=sys.stderr)
+    logger.error(f"{RED}{msg}{RESET}")
 
 
 def project_root() -> Path:
@@ -63,10 +63,11 @@ def prompt_yes_no(question: str, default: bool = False, non_interactive: bool = 
 
 def choose_from(question: str, options: List[str], default: int = 1, non_interactive: bool = False) -> int:
     """Display numbered menu, return 1-based index. Returns default in non-interactive mode."""
-    print(question)
+    menu_lines = [question]
     for i, opt in enumerate(options, start=1):
         marker = " *" if i == default else ""
-        print(f"  {i}) {opt}{marker}")
+        menu_lines.append(f"  {i}) {opt}{marker}")
+    logger.info("\n".join(menu_lines))
     if non_interactive:
         return default
     while True:
@@ -117,6 +118,37 @@ def download_file(url: str, dest: Path, *, label: Optional[str] = None) -> None:
     urllib.request.urlretrieve(url, dest, reporthook=reporthook)
     sys.stdout.write("\n")
     sys.stdout.flush()
+
+
+PYTORCH_CPU_INDEX  = "https://download.pytorch.org/whl/cpu"
+PYTORCH_CUDA_INDEX = "https://download.pytorch.org/whl/cu121"
+
+
+def install_torch_choice(non_interactive: bool = False, packages: Optional[List[str]] = None) -> None:
+    """Install torch + torchaudio with explicit CUDA or CPU index.
+
+    Default index (https://download.pytorch.org/whl) ships cu13 which breaks
+    against drivers older than ~580. cu121 wheels work with NVIDIA driver 525+,
+    cpu wheels work everywhere.
+    """
+    pkgs = packages if packages is not None else ["torch", "torchaudio"]
+
+    if non_interactive:
+        info("\nInstalling PyTorch (CPU)...")
+        pip_install(pkgs, extra_args=["--index-url", PYTORCH_CPU_INDEX])
+        return
+
+    options = [
+        "CPU only (works everywhere, no GPU required)",
+        "GPU with CUDA 12.1 (works with NVIDIA driver 525+)",
+    ]
+    choice = choose_from("\nSelect PyTorch build:", options, default=1)
+    if choice == 2:
+        info(f"\nInstalling PyTorch with CUDA 12.1 from {PYTORCH_CUDA_INDEX}...")
+        pip_install(pkgs, extra_args=["--index-url", PYTORCH_CUDA_INDEX])
+    else:
+        info(f"\nInstalling PyTorch (CPU) from {PYTORCH_CPU_INDEX}...")
+        pip_install(pkgs, extra_args=["--index-url", PYTORCH_CPU_INDEX])
 
 
 def in_virtualenv() -> bool:

@@ -3,7 +3,9 @@
 """Engine installer dispatcher — entry point for `ttsgen --install <engine>`."""
 
 import importlib
-import sys
+import logging
+
+logger = logging.getLogger(__name__)
 
 try:
     from libs.config import load_config
@@ -18,12 +20,11 @@ NO_INSTALLER_NEEDED = ("gtts", "pyttsx3")
 def run(engine: str, non_interactive: bool = False) -> int:
     """Dispatch installation for the named engine. Returns process exit code."""
     if engine in NO_INSTALLER_NEEDED:
-        print(f"Engine '{engine}' has no installer (covered by base requirements).")
+        logger.info(f"Engine '{engine}' has no installer (covered by base requirements).")
         return 0
     if engine not in INSTALLERS:
-        print(
-            f"No installer for engine '{engine}'. Available: {', '.join(INSTALLERS)}",
-            file=sys.stderr,
+        logger.error(
+            f"No installer for engine '{engine}'. Available: {', '.join(INSTALLERS)}"
         )
         return 2
     module = importlib.import_module(f"install.{engine}")

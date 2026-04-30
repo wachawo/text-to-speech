@@ -532,16 +532,15 @@ def main() -> int:
 
         # Print summary
         if not args.quiet and "stdout" not in output_formats:
-            print("TTS CLI Tool", file=sys.stderr)
-            print("=" * 40, file=sys.stderr)
+            logger.info("TTS CLI Tool")
+            logger.info("=" * 40)
             preview = text[:50] + ("..." if len(text) > 50 else "")
-            print(f"Text: {preview}", file=sys.stderr)
-            print(f"Engine: {engine}", file=sys.stderr)
-            print(f"Language: {language}", file=sys.stderr)
-            print(f"Formats: {', '.join(output_formats)}", file=sys.stderr)
+            logger.info(f"Text: {preview}")
+            logger.info(f"Engine: {engine}")
+            logger.info(f"Language: {language}")
+            logger.info(f"Formats: {', '.join(output_formats)}")
             if output_filename:
-                print(f"Output file: {output_filename}", file=sys.stderr)
-            print(file=sys.stderr)
+                logger.info(f"Output file: {output_filename}")
 
         """
          SINGLE-CHUNK MODE
@@ -557,7 +556,7 @@ def main() -> int:
                 if 'stdout' not in output_formats:
                     print(output_filename, file=sys.stdout)
                 else:
-                    print(output_filename, file=sys.stderr)
+                    logger.info(output_filename)
             elif output_format == 'play':
                 if not args.quiet and 'stdout' not in output_formats:
                     logger.info("Playing audio...")
@@ -574,7 +573,7 @@ def main() -> int:
         MAX_LEN = 200
         chunks = chunk_text(text, MAX_LEN)
         if not args.quiet and "stdout" not in output_formats:
-            print(f"Chunks: {len(chunks)} (<= {MAX_LEN} chars each)", file=sys.stderr)
+            logger.info(f"Chunks: {len(chunks)} (<= {MAX_LEN} chars each)")
 
         ext = "mp3" if engine == "gtts" else "wav"
         tmp_suffix = f".{ext}"
@@ -647,7 +646,7 @@ def main() -> int:
                     print(fpath, file=sys.stdout)
             else:
                 for fpath in saved_files:
-                    print(fpath, file=sys.stderr)
+                    logger.info(fpath)
         else:
             pass
 
@@ -656,10 +655,9 @@ def main() -> int:
             if engine == "gtts":
                 # MP3 - don't glue them together without recoding -
                 # write them sequentially
-                print(
-                    """WARNING: multiple MP3 chunks written sequentially
-                    to stdout; this is not a single valid MP3 file.""",
-                    file=sys.stderr,
+                logger.warning(
+                    "multiple MP3 chunks written sequentially to stdout; "
+                    "this is not a single valid MP3 file."
                 )
                 src_list = saved_files if saved_files else collected_paths
                 for p in src_list:
