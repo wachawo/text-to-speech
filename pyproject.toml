@@ -48,7 +48,8 @@ coqui = [
     # Community fork from Idiap (original Coqui project shut down in Jan 2024).
     # Distribution name `coqui-tts`, import name `TTS` — API-compatible with
     # the abandoned upstream. Supports Python 3.9+ including 3.12.
-    "coqui-tts",
+    # `[codec]` extra pulls torchcodec — required by coqui-tts under PyTorch 2.9+.
+    "coqui-tts[codec]",
     "torch>=2.0",
     # `TTS.tts.models.xtts` does `import torchaudio` at module load.
     "torchaudio",

@@ -69,7 +69,7 @@ pip uninstall text-to-speech
 # Also remove engine deps installed via `ttsgen --install`
 pip uninstall piper-tts                       # if pipertts was installed
 pip uninstall torch torchaudio omegaconf      # if silerotts was installed
-pip uninstall coqui-tts                       # if coquitts was installed
+pip uninstall coqui-tts torchcodec transformers # if coquitts was installed
 pip uninstall bark scipy numpy                # if barktts was installed
 
 # Remove downloaded model files (optional — these can be 10+ GB)
