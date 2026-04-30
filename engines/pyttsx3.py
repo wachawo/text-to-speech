@@ -5,6 +5,7 @@ Offline text-to-speech using espeak backend.
 """
 
 from libs.exceptions import EngineNotAvailableError, TTSException
+from libs.tempfiles import safe_unlink
 import os
 import tempfile
 import time
@@ -74,8 +75,7 @@ def generate(text: str, config: dict) -> bytes:
             with open(temp_filename, "rb") as f:
                 return f.read()
         finally:
-            if os.path.exists(temp_filename):
-                os.unlink(temp_filename)
+            safe_unlink(temp_filename)
 
     except Exception as e:
         raise TTSException(f"pyttsx3 generation failed: {e}")

@@ -10,6 +10,7 @@ import logging
 from typing import Union
 
 from .exceptions import EngineNotAvailableError, TTSException, ValidationError
+from .tempfiles import safe_unlink
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -96,8 +97,7 @@ def play_bytes(audio_bytes: bytes) -> None:
         # Use the improved play_file function
         play_file(temp_filename)
     finally:
-        if os.path.exists(temp_filename):
-            os.unlink(temp_filename)
+        safe_unlink(temp_filename)
 
 
 def play(audio_source: AudioSource) -> None:

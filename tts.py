@@ -73,6 +73,7 @@ try:
      Cause it local modules that not need installigng
     """
     from libs.tools import generate_timestamp_filename, ensure_audio_directory
+    from libs.tempfiles import safe_unlink
 except ImportError as e:
     logger.error(f"Failed to import TTS library: {e}")
     sys.exit(1)
@@ -593,7 +594,7 @@ def main() -> int:
                     dst = f"{base}_{i:03d}{ext2}"
                     try:
                         shutil.copy2(p, dst)  # copy temp file to destination
-                        os.unlink(p)           # delete original temp file
+                        safe_unlink(p)         # delete original temp file (Windows-safe)
                         saved_files.append(dst)
                     except Exception as e:
                         logger.error(f"Failed to save chunk {i} to {dst}: {e}")
@@ -610,7 +611,7 @@ def main() -> int:
                     dst = os.path.join(out_dir, fname)
                     try:
                         shutil.copy2(p, dst)
-                        os.unlink(p)
+                        safe_unlink(p)
                         saved_files.append(dst)
                     except Exception as e:
                         logger.error(f"Failed to save chunk {i} to {dst}: {e}")
@@ -649,11 +650,7 @@ def main() -> int:
 
         if not out_is_file:
             for p in collected_paths:
-                try:
-                    if os.path.exists(p):
-                        os.unlink(p)
-                except Exception:
-                    pass
+                safe_unlink(p)
 
         return 0
 

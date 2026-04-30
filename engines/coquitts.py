@@ -18,6 +18,7 @@ from TTS.tts.configs.xtts_config import XttsConfig
 from TTS.tts.models.xtts import XttsAudioConfig, XttsArgs
 from TTS.config.shared_configs import BaseDatasetConfig
 from libs.exceptions import EngineNotAvailableError, TTSException
+from libs.tempfiles import safe_unlink
 
 # Load environment variables from .env file
 try:
@@ -131,8 +132,7 @@ def generate(text: str, config: dict) -> bytes:
             with open(temp_filename, "rb") as f:
                 return f.read()
         finally:
-            if os.path.exists(temp_filename):
-                os.unlink(temp_filename)
+            safe_unlink(temp_filename)
     except Exception as e:
         if "model" in str(e).lower() and "not found" in str(e).lower():
             raise TTSException(f"Coqui TTS model not found.\n" f"Error: {e}")

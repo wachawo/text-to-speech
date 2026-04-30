@@ -60,6 +60,24 @@ cd text-to-speech
 pip install -e ".[dev]"
 ```
 
+### Uninstall
+
+```bash
+# Remove the package (keeps optional engine extras like torch/TTS/bark unless you remove them too)
+pip uninstall text-to-speech
+
+# Also remove engine deps installed via `tts --install`
+pip uninstall piper-tts                       # if pipertts was installed
+pip uninstall torch torchaudio omegaconf      # if silerotts was installed
+pip uninstall TTS transformers                # if coquitts was installed
+pip uninstall bark scipy numpy                # if barktts was installed
+
+# Remove downloaded model files (optional — these can be 10+ GB)
+rm -rf .pipertts/ .silerotts/ .coquitts/ .barktts/
+rm -rf ~/.cache/torch/hub/snakers4_silero-models_master   # silero (if stored in standard cache)
+rm -rf ~/.cache/suno/bark_v0/                              # bark
+```
+
 ### Legacy install (without packaging)
 
 ```bash
