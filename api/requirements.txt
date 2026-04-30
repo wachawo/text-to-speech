@@ -15,4 +15,4 @@ requests==2.28.0
 # Heavier engines — uncomment in your own image to enable in API:
 # torch==2.9.0
 # piper-tts
-# TTS
+# coqui-tts

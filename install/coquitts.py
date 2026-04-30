@@ -1,9 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Coqui TTS installer — pip + optional model pre-download with PyTorch 2.6+ workaround."""
+"""coqui-tts installer (Idiap community fork) — pip + optional model pre-download.
+
+Original Coqui TTS (`TTS` on PyPI) was last released Dec 2023 and capped at Python 3.11.
+We use the maintained fork `coqui-tts` (distribution name) which keeps the same `TTS`
+import name for API compatibility but supports Python 3.12+.
+
+PyTorch 2.6+ workaround for xtts_v2 checkpoints (add_safe_globals) still applies — see predownload_model().
+"""
 
 import logging
 import os
+import shutil
+import subprocess
 import sys
 import traceback
 from pathlib import Path
@@ -28,11 +37,10 @@ logger = logging.getLogger(__name__)
 
 
 def check_python_version() -> bool:
-    """Coqui TTS requires Python 3.9–3.11."""
+    """coqui-tts (Idiap fork) requires Python 3.9+."""
     major, minor = sys.version_info[:2]
-    if major != 3 or minor < 9 or minor > 11:
-        error(f"Coqui TTS requires Python 3.9–3.11. You have {major}.{minor}.")
-        warn("Either install a compatible Python or skip this engine.")
+    if major != 3 or minor < 9:
+        error(f"coqui-tts requires Python 3.9+. You have {major}.{minor}.")
         return False
     return True
 
@@ -81,8 +89,35 @@ def install(non_interactive: bool = False) -> int:
         warn("Installation cancelled.")
         return 0
 
-    info("\nInstalling Coqui TTS (transformers pinned to 4.33.0 for compatibility)...")
-    pip_install(["TTS", "transformers==4.33.0"])
+    info("\nInstalling coqui-tts (Idiap fork — actively maintained, supports Python 3.12+)...")
+
+    # coqui-tts ships its own `tts` console script that would overwrite ours.
+    # Snapshot the script bytes so we can restore after pip install.
+    tts_script = shutil.which("tts")
+    saved_script: bytes = b""
+    if tts_script and os.path.exists(tts_script):
+        with open(tts_script, "rb") as f:
+            saved_script = f.read()
+
+    # Original `coqpit` (0.x) conflicts with the fork's `coqpit-config` package.
+    # If the original is present, remove it first so coqui-tts installs cleanly.
+    subprocess.run(
+        [sys.executable, "-m", "pip", "uninstall", "-y", "coqpit"],
+        check=False,
+        capture_output=True,
+    )
+    # transformers 5.x removed `isin_mps_friendly`; coqui-tts < 0.28 still imports it.
+    pip_install(["coqui-tts", "transformers>=4.46,<5.0"])
+
+    # Restore our `tts` script if coqui-tts overwrote it.
+    if saved_script and tts_script:
+        with open(tts_script, "rb") as f:
+            current = f.read()
+        if current != saved_script:
+            info("Restoring our `tts` console script (coqui-tts overrode it)...")
+            with open(tts_script, "wb") as f:
+                f.write(saved_script)
+            os.chmod(tts_script, 0o755)
 
     # Resolve model from env (COQUITTS_MODEL) — primary source of truth.
     env_model = os.environ.get("COQUITTS_MODEL", "").strip()
