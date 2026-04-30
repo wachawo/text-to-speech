@@ -86,17 +86,7 @@ def resolve_output_path(arg_path: str | None) -> Path:
 
 def record_wav(output: Path, duration: int, rate: int) -> None:
     """Record `duration` seconds of mono audio at `rate` Hz to `output`."""
-    try:
-        import sounddevice as sd
-        import numpy as np
-    except ImportError as exc:
-        print(
-            f"Recording requires sounddevice + numpy. Install via:\n"
-            f"  pip install \"text-to-speech[recorder]\" (or sounddevice numpy)\n"
-            f"Original error: {type(exc).__name__}: {exc}",
-            file=sys.stderr,
-        )
-        sys.exit(2)
+    import sounddevice as sd
 
     output.parent.mkdir(parents=True, exist_ok=True)
     print(f"Recording {duration}s at {rate} Hz → {output}")
@@ -121,7 +111,6 @@ def record_wav(output: Path, duration: int, rate: int) -> None:
 def main() -> int:
     logging.basicConfig(**LOGGING)  # type: ignore[arg-type]
     args = parse_args()
-
     output = resolve_output_path(args.path)
 
     if not args.yes and sys.stdin.isatty():

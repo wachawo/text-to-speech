@@ -50,13 +50,7 @@ After install, three console scripts are on your `$PATH`:
 ```bash
 ttsgen "Hello world"          # synthesize and play (or save with --file)
 echo "..." | ttsplay          # play raw audio bytes from stdin
-ttsrec ~/voice.wav            # record a voice sample from microphone (needs [recorder] extra)
-```
-
-For `ttsrec` install the recorder extra:
-
-```bash
-pip install "text-to-speech[recorder] @ git+https://github.com/wachawo/text-to-speech.git"
+ttsrec ~/voice.wav            # record a voice sample from microphone
 ```
 
 ### Install for development
