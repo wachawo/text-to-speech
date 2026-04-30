@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 TTS CLI Tool - Professional Command Line Interface
 
@@ -14,13 +15,15 @@ Features:
 - Comprehensive error handling
 
 Usage:
-    python cli.py "Hello world"                    # Play audio (default)
-    python cli.py "Hello world" --file             # Save to auto-generated file
-    python cli.py "Hello world" --file output.mp3  # Save to specific file
-    python cli.py -i input.txt                     # Read text from file
-    python cli.py "Hello" --file --play            # Save and play
-    python cli.py "Hello" --engine pyttsx3         # Use offline engine
-    python cli.py "Hello" --format bytesio         # Output as BytesIO (advanced)
+    python tts.py "Hello world"                    # Play audio (default)
+    python tts.py "Hello world" --file             # Save to auto-generated file
+    python tts.py "Hello world" --file output.mp3  # Save to specific file
+    python tts.py -i input.txt                     # Read text from file
+    python tts.py "Hello" --file --play            # Save and play
+    python tts.py "Hello" --engine pyttsx3         # Use offline engine
+    python tts.py "Hello" --format bytesio         # Output as BytesIO (advanced)
+    python tts.py --list                           # List engines and installed models
+    python tts.py --install coquitts               # Install an engine and download models
 
 Author: TTS Library Team
 Version: 1.0.0
@@ -29,6 +32,7 @@ License: MIT
 
 import argparse
 import os
+import shutil
 import sys
 import logging
 import re
@@ -37,16 +41,22 @@ import queue
 import tempfile
 import io
 import wave
+from pathlib import Path
 from typing import Optional, Dict, Any, cast, List, Tuple, IO
 from dotenv import load_dotenv
 
 # Configure logging
-logging.basicConfig(
-    handlers=[logging.StreamHandler(sys.stderr)],
-    level=logging.WARNING,
-    format="%(asctime)s.%(msecs)03d [%(levelname)s]: (%(name)s.%(funcName)s) - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+LOGGING = {
+    "handlers": [
+        logging.StreamHandler(),
+        # RotatingFileHandler(filename=f'{LOGS_DIR}/app.log', maxBytes=1024*1024*10, backupCount=3),
+        # logging.FileHandler(filename=f"{LOGS_DIR}/app.log"),
+    ],
+    "format": "%(asctime)s.%(msecs)03d [%(levelname)s]: (%(name)s.%(funcName)s) %(message)s",
+    "level": logging.INFO,
+    "datefmt": "%Y-%m-%d %H:%M:%S",
+}
+logging.basicConfig(**LOGGING)  # type: ignore
 logger = logging.getLogger(__name__)
 
 try:
@@ -140,6 +150,7 @@ def rec_worker(
     lang: str,
     q: "queue.Queue[QUEUE_ITEM]",
     tmp_suffix: str,
+    tmp_dir: Optional[str] = None,
 ) -> None:
     """Generating audio`s and packing its in row (idx, tmp_path, bytes)."""
     from libs.api import text_to_speech_bytes
@@ -150,7 +161,7 @@ def rec_worker(
         except Exception as e:
             logger.error(f"TTS error on chunk {i}: {e}")
             audio_bytes = b""
-        fd, tmp_path = tempfile.mkstemp(suffix=tmp_suffix)
+        fd, tmp_path = tempfile.mkstemp(suffix=tmp_suffix, dir=tmp_dir)
         os.close(fd)
         try:
             with open(tmp_path, "wb") as f:
@@ -243,6 +254,8 @@ Examples:
   %(prog)s "Hello" -o file,stdout           # Save and output to stdout
   %(prog)s "Hello" --engine pyttsx3         # Use offline engine (espeak)
   %(prog)s "Hello" --language es            # Use Spanish language
+  %(prog)s --list                           # List engines and installed models
+  %(prog)s --install coquitts               # Install an engine and download models
 
 Environment Configuration:
   Create a .env file to set default values:
@@ -263,6 +276,23 @@ Environment Configuration:
         metavar="FILE",
         dest="text_file",
         help="Path to text file to read",
+    )
+    text_group.add_argument(
+        "--list",
+        action="store_true",
+        help="List engines and installed model files, then exit",
+    )
+    text_group.add_argument(
+        "--install",
+        metavar="ENGINE",
+        help="Install an engine (pipertts, silerotts, coquitts, barktts) and exit",
+    )
+
+    # Non-interactive flag — only meaningful with --install
+    parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Skip prompts in --install (accept defaults)",
     )
 
     # Output options
@@ -367,9 +397,71 @@ def to_file(
     return filename
 
 
+ENGINE_MODEL_SOURCES = {
+    "pipertts":  (os.getenv("PIPERTTS_PATH",  ".pipertts"),  ["*.onnx"]),
+    "silerotts": (os.getenv("SILEROTTS_PATH", ".silerotts"), ["**/*.pt", "**/*.jit"]),
+    "coquitts":  (os.getenv("COQUITTS_PATH",  ".coquitts"),  ["tts/*"]),
+    "barktts":   (os.getenv("BARKTTS_PATH",   ".barktts"),   ["**/*.pt"]),
+}
+
+ENGINE_NOTES = {
+    "gtts":    "cloud — no local models",
+    "pyttsx3": "uses system espeak voices",
+}
+
+
+def list_engines_and_models() -> None:
+    """Print all engines, their availability, and installed model files."""
+    from engines import is_engine_available
+    engines_dir = Path(__file__).resolve().parent / "engines"
+    engine_names = sorted(p.stem for p in engines_dir.glob("*.py") if p.name != "__init__.py")
+
+    # Silence engine-loader probe warnings — we already report unavailable status below.
+    engines_logger = logging.getLogger("engines")
+    prev_level = engines_logger.level
+    engines_logger.setLevel(logging.ERROR)
+
+    print("Engines:")
+    for name in engine_names:
+        available = is_engine_available(name)
+        marker = "✓" if available else "✗"
+        status = "available" if available else "unavailable (deps missing)"
+        print(f"  {marker} {name:<10} {status}")
+
+        if name in ENGINE_NOTES:
+            print(f"      ({ENGINE_NOTES[name]})")
+            continue
+
+        if name in ENGINE_MODEL_SOURCES:
+            model_dir, patterns = ENGINE_MODEL_SOURCES[name]
+            d = Path(model_dir)
+            if not d.exists():
+                print(f"      (model dir {d}/ not found — run `tts --install {name}`)")
+                continue
+            files: list[Path] = []
+            for pat in patterns:
+                files.extend(sorted(d.glob(pat)))
+            if not files:
+                print(f"      (no models in {d}/)")
+            else:
+                for f in files:
+                    rel = f.relative_to(d) if f.is_relative_to(d) else f
+                    print(f"      {d}/{rel}")
+
+    engines_logger.setLevel(prev_level)
+
+
 def main() -> int:
     parser = parse_arguments()
     args = parser.parse_args()
+
+    if getattr(args, "list", False):
+        list_engines_and_models()
+        return 0
+
+    if getattr(args, "install", None):
+        from install import run as run_installer
+        return run_installer(args.install, non_interactive=args.non_interactive)
 
     try:
         setup_logging(args.verbose, args.quiet)
@@ -460,6 +552,8 @@ def main() -> int:
 
         ext = "mp3" if engine == "gtts" else "wav"
         tmp_suffix = f".{ext}"
+        tmp_dir = args.audio_dir or config["audio_directory"]
+
 
         out_is_stdout = "stdout" in output_formats
         out_is_file = "file" in output_formats
@@ -469,7 +563,7 @@ def main() -> int:
 
         rec = threading.Thread(
             target=rec_worker,
-            args=(chunks, engine, language, q, tmp_suffix),
+            args=(chunks, engine, language, q, tmp_suffix, tmp_dir),
             daemon=True,
         )
         play = threading.Thread(
@@ -491,8 +585,13 @@ def main() -> int:
                     ext2 = f".{ext}"
                 for i, p in enumerate(collected_paths, start=1):
                     dst = f"{base}_{i:03d}{ext2}"
-                    os.replace(p, dst)
-                    saved_files.append(dst)
+                    try:
+                        shutil.copy2(p, dst)  # copy temp file to destination
+                        os.unlink(p)           # delete original temp file
+                        saved_files.append(dst)
+                    except Exception as e:
+                        logger.error(f"Failed to save chunk {i} to {dst}: {e}")
+
             else:
                 out_dir = (
                     output_filename
@@ -503,8 +602,13 @@ def main() -> int:
                 for i, p in enumerate(collected_paths, start=1):
                     fname = generate_timestamp_filename(f"part_{i:03d}_", ext)
                     dst = os.path.join(out_dir, fname)
-                    os.replace(p, dst)
-                    saved_files.append(dst)
+                    try:
+                        shutil.copy2(p, dst)
+                        os.unlink(p)
+                        saved_files.append(dst)
+                    except Exception as e:
+                        logger.error(f"Failed to save chunk {i} to {dst}: {e}")
+
 
             if "stdout" not in output_formats:
                 for fpath in saved_files:

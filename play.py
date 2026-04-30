@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Audio Player from STDIN
 
@@ -6,7 +7,7 @@ Reads audio data from stdin and plays it.
 Useful for piping audio from other commands.
 
 Usage:
-    python cli.py "Hello" --format bytesio | python play.py
+    python tts.py "Hello" --format bytesio | python play.py
     cat audio.wav | python play.py
 """
 
@@ -14,8 +15,17 @@ import sys
 import os
 import logging
 
-# Setup logging
-logging.basicConfig(level=logging.WARNING)
+LOGGING = {
+    "handlers": [
+        logging.StreamHandler(),
+        # RotatingFileHandler(filename=f'{LOGS_DIR}/app.log', maxBytes=1024*1024*10, backupCount=3),
+        # logging.FileHandler(filename=f"{LOGS_DIR}/app.log"),
+    ],
+    "format": "%(asctime)s.%(msecs)03d [%(levelname)s]: (%(name)s.%(funcName)s) %(message)s",
+    "level": logging.INFO,
+    "datefmt": "%Y-%m-%d %H:%M:%S",
+}
+logging.basicConfig(**LOGGING)  # type: ignore
 logger = logging.getLogger(__name__)
 
 # Add libs to path
@@ -35,7 +45,7 @@ def main():
         if sys.stdin.isatty():
             print("Error: No input data", file=sys.stderr)
             print(
-                "Usage: python cli.py 'text' --format bytesio | python play.py",
+                "Usage: python tts.py 'text' --format bytesio | python play.py",
                 file=sys.stderr,
             )
             print("   or: cat audio.wav | python play.py", file=sys.stderr)
