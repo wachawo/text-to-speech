@@ -41,17 +41,9 @@ pip install git+https://github.com/wachawo/text-to-speech.git
 # Specific tag, branch, or commit
 pip install git+https://github.com/wachawo/text-to-speech.git@v0.1.0
 pip install git+https://github.com/wachawo/text-to-speech.git@main
-
-# With optional engines / extras
-pip install "text-to-speech[piper]  @ git+https://github.com/wachawo/text-to-speech.git"
-pip install "text-to-speech[silero] @ git+https://github.com/wachawo/text-to-speech.git"
-pip install "text-to-speech[coqui]  @ git+https://github.com/wachawo/text-to-speech.git"
-pip install "text-to-speech[bark]   @ git+https://github.com/wachawo/text-to-speech.git"
-pip install "text-to-speech[api]    @ git+https://github.com/wachawo/text-to-speech.git"
-
-# Combine extras
-pip install "text-to-speech[piper,silero,api] @ git+https://github.com/wachawo/text-to-speech.git"
 ```
+
+That installs the CLI plus the lightweight engines (`gtts`, `pyttsx3`). For heavier engines and their model files, use `tts --install <engine>` after the base install (see [Optional engine model downloads](#optional-engine-model-downloads) below).
 
 After install, two console scripts are on your `$PATH`:
 

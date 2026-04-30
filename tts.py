@@ -552,11 +552,17 @@ def main() -> int:
 
         ext = "mp3" if engine == "gtts" else "wav"
         tmp_suffix = f".{ext}"
-        tmp_dir = args.audio_dir or config["audio_directory"]
-
 
         out_is_stdout = "stdout" in output_formats
         out_is_file = "file" in output_formats
+
+        # Co-locate temp chunks with the final file only when actually saving to disk
+        # (avoids cross-drive moves). Otherwise use system /tmp.
+        if out_is_file:
+            tmp_dir = args.audio_dir or config["audio_directory"]
+            ensure_audio_directory(tmp_dir)
+        else:
+            tmp_dir = None
 
         q: "queue.Queue[QUEUE_ITEM]" = queue.Queue(maxsize=2)
         collected_paths: List[str] = []
