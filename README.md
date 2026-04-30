@@ -132,15 +132,40 @@ ttsgen "Hello world" --output file,stdout
 
 # List engines and installed models
 ttsgen --list
+
+# coqui-tts with explicit model + voice sample (no .env needed)
+ttsgen "Hello world" --engine coquitts \
+  --coqui-model tts_models/en/ljspeech/tacotron2-DDC \
+  --coqui-sample samples/Maria.wav
+
+# Same via env vars (handy in scripts and CI)
+COQUITTS_MODEL=tts_models/en/ljspeech/tacotron2-DDC \
+COQUITTS_SAMPLE=samples/Maria.wav \
+ttsgen "Hello world" --engine coquitts
 ```
 
-Configuration defaults can be set in `.env` (see [`env.example`](env.example)):
+Without a local `.env` (e.g. after `pip install git+...`), pass engine config via flags:
+- `--engine NAME` — pick an engine (`gtts`, `pyttsx3`, `pipertts`, `silerotts`, `coquitts`, `barktts`).
+- `--language XX` — 2-letter language code.
+- `--coqui-model MODEL`, `--coqui-sample PATH` — override `COQUITTS_MODEL` / `COQUITTS_SAMPLE` for one run. Same flags work with `ttsgen --install coquitts`.
 
-```
-TTS_ENGINE=gtts
+### Configuration priority
+
+`ttsgen` reads settings from multiple sources, **highest priority first**:
+
+1. **Process env / CLI flags** — `--coqui-model`, `--coqui-sample`, or `COQUITTS_MODEL=... ttsgen ...` from the shell.
+2. **`./ttsgen.conf`** — project-local override (next to where you run `ttsgen`).
+3. **`~/.config/ttsgen.conf`** — user-wide defaults. Auto-created with commented examples on first run.
+4. **`.env`** — legacy file in the current directory (kept for backward compatibility).
+5. **Built-in defaults** — `TTS_ENGINE=gtts`, `TTS_LANGUAGE=en`, etc.
+
+All config files use the same `KEY=VALUE` format. Available keys: `TTS_ENGINE`, `TTS_LANGUAGE`, `AUDIO_DIRECTORY`, `COQUITTS_PATH`, `COQUITTS_MODEL`, `COQUITTS_SAMPLE`, `PIPERTTS_PATH`, `SILEROTTS_PATH`, `BARKTTS_PATH`. Example:
+
+```ini
+TTS_ENGINE=coquitts
 TTS_LANGUAGE=en
-DEFAULT_OUTPUT_FORMAT=play
-AUDIO_DIRECTORY=audio
+COQUITTS_MODEL=tts_models/en/ljspeech/tacotron2-DDC
+COQUITTS_SAMPLE=samples/Maria.wav
 ```
 
 ### Python API
@@ -257,7 +282,8 @@ text-to-speech/
 │   └── BARKTTS.md
 ├── samples/                  # Voice samples (used by coquitts)
 ├── test_tts.py
-├── env.example
+├── env.example               # `.env` template
+├── ttsgen.conf.example       # `./ttsgen.conf` / `~/.config/ttsgen.conf` template
 ├── requirements.txt          # Legacy
 ├── requirements-dev.txt      # Legacy
 ├── REVIEW.md                 # Code review

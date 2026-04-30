@@ -40,11 +40,9 @@ else:
 
 logger = logging.getLogger(__name__)
 
-COQUITTS_PATH = os.getenv("COQUITTS_PATH", ".coquitts")
-COQUITTS_MODEL = os.getenv(
-    "COQUITTS_MODEL", "tts_models/multilingual/multi-dataset/xtts_v2"
-)
-COQUITTS_SAMPLE = os.getenv("COQUITTS_SAMPLE", "samples/1.wav")
+DEFAULT_COQUITTS_PATH   = ".coquitts"
+DEFAULT_COQUITTS_MODEL  = "tts_models/multilingual/multi-dataset/xtts_v2"
+DEFAULT_COQUITTS_SAMPLE = "samples/1.wav"
 
 # Try to import Coqui TTS
 try:
@@ -62,8 +60,9 @@ def is_available() -> bool:
 
 
 def get_models_directory() -> str:
-    if COQUITTS_PATH:
-        return os.path.abspath(os.path.expanduser(COQUITTS_PATH))
+    coquitts_path = os.getenv("COQUITTS_PATH", DEFAULT_COQUITTS_PATH)
+    if coquitts_path:
+        return os.path.abspath(os.path.expanduser(coquitts_path))
     local_dir = os.path.join(os.getcwd(), ".coquitts")
     if os.path.isdir(local_dir):
         return os.path.abspath(local_dir)
@@ -90,11 +89,15 @@ def generate(text: str, config: dict) -> bytes:
             "Coqui TTS not available. Install with: pip install TTS\n"
             "See docs/COQUITTS.md for setup instructions."
         )
-    if not os.path.exists(COQUITTS_SAMPLE):
-        raise TTSException(f"Sample WAV not found: {COQUITTS_SAMPLE}")
+    sample_wav = os.getenv("COQUITTS_SAMPLE", DEFAULT_COQUITTS_SAMPLE)
+    if not os.path.exists(sample_wav):
+        raise TTSException(
+            f"Sample WAV not found: {sample_wav}\n"
+            f"Set COQUITTS_SAMPLE in .env or pass `--coqui-sample <path>` on the command line."
+        )
     try:
         language = config.get("language", "en")
-        model_name = COQUITTS_MODEL
+        model_name = os.getenv("COQUITTS_MODEL", DEFAULT_COQUITTS_MODEL)
         # Set custom models directory if configured
         models_dir = get_models_directory()
         # Coqui TTS uses TTS_HOME for model cache
@@ -122,7 +125,7 @@ def generate(text: str, config: dict) -> bytes:
                     text=text,
                     file_path=temp_filename,
                     language=language,
-                    speaker_wav=COQUITTS_SAMPLE,
+                    speaker_wav=sample_wav,
                 )
             else:
                 tts.tts_to_file(text=text, file_path=temp_filename)

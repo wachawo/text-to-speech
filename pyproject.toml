@@ -50,6 +50,8 @@ coqui = [
     # the abandoned upstream. Supports Python 3.9+ including 3.12.
     "coqui-tts",
     "torch>=2.0",
+    # `TTS.tts.models.xtts` does `import torchaudio` at module load.
+    "torchaudio",
     # transformers 5.x removed `isin_mps_friendly`; coqui-tts < 0.28 still imports it.
     "transformers>=4.46,<5.0",
 ]

@@ -96,9 +96,10 @@ def install(non_interactive: bool = False) -> int:
         check=False,
         capture_output=True,
     )
-    # torch is not declared as a coqui-tts dependency (env is expected to provide it).
+    # torch + torchaudio are not declared as coqui-tts dependencies (env is expected to
+    # provide them). xtts.py at module load does `import torchaudio`, so it must be present.
     # transformers 5.x removed `isin_mps_friendly`; coqui-tts < 0.28 still imports it.
-    pip_install(["coqui-tts", "torch>=2.0", "transformers>=4.46,<5.0"])
+    pip_install(["coqui-tts", "torch>=2.0", "torchaudio", "transformers>=4.46,<5.0"])
 
     # Resolve model from env (COQUITTS_MODEL) — primary source of truth.
     env_model = os.environ.get("COQUITTS_MODEL", "").strip()

@@ -11,17 +11,12 @@ import wave
 import logging
 import os
 
-# Load environment variables from .env file
+# Centralised config loader handles ./ttsgen.conf > ~/.config/ttsgen.conf > .env > defaults
 try:
-    from dotenv import load_dotenv
-
-    # Get project root and load .env
-    _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    _env_file = os.path.join(_project_root, ".env")
-    if os.path.exists(_env_file):
-        load_dotenv(_env_file)
+    from libs.config import load_config
+    load_config()
 except ImportError:
-    pass  # dotenv not installed, skip
+    pass  # libs.config or dotenv not available — engine will fall back to env / defaults.
 
 logger = logging.getLogger(__name__)
 

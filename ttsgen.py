@@ -342,6 +342,19 @@ Environment Configuration:
         help="Directory to save audio files (default: audio/)",
     )
 
+    # Engine-specific options (override .env values for one run)
+    parser.add_argument(
+        "--coqui-model",
+        metavar="MODEL",
+        help='coqui-tts model identifier (e.g. "tts_models/multilingual/multi-dataset/xtts_v2"). '
+             "Sets COQUITTS_MODEL for this run.",
+    )
+    parser.add_argument(
+        "--coqui-sample",
+        metavar="PATH",
+        help="Path to voice sample WAV used by xtts_v2 voice cloning. Sets COQUITTS_SAMPLE for this run.",
+    )
+
     # Verbosity options
     parser.add_argument(
         "-v", "--verbose", action="store_true", help="Enable verbose output"
@@ -455,6 +468,18 @@ def list_engines_and_models() -> None:
 def main() -> int:
     parser = parse_arguments()
     args = parser.parse_args()
+
+    # Engine-specific CLI overrides → push into env so engine/installer pick them up.
+    # CLI flags take top priority over config files.
+    if getattr(args, "coqui_model", None):
+        os.environ["COQUITTS_MODEL"] = args.coqui_model
+    if getattr(args, "coqui_sample", None):
+        os.environ["COQUITTS_SAMPLE"] = args.coqui_sample
+
+    # Load config files (./ttsgen.conf > ~/.config/ttsgen.conf > .env). Existing env
+    # (set by shell or by the CLI flags above) is preserved — files only fill gaps.
+    from libs.config import load_config
+    load_config()
 
     if getattr(args, "list", False):
         list_engines_and_models()

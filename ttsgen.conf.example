@@ -1,0 +1,67 @@
+# ttsgen.conf — KEY=VALUE template
+#
+# Copy to one of:
+#   ./ttsgen.conf            (project-local, highest file priority)
+#   ~/.config/ttsgen.conf    (user-wide; auto-created with defaults on first run)
+#
+# Lookup priority (highest wins):
+#   1. Process env (shell vars, CLI flags like --coqui-model)
+#   2. ./ttsgen.conf
+#   3. ~/.config/ttsgen.conf
+#   4. .env (legacy)
+#   5. Built-in defaults baked into engine modules
+
+
+# Default engine and language used when not specified on the command line.
+# Engines: gtts, pyttsx3, pipertts, silerotts, coquitts, barktts.
+TTS_ENGINE=gtts
+TTS_LANGUAGE=en
+
+
+# Default CLI output format(s). One or more of: play, file, stdout (comma-separated).
+DEFAULT_OUTPUT_FORMAT=play
+
+
+# Where saved audio goes for `--file` without an explicit path.
+AUDIO_DIRECTORY=audio
+
+
+# Optional filename prefix; empty = timestamp-only.
+FILENAME_PREFIX=
+
+
+# pyttsx3 (espeak) speech rate and volume — used only by the pyttsx3 engine.
+AUDIO_RATE=150
+AUDIO_VOLUME=0.9
+
+
+# Piper TTS — model directory (.onnx files). Default: project-local .pipertts/.
+PIPERTTS_PATH=.pipertts
+
+
+# Silero TTS — model directory. Default: project-local .silerotts/.
+# Set to ~/.cache/torch/hub for the standard torch.hub layout.
+SILEROTTS_PATH=.silerotts
+
+
+# Coqui TTS configuration.
+COQUITTS_PATH=.coquitts
+# Full Coqui model identifier. Used at runtime AND by `ttsgen --install coquitts`.
+# Common choices:
+#   tts_models/multilingual/multi-dataset/xtts_v2          (best quality, voice cloning, ~1.8 GB, CPML license)
+#   tts_models/en/ljspeech/tacotron2-DDC                   (English, fast, ~200 MB)
+COQUITTS_MODEL=tts_models/multilingual/multi-dataset/xtts_v2
+# Voice sample WAV — required by xtts_v2 voice cloning at synthesis time.
+COQUITTS_SAMPLE=samples/1.wav
+
+
+# Bark TTS — model cache directory (large: ~10–15 GB).
+BARKTTS_PATH=.barktts
+
+
+# HTTP API server (Flask) — used by api/app1.py and docker-compose.yml.
+FLASK_HOST=0.0.0.0
+FLASK_PORT=5000
+FLASK_DEBUG=False
+SECRET_KEY=SuP3rS3cr3tK3y!
+TZ=America/New_York

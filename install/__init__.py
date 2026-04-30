@@ -6,8 +6,8 @@ import importlib
 import sys
 
 try:
-    from dotenv import load_dotenv, find_dotenv
-    load_dotenv(find_dotenv())
+    from libs.config import load_config
+    load_config()
 except ImportError:
     pass
 
