@@ -42,7 +42,9 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_COQUITTS_PATH   = ".coquitts"
 DEFAULT_COQUITTS_MODEL  = "tts_models/multilingual/multi-dataset/xtts_v2"
-DEFAULT_COQUITTS_SAMPLE = "samples/1.wav"
+# Single source of truth shared with `ttsrec`. A fresh `ttsrec` writes here,
+# `ttsgen --engine coquitts` reads from here. Override via COQUITTS_SAMPLE.
+DEFAULT_COQUITTS_SAMPLE = str(os.path.expanduser("~/.config/ttsgen.wav"))
 
 # Try to import Coqui TTS
 try:
@@ -89,11 +91,19 @@ def generate(text: str, config: dict) -> bytes:
             "Coqui TTS not available. Install with: pip install TTS\n"
             "See docs/COQUITTS.md for setup instructions."
         )
-    sample_wav = os.getenv("COQUITTS_SAMPLE", DEFAULT_COQUITTS_SAMPLE)
+    sample_wav = os.path.expanduser(os.getenv("COQUITTS_SAMPLE", DEFAULT_COQUITTS_SAMPLE))
     if not os.path.exists(sample_wav):
         raise TTSException(
-            f"Sample WAV not found: {sample_wav}\n"
-            f"Set COQUITTS_SAMPLE in .env or pass `--coqui-sample <path>` on the command line."
+            f"Voice sample WAV not found: {sample_wav}\n"
+            f"\n"
+            f"xtts_v2 needs a 5-10s recording of a target voice. Create one with:\n"
+            f"\n"
+            f"    ttsrec                           # record into the configured path (recommended)\n"
+            f"    ttsrec {sample_wav}              # record into this exact path\n"
+            f"    ttsrec /path/to/your_voice.wav   # record into a custom path\n"
+            f"\n"
+            f"Or point at an existing recording:\n"
+            f"    ttsgen \"...\" --engine coquitts --coqui-sample /path/to/voice.wav"
         )
     try:
         language = config.get("language", "en")

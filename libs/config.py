@@ -48,7 +48,7 @@ DEFAULT_USER_CONFIG = """\
 # coqui-tts configuration
 # COQUITTS_PATH=.coquitts
 # COQUITTS_MODEL=tts_models/multilingual/multi-dataset/xtts_v2
-# COQUITTS_SAMPLE=samples/1.wav
+# COQUITTS_SAMPLE=~/.config/ttsgen.wav
 
 # Piper / Silero / Bark model directories (defaults are project-local dotfolders)
 # PIPERTTS_PATH=.pipertts

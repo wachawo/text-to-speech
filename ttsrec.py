@@ -31,7 +31,8 @@ LOGGING = {
 
 DEFAULT_DURATION = 8     # seconds
 DEFAULT_RATE     = 22050  # Hz — matches xtts_v2 voice cloning expectations
-DEFAULT_FALLBACK = Path.home() / ".local" / "share" / "ttsgen" / "ttsgen.wav"
+# Single source of truth shared with engines/coquitts.py:DEFAULT_COQUITTS_SAMPLE.
+DEFAULT_FALLBACK = Path.home() / ".config" / "ttsgen.wav"
 
 
 def parse_args() -> argparse.Namespace:
@@ -135,6 +136,15 @@ def main() -> int:
         return 1
 
     print(f"\nSaved {output.stat().st_size // 1024} KB to {output}")
+
+    # Persist this path as COQUITTS_SAMPLE so `ttsgen --engine coquitts` finds it.
+    try:
+        from libs.config import persist_config_value
+        persist_config_value("COQUITTS_SAMPLE", str(output))
+        print(f"COQUITTS_SAMPLE={output} written to ~/.config/ttsgen.conf")
+    except Exception as exc:
+        logger.warning(f"Could not persist COQUITTS_SAMPLE: {type(exc).__name__}: {exc}")
+
     return 0
 
 

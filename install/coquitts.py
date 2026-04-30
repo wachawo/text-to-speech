@@ -110,10 +110,11 @@ def install(non_interactive: bool = False) -> int:
     os.environ["TTS_HOME"] = str(target)
 
     # Where to store the voice sample WAV (xtts_v2 needs it at synthesis time).
+    # Default matches ttsrec.DEFAULT_FALLBACK and engines/coquitts.DEFAULT_COQUITTS_SAMPLE.
     resolve_file_path(
         label="voice sample WAV (COQUITTS_SAMPLE, used by xtts_v2)",
         env_key="COQUITTS_SAMPLE",
-        default_path=Path.home() / ".local" / "share" / "ttsgen" / "ttsgen.wav",
+        default_path=Path.home() / ".config" / "ttsgen.wav",
         project_path=Path.cwd() / "ttsgen.wav",
         non_interactive=non_interactive,
     )
