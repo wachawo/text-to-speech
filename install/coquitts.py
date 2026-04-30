@@ -11,7 +11,6 @@ PyTorch 2.6+ workaround for xtts_v2 checkpoints (add_safe_globals) still applies
 
 import logging
 import os
-import shutil
 import subprocess
 import sys
 import traceback
@@ -90,15 +89,6 @@ def install(non_interactive: bool = False) -> int:
         return 0
 
     info("\nInstalling coqui-tts (Idiap fork — actively maintained, supports Python 3.12+)...")
-
-    # coqui-tts ships its own `tts` console script that would overwrite ours.
-    # Snapshot the script bytes so we can restore after pip install.
-    tts_script = shutil.which("tts")
-    saved_script: bytes = b""
-    if tts_script and os.path.exists(tts_script):
-        with open(tts_script, "rb") as f:
-            saved_script = f.read()
-
     # Original `coqpit` (0.x) conflicts with the fork's `coqpit-config` package.
     # If the original is present, remove it first so coqui-tts installs cleanly.
     subprocess.run(
@@ -106,18 +96,9 @@ def install(non_interactive: bool = False) -> int:
         check=False,
         capture_output=True,
     )
+    # torch is not declared as a coqui-tts dependency (env is expected to provide it).
     # transformers 5.x removed `isin_mps_friendly`; coqui-tts < 0.28 still imports it.
-    pip_install(["coqui-tts", "transformers>=4.46,<5.0"])
-
-    # Restore our `tts` script if coqui-tts overwrote it.
-    if saved_script and tts_script:
-        with open(tts_script, "rb") as f:
-            current = f.read()
-        if current != saved_script:
-            info("Restoring our `tts` console script (coqui-tts overrode it)...")
-            with open(tts_script, "wb") as f:
-                f.write(saved_script)
-            os.chmod(tts_script, 0o755)
+    pip_install(["coqui-tts", "torch>=2.0", "transformers>=4.46,<5.0"])
 
     # Resolve model from env (COQUITTS_MODEL) — primary source of truth.
     env_model = os.environ.get("COQUITTS_MODEL", "").strip()
@@ -174,8 +155,8 @@ def install(non_interactive: bool = False) -> int:
 
     success("\nInstallation complete!")
     info("Usage:")
-    print('  tts "Hello world" --engine coquitts')
-    print('  tts "Привет мир" --engine coquitts --language ru')
+    print('  ttsgen "Hello world" --engine coquitts')
+    print('  ttsgen "Привет мир" --engine coquitts --language ru')
     return 0
 
 

@@ -7,8 +7,8 @@ Reads audio data from stdin and plays it.
 Useful for piping audio from other commands.
 
 Usage:
-    python tts.py "Hello" --format bytesio | python play.py
-    cat audio.wav | python play.py
+    python ttsgen.py "Hello" --format bytesio | python ttsplay.py
+    cat audio.wav | python ttsplay.py
 """
 
 import sys
@@ -45,10 +45,10 @@ def main():
         if sys.stdin.isatty():
             print("Error: No input data", file=sys.stderr)
             print(
-                "Usage: python tts.py 'text' --format bytesio | python play.py",
+                "Usage: python ttsgen.py 'text' --format bytesio | python ttsplay.py",
                 file=sys.stderr,
             )
-            print("   or: cat audio.wav | python play.py", file=sys.stderr)
+            print("   or: cat audio.wav | python ttsplay.py", file=sys.stderr)
             return 1
 
         # Read binary data from stdin

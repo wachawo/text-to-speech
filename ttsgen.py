@@ -15,15 +15,15 @@ Features:
 - Comprehensive error handling
 
 Usage:
-    python tts.py "Hello world"                    # Play audio (default)
-    python tts.py "Hello world" --file             # Save to auto-generated file
-    python tts.py "Hello world" --file output.mp3  # Save to specific file
-    python tts.py -i input.txt                     # Read text from file
-    python tts.py "Hello" --file --play            # Save and play
-    python tts.py "Hello" --engine pyttsx3         # Use offline engine
-    python tts.py "Hello" --format bytesio         # Output as BytesIO (advanced)
-    python tts.py --list                           # List engines and installed models
-    python tts.py --install coquitts               # Install an engine and download models
+    python ttsgen.py "Hello world"                    # Play audio (default)
+    python ttsgen.py "Hello world" --file             # Save to auto-generated file
+    python ttsgen.py "Hello world" --file output.mp3  # Save to specific file
+    python ttsgen.py -i input.txt                     # Read text from file
+    python ttsgen.py "Hello" --file --play            # Save and play
+    python ttsgen.py "Hello" --engine pyttsx3         # Use offline engine
+    python ttsgen.py "Hello" --format bytesio         # Output as BytesIO (advanced)
+    python ttsgen.py --list                           # List engines and installed models
+    python ttsgen.py --install coquitts               # Install an engine and download models
 
 Author: TTS Library Team
 Version: 1.0.0
@@ -437,7 +437,7 @@ def list_engines_and_models() -> None:
             model_dir, patterns = ENGINE_MODEL_SOURCES[name]
             d = Path(model_dir)
             if not d.exists():
-                print(f"      (model dir {d}/ not found — run `tts --install {name}`)")
+                print(f"      (model dir {d}/ not found — run `ttsgen --install {name}`)")
                 continue
             files: list[Path] = []
             for pat in patterns:

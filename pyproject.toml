@@ -87,11 +87,11 @@ Issues        = "https://github.com/wachawo/text-to-speech/issues"
 Documentation = "https://github.com/wachawo/text-to-speech/tree/main/docs"
 
 [project.scripts]
-tts      = "tts:main"
-tts-play = "play:main"
+ttsgen  = "ttsgen:main"
+ttsplay = "ttsplay:main"
 
 [tool.setuptools]
-py-modules = ["tts", "play"]
+py-modules = ["ttsgen", "ttsplay"]
 
 [tool.setuptools.packages.find]
 where   = ["."]

@@ -43,13 +43,13 @@ pip install git+https://github.com/wachawo/text-to-speech.git@v0.2.0
 pip install git+https://github.com/wachawo/text-to-speech.git@main
 ```
 
-That installs the CLI plus the lightweight engines (`gtts`, `pyttsx3`). For heavier engines and their model files, use `tts --install <engine>` after the base install (see [Optional engine model downloads](#optional-engine-model-downloads) below).
+That installs the CLI plus the lightweight engines (`gtts`, `pyttsx3`). For heavier engines and their model files, use `ttsgen --install <engine>` after the base install (see [Optional engine model downloads](#optional-engine-model-downloads) below).
 
 After install, two console scripts are on your `$PATH`:
 
 ```bash
-tts "Hello world"
-echo "..." | tts-play
+ttsgen "Hello world"
+echo "..." | ttsplay
 ```
 
 ### Install for development
@@ -66,7 +66,7 @@ pip install -e ".[dev]"
 # Remove the package (keeps optional engine extras like torch/TTS/bark unless you remove them too)
 pip uninstall text-to-speech
 
-# Also remove engine deps installed via `tts --install`
+# Also remove engine deps installed via `ttsgen --install`
 pip uninstall piper-tts                       # if pipertts was installed
 pip uninstall torch torchaudio omegaconf      # if silerotts was installed
 pip uninstall coqui-tts                       # if coquitts was installed
@@ -83,20 +83,20 @@ rm -rf ~/.cache/suno/bark_v0/                              # bark
 ```bash
 sudo apt install espeak espeak-data libespeak1 python3-pip
 pip install -r requirements.txt
-python tts.py "Hello world"
+python ttsgen.py "Hello world"
 ```
 
 ### Optional engine model downloads
 
-Heavier engines need model files. The `tts --install` command downloads them into per-engine dotfolders (`.pipertts/`, `.silerotts/`, `.coquitts/`, `.barktts/`):
+Heavier engines need model files. The `ttsgen --install` command downloads them into per-engine dotfolders (`.pipertts/`, `.silerotts/`, `.coquitts/`, `.barktts/`):
 
 ```bash
-tts --install pipertts        # interactive
-tts --install silerotts
-tts --install coquitts
-tts --install barktts
+ttsgen --install pipertts        # interactive
+ttsgen --install silerotts
+ttsgen --install coquitts
+ttsgen --install barktts
 
-tts --install pipertts --non-interactive   # accept defaults, no prompts
+ttsgen --install pipertts --non-interactive   # accept defaults, no prompts
 ```
 
 Per-engine guides: [`docs/PIPERTTS.md`](docs/PIPERTTS.md), [`docs/SILEROTTS.md`](docs/SILEROTTS.md), [`docs/COQUITTS.md`](docs/COQUITTS.md), [`docs/BARKTTS.md`](docs/BARKTTS.md).
@@ -107,31 +107,31 @@ Per-engine guides: [`docs/PIPERTTS.md`](docs/PIPERTTS.md), [`docs/SILEROTTS.md`]
 
 ```bash
 # Play (default)
-tts "Hello world"
+ttsgen "Hello world"
 
 # Pick an engine / language
-tts "Hello world"   --engine pyttsx3
-tts "Hola amigo!"   --language es
-tts "Привет"        --engine silerotts --language ru
+ttsgen "Hello world"   --engine pyttsx3
+ttsgen "Hola amigo!"   --language es
+ttsgen "Привет"        --engine silerotts --language ru
 
 # Save to file (auto-named timestamp or explicit)
-tts "Hello world" --file
-tts "Hello world" --file output.mp3
-tts "Hello world" --file audio/
+ttsgen "Hello world" --file
+ttsgen "Hello world" --file output.mp3
+ttsgen "Hello world" --file audio/
 
 # Read from a text file
-tts -i input.txt
-tts -i input.txt --file output.mp3
+ttsgen -i input.txt
+ttsgen -i input.txt --file output.mp3
 
 # Stream over a pipe
-tts "Hello world" --stdout | tts-play
+ttsgen "Hello world" --stdout | ttsplay
 
 # Multi-output in one pass
-tts "Hello world" --output play,file
-tts "Hello world" --output file,stdout
+ttsgen "Hello world" --output play,file
+ttsgen "Hello world" --output file,stdout
 
 # List engines and installed models
-tts --list
+ttsgen --list
 ```
 
 Configuration defaults can be set in `.env` (see [`env.example`](env.example)):
@@ -175,7 +175,7 @@ curl http://localhost:5000/api/engines
 curl -o out.mp3 "http://localhost:5000/api/tts?text=Hello%20world&engine=gtts"
 
 # POST
-curl -X POST http://localhost:5000/api/tts \
+curl -X POST http://localhost:5000/api/ttsgen \
   -H "Content-Type: application/json" \
   -d '{"text":"Привет мир","engine":"gtts","language":"ru"}' \
   -o ru.mp3
@@ -210,7 +210,7 @@ def generate(text: str, config: dict) -> bytes:
 Then:
 
 ```bash
-tts "Hello" --engine myengine
+ttsgen "Hello" --engine myengine
 ```
 
 Full guide: [`docs/ENGINES.md`](docs/ENGINES.md).
@@ -219,8 +219,8 @@ Full guide: [`docs/ENGINES.md`](docs/ENGINES.md).
 
 ```
 text-to-speech/
-├── tts.py                    # CLI entry-point (`tts` command)
-├── play.py                   # stdin player (`tts-play` command)
+├── ttsgen.py                    # CLI entry-point (`ttsgen` command)
+├── ttsplay.py                   # stdin player (`ttsplay` command)
 ├── pyproject.toml            # Package config and dependencies
 ├── docker-compose.yml        # tts_api service definition
 ├── engines/                  # Pluggable TTS engines
@@ -242,7 +242,7 @@ text-to-speech/
 │   ├── gu.py
 │   ├── Dockerfile
 │   └── requirements.txt
-├── install/                  # Engine installers (`tts --install <engine>`)
+├── install/                  # Engine installers (`ttsgen --install <engine>`)
 │   ├── __init__.py           #   Dispatcher
 │   ├── common.py             #   pip / download / prompt helpers
 │   ├── pipertts.py

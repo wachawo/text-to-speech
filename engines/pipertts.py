@@ -137,7 +137,7 @@ def get_download_instructions(language: str) -> str:
     return (
         f"Piper voice model not found for language '{language}'.\n\n"
         f"Option 1 - Use installer (recommended):\n"
-        f"   tts --install pipertts\n\n"
+        f"   ttsgen --install pipertts\n\n"
         f"Option 2 - Manual download with wget:\n"
         f"   mkdir -p {voice_dir}\n"
         f"   wget -P {voice_dir} {base_url}/{model_path}/{model_name}.onnx\n"

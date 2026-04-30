@@ -91,8 +91,8 @@ def install(non_interactive: bool = False) -> int:
     success("\nInstallation complete!")
     info(f"Models in: {target}")
     info("Usage:")
-    print('  tts "Hello world" --engine pipertts')
-    print('  tts "Привет мир" --engine pipertts --language ru')
+    print('  ttsgen "Hello world" --engine pipertts')
+    print('  ttsgen "Привет мир" --engine pipertts --language ru')
     return 0
 
 

@@ -78,7 +78,7 @@ python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
 
 ```bash
 # Run installation script
-tts --install coquitts
+ttsgen --install coquitts
 ```
 
 ## Models Storage
@@ -150,16 +150,16 @@ tts_models/multilingual/multi-dataset/xtts_v2
 
 ```bash
 # English (will download model on first use)
-python tts.py "Hello world" --engine coquitts
+python ttsgen.py "Hello world" --engine coquitts
 
 # Russian
-python tts.py "Привет мир" --engine coquitts --language ru
+python ttsgen.py "Привет мир" --engine coquitts --language ru
 
 # Save to file
-python tts.py "Hello" --engine coquitts --file output.wav
+python ttsgen.py "Hello" --engine coquitts --file output.wav
 
 # Play and save
-python tts.py "Hello" --engine coquitts --file output.wav --play
+python ttsgen.py "Hello" --engine coquitts --file output.wav --play
 ```
 
 ### First Run
@@ -188,12 +188,12 @@ from TTS.api import TTS
 
 # Download multilingual model
 print("Downloading multilingual model...")
-tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2")
+ttsgen = TTS("tts_models/multilingual/multi-dataset/xtts_v2")
 print("Download complete!")
 
 # Download English model
 print("Downloading English model...")
-tts = TTS("tts_models/en/ljspeech/tacotron2-DDC")
+ttsgen = TTS("tts_models/en/ljspeech/tacotron2-DDC")
 print("Download complete!")
 EOF
 ```

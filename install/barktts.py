@@ -120,9 +120,9 @@ def install(non_interactive: bool = False) -> int:
 
     success("\nInstallation complete!")
     info("Usage:")
-    print('  tts "Hello world" --engine barktts')
-    print('  tts "That\'s funny [laugh]" --engine barktts')
-    print('  tts "Hello" --engine barktts --file output.wav')
+    print('  ttsgen "Hello world" --engine barktts')
+    print('  ttsgen "That\'s funny [laugh]" --engine barktts')
+    print('  ttsgen "Hello" --engine barktts --file output.wav')
     return 0
 
 

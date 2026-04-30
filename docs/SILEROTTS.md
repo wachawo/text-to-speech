@@ -45,7 +45,7 @@ python -c "import torch, torchaudio, omegaconf; print('Silero TTS ready')"
 
 ```bash
 # Run installation script
-tts --install silerotts
+ttsgen --install silerotts
 ```
 
 The script will:
@@ -76,7 +76,7 @@ echo "SILEROTTS_MODELS=~/.cache/torch/hub" >> .env
 
 # Or via environment variable
 export SILEROTTS_MODELS="~/.cache/torch/hub"
-python tts.py "Hello" --engine silerotts
+python ttsgen.py "Hello" --engine silerotts
 ```
 
 ## Supported Languages
@@ -106,19 +106,19 @@ All models use:
 
 ```bash
 # English
-python tts.py "Hello world" --engine silerotts
+python ttsgen.py "Hello world" --engine silerotts
 
 # Russian (excellent quality)
-python tts.py "Привет мир" --engine silerotts --language ru
+python ttsgen.py "Привет мир" --engine silerotts --language ru
 
 # Spanish
-python tts.py "Hola mundo" --engine silerotts --language es
+python ttsgen.py "Hola mundo" --engine silerotts --language es
 
 # Save to file
-python tts.py "Hello" --engine silerotts --file output.wav
+python ttsgen.py "Hello" --engine silerotts --file output.wav
 
 # Play and save
-python tts.py "Hello" --engine silerotts --file output.wav --play
+python ttsgen.py "Hello" --engine silerotts --file output.wav --play
 ```
 
 ### First Run
@@ -334,10 +334,10 @@ pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
 pip install torch torchaudio
 
 # 2. Use (model downloads automatically on first run)
-python tts.py "Hello world" --engine silerotts
+python ttsgen.py "Hello world" --engine silerotts
 
 # 3. Russian (recommended - best quality)
-python tts.py "Привет мир" --engine silerotts --language ru
+python ttsgen.py "Привет мир" --engine silerotts --language ru
 ```
 
 Models download automatically on first use. No manual model management needed!

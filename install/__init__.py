@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Engine installer dispatcher — entry point for `tts --install <engine>`."""
+"""Engine installer dispatcher — entry point for `ttsgen --install <engine>`."""
 
 import importlib
 import sys

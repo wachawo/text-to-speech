@@ -53,7 +53,7 @@ python -c "from bark import generate_audio; print('Bark TTS installed')"
 
 ```bash
 # Run installation script
-tts --install barktts
+ttsgen --install barktts
 ```
 
 ## Supported Languages
@@ -82,16 +82,16 @@ Bark supports many languages through speaker presets:
 
 ```bash
 # English
-python tts.py "Hello world" --engine barktts
+python ttsgen.py "Hello world" --engine barktts
 
 # With different language
-python tts.py "Hola mundo" --engine barktts --language es
+python ttsgen.py "Hola mundo" --engine barktts --language es
 
 # Save to file
-python tts.py "Hello" --engine barktts --file output.wav
+python ttsgen.py "Hello" --engine barktts --file output.wav
 
 # Russian
-python tts.py "Привет мир" --engine barktts --language ru
+python ttsgen.py "Привет мир" --engine barktts --language ru
 ```
 
 ### Special Syntax
@@ -100,22 +100,22 @@ Bark supports special annotations in text:
 
 ```bash
 # Laughter
-python tts.py "That's hilarious [laugh]" --engine barktts
+python ttsgen.py "That's hilarious [laugh]" --engine barktts
 
 # Sighing
-python tts.py "I'm so tired [sigh]" --engine barktts
+python ttsgen.py "I'm so tired [sigh]" --engine barktts
 
 # Music (use ♪ symbols)
-python tts.py "♪ La la la ♪" --engine barktts
+python ttsgen.py "♪ La la la ♪" --engine barktts
 
 # Emphasis (CAPS)
-python tts.py "This is VERY important" --engine barktts
+python ttsgen.py "This is VERY important" --engine barktts
 
 # Pauses (ellipsis)
-python tts.py "Wait... what?" --engine barktts
+python ttsgen.py "Wait... what?" --engine barktts
 
 # Combine effects
-python tts.py "Oh no! [gasp] That's TERRIBLE [sigh]" --engine barktts
+python ttsgen.py "Oh no! [gasp] That's TERRIBLE [sigh]" --engine barktts
 ```
 
 ### First Run
@@ -324,29 +324,29 @@ pip install torch==2.5.0 torchaudio==2.5.0
 
 ### Simple Speech
 ```bash
-python tts.py "Hello, how are you?" --engine barktts
+python ttsgen.py "Hello, how are you?" --engine barktts
 ```
 
 ### With Emotions
 ```bash
-python tts.py "That's hilarious! [laugh]" --engine barktts
-python tts.py "Oh no... [sigh]" --engine barktts
+python ttsgen.py "That's hilarious! [laugh]" --engine barktts
+python ttsgen.py "Oh no... [sigh]" --engine barktts
 ```
 
 ### Music
 ```bash
-python tts.py "♪ Happy birthday to you ♪" --engine barktts
+python ttsgen.py "♪ Happy birthday to you ♪" --engine barktts
 ```
 
 ### Emphasis
 ```bash
-python tts.py "This is VERY IMPORTANT!" --engine barktts
+python ttsgen.py "This is VERY IMPORTANT!" --engine barktts
 ```
 
 ### Different Languages
 ```bash
-python tts.py "Привет мир" --engine barktts --language ru
-python tts.py "Bonjour le monde" --engine barktts --language fr
+python ttsgen.py "Привет мир" --engine barktts --language ru
+python ttsgen.py "Bonjour le monde" --engine barktts --language fr
 ```
 
 ## Notes

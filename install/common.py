@@ -37,7 +37,7 @@ def error(msg: str) -> None:
 
 
 def project_root() -> Path:
-    """Return repo root — directory that contains tts.py."""
+    """Return repo root — directory that contains ttsgen.py."""
     return Path(__file__).resolve().parent.parent
 
 

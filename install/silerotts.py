@@ -140,8 +140,8 @@ def install(non_interactive: bool = False) -> int:
 
     success("\nInstallation complete!")
     info("Usage:")
-    print('  tts "Hello world" --engine silerotts')
-    print('  tts "Привет мир" --engine silerotts --language ru')
+    print('  ttsgen "Hello world" --engine silerotts')
+    print('  ttsgen "Привет мир" --engine silerotts --language ru')
     return 0
 
 
