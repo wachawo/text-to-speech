@@ -78,7 +78,7 @@ python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
 
 ```bash
 # Run installation script
-./bin/install_coquitts.sh
+tts --install coquitts
 ```
 
 ## Models Storage
@@ -150,16 +150,16 @@ tts_models/multilingual/multi-dataset/xtts_v2
 
 ```bash
 # English (will download model on first use)
-python cli.py "Hello world" --engine coquitts
+python tts.py "Hello world" --engine coquitts
 
 # Russian
-python cli.py "Привет мир" --engine coquitts --language ru
+python tts.py "Привет мир" --engine coquitts --language ru
 
 # Save to file
-python cli.py "Hello" --engine coquitts --file output.wav
+python tts.py "Hello" --engine coquitts --file output.wav
 
 # Play and save
-python cli.py "Hello" --engine coquitts --file output.wav --play
+python tts.py "Hello" --engine coquitts --file output.wav --play
 ```
 
 ### First Run

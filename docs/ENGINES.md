@@ -194,13 +194,13 @@ def generate(text: str, config: dict) -> bytes:
 
 ```bash
 # Just specify the filename (without .py)
-python cli.py "Hello world" --engine custom
+python tts.py "Hello world" --engine custom
 
 # Save to file
-python cli.py "Hello world" --engine custom --file output.wav
+python tts.py "Hello world" --engine custom --file output.wav
 
 # Different language
-python cli.py "Hola" --engine custom --language es
+python tts.py "Hola" --engine custom --language es
 ```
 
 ## Built-in Engines
@@ -283,6 +283,6 @@ python -c "from engines import get_available_engines; print('\n'.join(get_availa
 1. Create `engines/myengine.py`
 2. Implement `is_available()` and `generate()`
 3. Add dependencies to `requirements.txt` (optional)
-4. Use: `python cli.py "text" --engine myengine`
+4. Use: `python tts.py "text" --engine myengine`
 
 Done! No changes to core code required.

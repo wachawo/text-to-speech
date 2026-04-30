@@ -1,0 +1,109 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "text-to-speech"
+version = "0.1.0"
+description = "Universal TTS CLI and library — gTTS, espeak/pyttsx3, Piper, Silero, Coqui, Bark behind a single interface."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+authors = [
+    { name = "wachawo" },
+]
+keywords = ["tts", "text-to-speech", "speech-synthesis", "gtts", "piper", "silero", "coqui", "bark"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+
+dependencies = [
+    "gtts==2.3.0",
+    "pyttsx3==2.90",
+    "pygame==2.5.2",
+    "requests>=2.28.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+piper = [
+    "piper-tts",
+]
+silero = [
+    "torch>=2.0",
+    "torchaudio",
+    "omegaconf",
+]
+coqui = [
+    "TTS",
+    "torch>=2.0",
+    "transformers==4.33.0",
+]
+bark = [
+    "bark @ git+https://github.com/suno-ai/bark.git",
+    "scipy",
+    "numpy",
+]
+api = [
+    "Flask==2.3.3",
+    "flask-cors==4.0.0",
+    "marshmallow==3.20.1",
+    "gunicorn==21.2.0",
+    "uvicorn==0.23.2",
+    "asgiref==3.7.2",
+    "pytz>=2023.3",
+]
+dev = [
+    "black==23.3.0",
+    "flake8==5.0.4",
+    "mypy==1.4.1",
+    "pytest==7.4.0",
+    "pytest-cov==4.1.0",
+    "types-requests==2.28.11.0",
+    "types-PyYAML==6.0.12.0",
+]
+all = [
+    "text-to-speech[piper,silero,api]",
+]
+
+[project.urls]
+Homepage      = "https://github.com/wachawo/text-to-speech"
+Repository    = "https://github.com/wachawo/text-to-speech"
+Issues        = "https://github.com/wachawo/text-to-speech/issues"
+Documentation = "https://github.com/wachawo/text-to-speech/tree/main/docs"
+
+[project.scripts]
+tts      = "tts:main"
+tts-play = "play:main"
+
+[tool.setuptools]
+py-modules = ["tts", "play"]
+
+[tool.setuptools.packages.find]
+where   = ["."]
+include = ["libs*", "engines*", "install*"]
+exclude = ["api*", "audio*", "samples*", "bin*", "docs*", ".backup*", "tests*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.md"]
+
+[tool.black]
+line-length    = 128
+target-version = ["py311", "py312"]
+
+[tool.mypy]
+python_version       = "3.11"
+warn_return_any      = true
+warn_unused_configs  = true
+disallow_untyped_defs = false
+follow_imports       = "skip"

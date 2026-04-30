@@ -7,7 +7,7 @@ Reads audio data from stdin and plays it.
 Useful for piping audio from other commands.
 
 Usage:
-    python cli.py "Hello" --format bytesio | python play.py
+    python tts.py "Hello" --format bytesio | python play.py
     cat audio.wav | python play.py
 """
 
@@ -45,7 +45,7 @@ def main():
         if sys.stdin.isatty():
             print("Error: No input data", file=sys.stderr)
             print(
-                "Usage: python cli.py 'text' --format bytesio | python play.py",
+                "Usage: python tts.py 'text' --format bytesio | python play.py",
                 file=sys.stderr,
             )
             print("   or: cat audio.wav | python play.py", file=sys.stderr)

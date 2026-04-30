@@ -7,7 +7,7 @@
 pip install piper-tts
 
 # 2. Запустите скрипт для скачивания моделей
-./bin/install_pipertts.sh
+tts --install pipertts
 ```
 
 Скрипт автоматически скачает выбранные модели в правильную директорию.
@@ -59,13 +59,13 @@ ls -la ~/.local/share/piper/voices/
 
 ```bash
 # Английский
-python cli.py "Hello, how are you?" --engine pipertts
+python tts.py "Hello, how are you?" --engine pipertts
 
 # Русский
-python cli.py "Привет, как дела?" --engine pipertts --language ru
+python tts.py "Привет, как дела?" --engine pipertts --language ru
 
 # С сохранением
-python cli.py "Hello world" --engine pipertts --file output.wav
+python tts.py "Hello world" --engine pipertts --file output.wav
 ```
 
 ## Альтернативный способ (ручная загрузка)

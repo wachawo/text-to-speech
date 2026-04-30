@@ -1,113 +1,284 @@
-Universal Text-to-Speech System with Online and Offline Capabilities
+# text-to-speech
 
-## Project Overview
+Universal text-to-speech system with online and offline engines behind a single CLI and Python API.
 
-This library provides a unified interface for various text-to-speech synthesis systems, enabling seamless switching between online and offline engines based on requirements and internet connectivity.
+## Overview
 
-Key Features:
-- Online synthesis through Google TTS
-- Offline synthesis using espeak and Piper
-- Unified interface for all engines
-- Multi-language support
-- Multiple audio output formats
-- CLI and Python API
+Switch transparently between cloud and local TTS engines via a single interface. Six engines are supported out of the box; adding a seventh is one file in `engines/`.
+
+| Engine | Quality | Speed (CPU) | Offline | Best for |
+|---|---|---|---|---|
+| `gtts` | 4/5 | Fast | ❌ | Online, 100+ languages, easy |
+| `pyttsx3` | 2/5 | Fast | ✅ | Minimal install, robotic |
+| `pipertts` | 4/5 | Very fast | ✅ | Fast offline, English |
+| `silerotts` | 4/5 | Very fast | ✅ | Fast offline, Russian |
+| `coquitts` | 5/5 | Slow (fast w/ GPU) | ✅ | Best quality, voice cloning |
+| `barktts` | 5/5 | Very slow (fast w/ GPU) | ✅ | Emotions, music, singing |
+
+See [`docs/ENGINES.md`](docs/ENGINES.md) for the full engine matrix and tuning.
+
+## Features
+
+- One CLI, one API for all engines
+- Online (gTTS) and offline (espeak, Piper, Silero, Coqui, Bark)
+- Multi-language (100+ via gTTS, 50+ via Piper)
+- Streaming pipeline: playback starts before long-text generation finishes
+- Multiple outputs in one pass (play, save, stdout)
+- HTTP API server (Flask) and Docker Compose deployment
+- Pluggable engine system (drop a `.py` into `engines/`)
 
 ## Installation
 
+### Install from GitHub (recommended)
+
 ```bash
-# System dependencies (Linux)
-sudo apt install espeak espeak-data libespeak1 python3-pip
-# Python dependencies
-pip install -r requirements.txt
+# System dependencies (Linux) — only needed for the pyttsx3/espeak engine
+sudo apt install espeak espeak-data libespeak1
+
+# Latest from main
+pip install git+https://github.com/wachawo/text-to-speech.git
+
+# Specific tag, branch, or commit
+pip install git+https://github.com/wachawo/text-to-speech.git@v0.1.0
+pip install git+https://github.com/wachawo/text-to-speech.git@main
+
+# With optional engines / extras
+pip install "text-to-speech[piper]  @ git+https://github.com/wachawo/text-to-speech.git"
+pip install "text-to-speech[silero] @ git+https://github.com/wachawo/text-to-speech.git"
+pip install "text-to-speech[coqui]  @ git+https://github.com/wachawo/text-to-speech.git"
+pip install "text-to-speech[bark]   @ git+https://github.com/wachawo/text-to-speech.git"
+pip install "text-to-speech[api]    @ git+https://github.com/wachawo/text-to-speech.git"
+
+# Combine extras
+pip install "text-to-speech[piper,silero,api] @ git+https://github.com/wachawo/text-to-speech.git"
 ```
+
+After install, two console scripts are on your `$PATH`:
+
+```bash
+tts "Hello world"
+echo "..." | tts-play
+```
+
+### Install for development
+
+```bash
+git clone https://github.com/wachawo/text-to-speech.git
+cd text-to-speech
+pip install -e ".[dev]"
+```
+
+### Legacy install (without packaging)
+
+```bash
+sudo apt install espeak espeak-data libespeak1 python3-pip
+pip install -r requirements.txt
+python tts.py "Hello world"
+```
+
+### Optional engine model downloads
+
+Heavier engines need model files. The `tts --install` command downloads them into per-engine dotfolders (`.pipertts/`, `.silerotts/`, `.coquitts/`, `.barktts/`):
+
+```bash
+tts --install pipertts        # interactive
+tts --install silerotts
+tts --install coquitts
+tts --install barktts
+
+tts --install pipertts --non-interactive   # accept defaults, no prompts
+```
+
+Per-engine guides: [`docs/PIPERTTS.md`](docs/PIPERTTS.md), [`docs/SILEROTTS.md`](docs/SILEROTTS.md), [`docs/COQUITTS.md`](docs/COQUITTS.md), [`docs/BARKTTS.md`](docs/BARKTTS.md).
 
 ## Usage
 
-### Basic examples
+### CLI
 
 ```bash
-# Google TTS (online)
-python cli.py "Hello world"
-# espeak (offline)
-python cli.py "Hello world" --engine pyttsx3
-# Another languages
-python cli.py "Hola amigo!" --language es
-# Save with automatic name
-python cli.py "Hello world" --file
-# Save to specific file
-python cli.py "Hello world" --file output.mp3
-# Google TTS (best quality)
-python cli.py "Hello world" --engine gtts
-# espeak (fast, offline)
-python cli.py "Hello world" --engine pyttsx3
-# Piper (high-quality offline)
-python cli.py "Hello world" --engine pipertts
-# Read from file
-python cli.py -i input.txt
-python cli.py -i input.txt --file output.mp3
-# BytesIO
-python cli.py "Hello world" --stdout | python3 play.py
-# Multiple outputs
-python cli.py "Hello world" --output play,file 
+# Play (default)
+tts "Hello world"
+
+# Pick an engine / language
+tts "Hello world"   --engine pyttsx3
+tts "Hola amigo!"   --language es
+tts "Привет"        --engine silerotts --language ru
+
+# Save to file (auto-named timestamp or explicit)
+tts "Hello world" --file
+tts "Hello world" --file output.mp3
+tts "Hello world" --file audio/
+
+# Read from a text file
+tts -i input.txt
+tts -i input.txt --file output.mp3
+
+# Stream over a pipe
+tts "Hello world" --stdout | tts-play
+
+# Multi-output in one pass
+tts "Hello world" --output play,file
+tts "Hello world" --output file,stdout
+
+# List engines and installed models
+tts --list
+```
+
+Configuration defaults can be set in `.env` (see [`env.example`](env.example)):
+
+```
+TTS_ENGINE=gtts
+TTS_LANGUAGE=en
+DEFAULT_OUTPUT_FORMAT=play
+AUDIO_DIRECTORY=audio
 ```
 
 ### Python API
 
 ```python
-from libs.api import text_to_speech_file, text_to_speech_bytes
+from libs.api import text_to_speech_file, text_to_speech_bytes, text_to_speech_bytesio
 
 # Save to file
 filename = text_to_speech_file("Hello world!", engine="gtts")
-print(f"File created: {filename}")
 
-# Get as bytes (for web apps)
-audio_bytes = text_to_speech_bytes("Hello world!", engine="gtts")
+# Get as bytes (web apps, HTTP responses)
+audio_bytes = text_to_speech_bytes("Hello world!", engine="gtts", language="en")
+
+# Get as BytesIO (streaming)
+buf = text_to_speech_bytesio("Hello world!", engine="pipertts")
 ```
+
+### HTTP API + Docker
+
+A Flask API server is included. Bring it up with Docker Compose:
+
+```bash
+docker compose up --build -d
+
+# Health
+curl http://localhost:5000/api/health
+
+# List available engines (depends on what's installed in the image)
+curl http://localhost:5000/api/engines
+
+# GET — engine and language are optional, default to TTS_ENGINE/TTS_LANGUAGE from .env
+curl -o out.mp3 "http://localhost:5000/api/tts?text=Hello%20world&engine=gtts"
+
+# POST
+curl -X POST http://localhost:5000/api/tts \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Привет мир","engine":"gtts","language":"ru"}' \
+  -o ru.mp3
+```
+
+The container service is named `tts_api` on network `tts_network`. To enable heavier engines in the API container, uncomment the relevant lines in `api/requirements.txt` and rebuild with `docker compose build`.
+
+To run the API without Docker:
+
+```bash
+pip install "text-to-speech[api] @ git+https://github.com/wachawo/text-to-speech.git"
+python -m api.app1
+# or, after editable install:
+python api/app1.py
+```
+
+## Adding a new engine
+
+The engine system is a plugin loader — drop a file in `engines/` and it appears in the CLI and API automatically. The contract is two functions:
+
+```python
+# engines/myengine.py
+def is_available() -> bool:
+    """True if all deps are importable."""
+    ...
+
+def generate(text: str, config: dict) -> bytes:
+    """Return audio bytes (MP3 or WAV). config has 'language', 'rate', 'volume', etc."""
+    ...
+```
+
+Then:
+
+```bash
+tts "Hello" --engine myengine
+```
+
+Full guide: [`docs/ENGINES.md`](docs/ENGINES.md).
 
 ## Project structure
 
 ```
 text-to-speech/
-├── engines/
+├── tts.py                    # CLI entry-point (`tts` command)
+├── play.py                   # stdin player (`tts-play` command)
+├── pyproject.toml            # Package config and dependencies
+├── docker-compose.yml        # tts_api service definition
+├── engines/                  # Pluggable TTS engines
+│   ├── __init__.py           #   Dynamic loader
 │   ├── gtts.py
 │   ├── pyttsx3.py
+│   ├── pipertts.py
 │   ├── silerotts.py
 │   ├── coquitts.py
-│   └── piper.py
-├── libs/
-│   ├── api.py
-│   ├── tools.py
-│   ├── playback.py
+│   └── barktts.py
+├── libs/                     # Core library
+│   ├── api.py                #   text_to_speech_bytes / _file / _bytesio
+│   ├── tools.py              #   Validation, config, pipelines
+│   ├── playback.py           #   pygame wrapper
 │   └── exceptions.py
-├── bin/
-│   ├── install_pipertts.sh
-│   ├── install_coquitts.sh
-│   └── install_silerotts.sh
-├── docs/
-│   ├── COQUITTS.md
+├── api/                      # Flask HTTP API
+│   ├── app1.py
+│   ├── validators.py
+│   ├── gu.py
+│   ├── Dockerfile
+│   └── requirements.txt
+├── install/                  # Engine installers (`tts --install <engine>`)
+│   ├── __init__.py           #   Dispatcher
+│   ├── common.py             #   pip / download / prompt helpers
+│   ├── pipertts.py
+│   ├── silerotts.py
+│   ├── coquitts.py
+│   └── barktts.py
+├── docs/                     # Per-engine guides
 │   ├── ENGINES.md
 │   ├── PIPERTTS.md
-│   └── SILEROTTS.md
-├── cli.py
+│   ├── SILEROTTS.md
+│   ├── COQUITTS.md
+│   └── BARKTTS.md
+├── samples/                  # Voice samples (used by coquitts)
 ├── test_tts.py
-├── play.py
-└── requirements.txt
-
+├── env.example
+├── requirements.txt          # Legacy
+├── requirements-dev.txt      # Legacy
+├── REVIEW.md                 # Code review
+├── ROADMAP.md                # Improvement roadmap
+└── CLAUDE.md                 # Notes for Claude Code
 ```
 
-### Installing dependencies
-
-Install runtime (user) dependencies:
+## Development
 
 ```bash
-pip install -r requirements.txt
+pip install -e ".[dev]"
+
+# Tests
+python test_tts.py
+python -m pytest test_tts.py -v
+
+# Lint / typecheck / format
+flake8 .
+mypy .
+black .
+
+# List engines available in the current environment
+python -c "from engines import get_available_engines; print('\n'.join(get_available_engines().keys()))"
 ```
 
-Install developer tools (linters, type checkers, test tools):
+## Documentation
 
-```bash
-pip install -r requirements-dev.txt
-```
+- [`docs/ENGINES.md`](docs/ENGINES.md) — engine system, comparison, custom-engine guide
+- [`docs/PIPERTTS.md`](docs/PIPERTTS.md), [`docs/SILEROTTS.md`](docs/SILEROTTS.md), [`docs/COQUITTS.md`](docs/COQUITTS.md), [`docs/BARKTTS.md`](docs/BARKTTS.md) — per-engine setup
+- [`REVIEW.md`](REVIEW.md) — current code review
+- [`ROADMAP.md`](ROADMAP.md) — planned improvements
 
 ## License
 
