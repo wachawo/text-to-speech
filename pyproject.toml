@@ -75,10 +75,11 @@ api = [
 ]
 dev = [
     "black==23.3.0",
-    "flake8==5.0.4",
+    "ruff>=0.5",
+    "pre-commit>=3.5",
     "mypy==1.4.1",
-    "pytest==7.4.0",
-    "pytest-cov==4.1.0",
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
     "types-requests==2.28.11.0",
     "types-PyYAML==6.0.12.0",
 ]
@@ -110,7 +111,33 @@ exclude = ["api*", "audio*", "samples*", "bin*", "docs*", ".backup*", "tests*"]
 
 [tool.black]
 line-length    = 128
-target-version = ["py311", "py312"]
+target-version = ["py311"]
+extend-exclude = '''
+/(
+  \.backup
+  | \.venv
+  | audio
+  | samples
+  | engines
+  | libs
+  | models
+)/
+'''
+
+[tool.ruff]
+line-length = 128
+target-version = "py312"
+extend-exclude = ["libs", "engines", "models", ".venv", ".backup", "audio", "samples"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# E501 — handled by black; UP009 — project style requires `# -*- coding: utf-8 -*-`;
+# E203/E266/W503 — historic flake8 ignores carried over.
+ignore = ["E501", "UP009", "E203", "E266"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts   = "-q"
 
 [tool.mypy]
 python_version       = "3.11"
