@@ -12,6 +12,7 @@ PyTorch 2.6+ workaround for xtts_v2 checkpoints (add_safe_globals) still applies
 import io
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import traceback
@@ -46,6 +47,43 @@ def check_python_version() -> bool:
         error(f"coqui-tts requires Python 3.9+. You have {major}.{minor}.")
         return False
     return True
+
+
+def model_dir_for(model_name: str) -> Path:
+    """Path where Coqui caches a model: <TTS_HOME>/tts/<model_name with '/' -> '--'>."""
+    base = Path(os.environ.get("TTS_HOME") or (Path.home() / ".local" / "share" / "tts"))
+    return base / "tts" / model_name.replace("/", "--")
+
+
+def model_already_present(model_name: str) -> bool:
+    """True if the model directory exists and looks populated (has config.json)."""
+    d = model_dir_for(model_name)
+    return d.is_dir() and (d / "config.json").exists()
+
+
+def prompt_redownload_or_skip(model_name: str, non_interactive: bool = False) -> bool:
+    """If model already exists, ask whether to reuse or wipe+redownload.
+
+    Returns True if caller should SKIP download (model already usable).
+    Returns False if model is absent OR user opted to delete and redownload.
+    """
+    if not model_already_present(model_name):
+        return False
+    d = model_dir_for(model_name)
+    info(f"\nModel already present at {d}")
+    if non_interactive:
+        info("Reusing existing files (non-interactive).")
+        return True
+    if not prompt_yes_no("Re-download (this will delete the existing files)?", default=False):
+        info("Reusing existing files.")
+        return True
+    try:
+        shutil.rmtree(d)
+        info(f"Removed {d}.")
+    except OSError as exc:
+        error(f"Could not remove {d}: {type(exc).__name__}: {exc}")
+        return True
+    return False
 
 
 def check_sample_file() -> None:
@@ -141,6 +179,10 @@ def install(non_interactive: bool = False) -> int:
 
     if env_model:
         info(f"\nUsing model from COQUITTS_MODEL env: {env_model}")
+        if prompt_redownload_or_skip(env_model, non_interactive=non_interactive):
+            check_sample_file()
+            success("\nInstallation complete (existing model reused).")
+            return 0
         if "xtts" in env_model.lower():
             warn("\nIMPORTANT: License Agreement")
             logger.info("The xtts model requires accepting a license:")
@@ -173,21 +215,25 @@ def install(non_interactive: bool = False) -> int:
     choice = choose_from("\nPre-download a model?", options, default=3)
 
     if choice == 1:
-        warn("\nIMPORTANT: License Agreement")
-        logger.info("The xtts_v2 model requires accepting a license:")
-        logger.info("  - Non-commercial use: CPML license (https://coqui.ai/cpml)")
-        logger.info("  - Commercial use: Requires commercial license from Coqui")
-        if not prompt_yes_no("\nDo you accept the non-commercial CPML license?", default=False):
-            warn("License not accepted. Skipping model download.")
+        if prompt_redownload_or_skip(DEFAULT_MODEL, non_interactive=non_interactive):
+            check_sample_file()
         else:
-            rc = predownload_model(DEFAULT_MODEL)
+            warn("\nIMPORTANT: License Agreement")
+            logger.info("The xtts_v2 model requires accepting a license:")
+            logger.info("  - Non-commercial use: CPML license (https://coqui.ai/cpml)")
+            logger.info("  - Commercial use: Requires commercial license from Coqui")
+            if not prompt_yes_no("\nDo you accept the non-commercial CPML license?", default=False):
+                warn("License not accepted. Skipping model download.")
+            else:
+                rc = predownload_model(DEFAULT_MODEL)
+                if rc != 0:
+                    return rc
+                check_sample_file()
+    elif choice == 2:
+        if not prompt_redownload_or_skip(ENGLISH_MODEL, non_interactive=non_interactive):
+            rc = predownload_model(ENGLISH_MODEL)
             if rc != 0:
                 return rc
-            check_sample_file()
-    elif choice == 2:
-        rc = predownload_model(ENGLISH_MODEL)
-        if rc != 0:
-            return rc
 
     success("\nInstallation complete!")
     info("Usage:")
