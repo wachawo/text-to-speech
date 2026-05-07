@@ -8,16 +8,15 @@ import subprocess
 import sys
 import urllib.request
 from pathlib import Path
-from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
 # ANSI colors
-RESET  = "\033[0m"
-GREEN  = "\033[0;32m"
-BLUE   = "\033[0;34m"
+RESET = "\033[0m"
+GREEN = "\033[0;32m"
+BLUE = "\033[0;34m"
 YELLOW = "\033[1;33m"
-RED    = "\033[0;31m"
+RED = "\033[0;31m"
 
 
 def info(msg: str) -> None:
@@ -41,7 +40,7 @@ def project_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-def pip_install(packages: List[str], extra_args: Optional[List[str]] = None) -> None:
+def pip_install(packages: list[str], extra_args: list[str] | None = None) -> None:
     """Install packages with the current python's pip. Raises on failure."""
     cmd = [sys.executable, "-m", "pip", "install", *packages]
     if extra_args:
@@ -61,7 +60,7 @@ def prompt_yes_no(question: str, default: bool = False, non_interactive: bool = 
     return answer == "y" or answer == "yes"
 
 
-def choose_from(question: str, options: List[str], default: int = 1, non_interactive: bool = False) -> int:
+def choose_from(question: str, options: list[str], default: int = 1, non_interactive: bool = False) -> int:
     """Display numbered menu, return 1-based index. Returns default in non-interactive mode."""
     menu_lines = [question]
     for i, opt in enumerate(options, start=1):
@@ -91,7 +90,7 @@ def prompt_text(question: str, default: str = "", non_interactive: bool = False)
     return answer if answer else default
 
 
-def download_file(url: str, dest: Path, *, label: Optional[str] = None) -> None:
+def download_file(url: str, dest: Path, *, label: str | None = None) -> None:
     """Download url → dest with simple progress reporting. Skips if dest exists."""
     dest = Path(dest)
     if dest.exists() and dest.stat().st_size > 0:
@@ -120,11 +119,11 @@ def download_file(url: str, dest: Path, *, label: Optional[str] = None) -> None:
     sys.stdout.flush()
 
 
-PYTORCH_CPU_INDEX  = "https://download.pytorch.org/whl/cpu"
+PYTORCH_CPU_INDEX = "https://download.pytorch.org/whl/cpu"
 PYTORCH_CUDA_INDEX = "https://download.pytorch.org/whl/cu121"
 
 
-def install_torch_choice(non_interactive: bool = False, packages: Optional[List[str]] = None) -> None:
+def install_torch_choice(non_interactive: bool = False, packages: list[str] | None = None) -> None:
     """Install torch + torchaudio with explicit CUDA or CPU index.
 
     Default index (https://download.pytorch.org/whl) ships cu13 which breaks
@@ -192,6 +191,7 @@ def resolve_file_path(
 
     try:
         from libs.config import persist_config_value
+
         persist_config_value(env_key, str(target))
         info(f"Saved {env_key}={target} to ~/.config/ttsgen.conf")
     except Exception as exc:
@@ -251,6 +251,7 @@ def resolve_models_dir(
     # Persist so synthesis time sees the same location.
     try:
         from libs.config import persist_config_value
+
         persist_config_value(env_key, str(target))
         info(f"Saved {env_key}={target} to ~/.config/ttsgen.conf")
     except Exception as exc:

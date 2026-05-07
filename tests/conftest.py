@@ -3,7 +3,7 @@
 """Test fixtures.
 
 Stubs `libs.api` and `engines.get_available_engines` BEFORE importing
-`api.app1` so the test suite never pulls pygame, torch, coqui or any other
+`ttssrv.app1` so the test suite never pulls pygame, torch, coqui or any other
 heavy dependency. The HTTP layer is what we actually exercise.
 """
 
@@ -43,7 +43,7 @@ def _default_text_to_speech_bytes(text, engine=None, language=None):
     return build_silent_wav()
 
 
-# Stub libs.api before api.app1 imports it.
+# Stub libs.api before ttssrv.app1 imports it.
 fake_libs_api = types.ModuleType("libs.api")
 fake_libs_api.text_to_speech_bytes = _default_text_to_speech_bytes
 fake_libs_api.TTSException = TTSException
@@ -59,7 +59,7 @@ engines_pkg.get_available_engines = lambda: {}
 # Now safe to import the Flask app.
 from werkzeug.exceptions import abort as _abort  # noqa: E402
 
-from api import app1 as app1_module  # noqa: E402
+from ttssrv import app1 as app1_module  # noqa: E402
 
 
 def _abort_view(code: int):
@@ -76,7 +76,7 @@ app1_module.app.add_url_rule(
 
 @pytest.fixture
 def app_module():
-    """Direct handle to the imported `api.app1` module."""
+    """Direct handle to the imported `ttssrv.app1` module."""
     return app1_module
 
 
@@ -84,6 +84,7 @@ def app_module():
 def client(monkeypatch):
     """Flask test client with auth disabled and stubbed synthesis."""
     monkeypatch.setattr(app1_module, "TTS_TOKENS", set(), raising=False)
+    monkeypatch.setattr(app1_module, "TTS_POOL_SIZE", 0, raising=False)
     monkeypatch.setattr(app1_module, "text_to_speech_bytes", _default_text_to_speech_bytes)
     app1_module.app.config.update(TESTING=True)
     return app1_module.app.test_client()

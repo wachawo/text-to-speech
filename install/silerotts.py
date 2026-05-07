@@ -3,7 +3,6 @@
 """Silero TTS installer — torch + torchaudio + omegaconf, optional model pre-download."""
 
 import logging
-import os
 from pathlib import Path
 
 from install.common import (
@@ -12,7 +11,6 @@ from install.common import (
     install_torch_choice,
     pip_install,
     project_root,
-    prompt_text,
     resolve_models_dir,
     success,
     warn,
@@ -30,8 +28,6 @@ def get_silero_dir(non_interactive: bool) -> Path:
         project_dir=project_root() / ".silerotts",
         non_interactive=non_interactive,
     )
-
-
 
 
 def predownload(models_dir: Path, languages: list) -> None:
@@ -92,6 +88,7 @@ def install(non_interactive: bool = False) -> int:
             predownload(models_dir, languages)
         except Exception as exc:
             import traceback
+
             warn(f"Pre-download failed: {type(exc).__name__}: {exc}")
             traceback.print_exc()
             warn("Models will be downloaded on first use.")

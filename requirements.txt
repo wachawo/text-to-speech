@@ -1,20 +1,29 @@
-# TTS Library Dependencies
-# Professional requirements with exact versions for reproducibility
+# Client quick-install for ttsgen / ttsplay / ttsrec / ttsapi.
+# Mirrors pyproject.toml [project].dependencies — keep in sync.
+#
+# Heavier deps live in optional extras (NOT installed by `pip install -r`):
+#   pip install ".[piper]"    → piper-tts                                   (pipertts engine)
+#   pip install ".[silero]"   → torch + torchaudio + omegaconf              (silerotts engine)
+#   pip install ".[coqui]"    → coqui-tts[codec] + torch + transformers     (coquitts engine; Python 3.9–3.12)
+#   pip install ".[bark]"     → bark (git) + scipy + numpy                  (barktts engine; ~10–15 GB models)
+#   pip install ".[api]"      → Flask + flask-cors + marshmallow + gunicorn + uvicorn + asgiref + pytz
+#                              (Flask deps for running ttssrv/app1.py outside Docker)
+#   pip install ".[dev]"      → black + flake8 + pytest + pytest-cov          (development tools)
+#   pip install ".[all]"      → piper + silero + api                         (combined common set)
+#
+# `ttsgen --install <engine>` is the recommended path — it picks the right
+# torch index (cpu / cu121) and persists the model directory to ~/.config/ttsgen.conf.
+#
+# Server (ttssrv) is normally deployed via Docker:
+#   docker compose up                                    # GPU image
+#   docker compose -f docker-compose-cpu.yml up          # CPU-only image
 
-# Core TTS engines
-pyttsx3==2.90
 gtts==2.3.0
-
-# Audio playback support
+pyttsx3==2.90
 pygame==2.5.2
+requests>=2.28.0
+python-dotenv>=1.0.0
 
-# Additional dependencies for better compatibility
-requests==2.28.0
-python-dotenv==1.0.0
-torch==2.9.0
-
-# Optional: High-quality offline TTS (Piper)
-# Uncomment to use Piper TTS engine
-# piper-tts
-
-# Developers: -r requirements-dev.txt
+# Microphone capture for ttsrec (xtts_v2 voice samples)
+sounddevice
+numpy

@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 try:
     from libs.config import load_config
+
     load_config()
 except ImportError:
     pass
@@ -23,9 +24,7 @@ def run(engine: str, non_interactive: bool = False) -> int:
         logger.info(f"Engine '{engine}' has no installer (covered by base requirements).")
         return 0
     if engine not in INSTALLERS:
-        logger.error(
-            f"No installer for engine '{engine}'. Available: {', '.join(INSTALLERS)}"
-        )
+        logger.error(f"No installer for engine '{engine}'. Available: {', '.join(INSTALLERS)}")
         return 2
     module = importlib.import_module(f"install.{engine}")
     return int(module.install(non_interactive=non_interactive))

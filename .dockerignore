@@ -1,0 +1,70 @@
+# Used when build context = repo root. The active build context is ./ttssrv,
+# so ttssrv/.dockerignore is the primary one — this file is a safety net.
+
+# Python caches and build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+htmlcov/
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+
+# Local env / secrets / personal data
+.env
+.env.*
+!.env.example
+ttsgen.conf
+ttsgen.wav
+
+# Engine model dirs (mounted as volumes at runtime, not baked into image)
+.pipertts/
+.silerotts/
+.coquitts/
+.barktts/
+.backup/
+
+# Generated audio
+audio/
+*.wav
+*.mp3
+*.ogg
+*.flac
+*.m4a
+
+# Source-control and dev metadata
+.git/
+.github/
+.gitignore
+docs/
+test_tts.py
+
+# Large source dumps not needed in the image
+1.txt
+2.txt
+3.txt
+samples/
+README*.md
+REVIEW.md
+ROADMAP.md
+CLAUDE.md

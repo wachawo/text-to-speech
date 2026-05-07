@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "text-to-speech"
-version = "0.2.0"
+version = "0.2.1"
 description = "Universal TTS CLI and library — gTTS, espeak/pyttsx3, Piper, Silero, Coqui, Bark behind a single interface."
 readme = "README.md"
 license = { text = "MIT" }
@@ -97,14 +97,15 @@ Documentation = "https://github.com/wachawo/text-to-speech/tree/main/docs"
 ttsgen  = "ttsgen:main"
 ttsplay = "ttsplay:main"
 ttsrec  = "ttsrec:main"
+ttsapi  = "ttsapi:main"
 
 [tool.setuptools]
-py-modules = ["ttsgen", "ttsplay", "ttsrec"]
+py-modules = ["ttsgen", "ttsplay", "ttsrec", "ttsapi"]
 
 [tool.setuptools.packages.find]
 where   = ["."]
 include = ["libs*", "engines*", "install*"]
-exclude = ["api*", "audio*", "samples*", "bin*", "docs*", ".backup*", "tests*"]
+exclude = ["audio*", "samples*", "bin*", "docs*", ".backup*", "tests*", "ttssrv*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.md"]
@@ -139,9 +140,3 @@ ignore = ["E501", "UP009", "E203", "E266"]
 testpaths = ["tests"]
 addopts   = "-q"
 
-[tool.mypy]
-python_version       = "3.11"
-warn_return_any      = true
-warn_unused_configs  = true
-disallow_untyped_defs = false
-follow_imports       = "skip"

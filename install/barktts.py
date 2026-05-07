@@ -4,7 +4,6 @@
 
 import logging
 import shutil
-import sys
 import traceback
 
 from install.common import (
@@ -27,20 +26,18 @@ REQUIRED_GB = 15
 
 def check_disk_space(non_interactive: bool) -> bool:
     free_bytes = shutil.disk_usage(str(project_root())).free
-    free_gb = free_bytes // (1024 ** 3)
+    free_gb = free_bytes // (1024**3)
     if free_gb < REQUIRED_GB:
         warn(f"Low disk space: {free_gb} GB available. Bark requires ~{REQUIRED_GB} GB.")
         return prompt_yes_no("Continue anyway?", default=False, non_interactive=non_interactive)
     return True
 
 
-
-
 def predownload() -> int:
     """Trigger Bark's preload_models() with PyTorch 2.6+ safe-globals workaround."""
     try:
-        import torch
         import numpy as np
+        import torch
 
         torch_version = tuple(int(x) for x in torch.__version__.split(".")[:2])
         if torch_version >= (2, 6):
@@ -48,6 +45,7 @@ def predownload() -> int:
             torch.serialization.add_safe_globals([np.core.multiarray.scalar, np.dtype])
 
         from bark import preload_models  # noqa: WPS433 — late import after pip install
+
         info("Downloading Bark models (text encoder ~1GB, coarse ~5GB, fine ~5GB)...")
         preload_models()
         success("All models downloaded and cached at ~/.cache/suno/bark_v0/")
@@ -60,10 +58,6 @@ def predownload() -> int:
 
 def install(non_interactive: bool = False) -> int:
     info("Bark TTS Installer")
-
-    if sys.version_info[:2] < (3, 8):
-        error(f"Python 3.8+ required. You have {sys.version_info.major}.{sys.version_info.minor}.")
-        return 1
 
     if not warn_no_venv(non_interactive):
         warn("Installation cancelled.")

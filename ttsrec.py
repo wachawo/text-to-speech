@@ -24,13 +24,13 @@ logger = logging.getLogger(__name__)
 
 LOGGING = {
     "handlers": [logging.StreamHandler()],
-    "format":  "%(asctime)s.%(msecs)03d [%(levelname)s]: (%(name)s) %(message)s",
-    "level":   logging.INFO,
+    "format": "%(asctime)s.%(msecs)03d [%(levelname)s]: (%(name)s) %(message)s",
+    "level": logging.INFO,
     "datefmt": "%Y-%m-%d %H:%M:%S",
 }
 
-DEFAULT_DURATION = 8     # seconds
-DEFAULT_RATE     = 22050  # Hz — matches xtts_v2 voice cloning expectations
+DEFAULT_DURATION = 8  # seconds
+DEFAULT_RATE = 22050  # Hz — matches xtts_v2 voice cloning expectations
 # Single source of truth shared with engines/coquitts.py:DEFAULT_COQUITTS_SAMPLE.
 DEFAULT_FALLBACK = Path.home() / ".config" / "ttsgen.wav"
 
@@ -53,15 +53,23 @@ Examples:
         help="Output WAV path (default: COQUITTS_SAMPLE from config)",
     )
     parser.add_argument(
-        "-d", "--duration", type=int, default=DEFAULT_DURATION,
+        "-d",
+        "--duration",
+        type=int,
+        default=DEFAULT_DURATION,
         help=f"Recording length in seconds (default: {DEFAULT_DURATION})",
     )
     parser.add_argument(
-        "-r", "--rate", type=int, default=DEFAULT_RATE,
+        "-r",
+        "--rate",
+        type=int,
+        default=DEFAULT_RATE,
         help=f"Sample rate in Hz (default: {DEFAULT_RATE})",
     )
     parser.add_argument(
-        "-y", "--yes", action="store_true",
+        "-y",
+        "--yes",
+        action="store_true",
         help="Skip the press-Enter-to-start prompt (start immediately)",
     )
     return parser.parse_args()
@@ -74,6 +82,7 @@ def resolve_output_path(arg_path: str | None) -> Path:
 
     try:
         from libs.config import load_config
+
         load_config()
     except ImportError:
         pass
@@ -113,6 +122,7 @@ def record_wav(output: Path, duration: int, rate: int) -> None:
         logger.info(f"  peak amplitude: {peak}/32767 ({peak * 100 // 32767}%)")
 
     import wave
+
     with wave.open(str(output), "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)  # 16-bit
@@ -139,6 +149,7 @@ def main() -> int:
         return 1
     except Exception as exc:
         import traceback
+
         logger.error(f"{type(exc).__name__}: {str(exc)}\n{traceback.format_exc()}")
         return 1
 
@@ -151,6 +162,7 @@ def main() -> int:
     # Persist this path as COQUITTS_SAMPLE so `ttsgen --engine coquitts` finds it.
     try:
         from libs.config import persist_config_value
+
         persist_config_value("COQUITTS_SAMPLE", str(output))
         logger.info(f"COQUITTS_SAMPLE={output} written to ~/.config/ttsgen.conf")
     except Exception as exc:

@@ -31,18 +31,16 @@ License: MIT
 """
 
 import argparse
+import io
+import logging
 import os
+import queue
 import shutil
 import sys
-import logging
-import re
 import threading
-import queue
-import tempfile
-import io
-import wave
 from pathlib import Path
-from typing import Optional, Dict, Any, cast, List, Tuple, IO
+from typing import Any, cast
+
 from dotenv import load_dotenv
 
 # Configure logging
@@ -61,10 +59,10 @@ logger = logging.getLogger(__name__)
 
 try:
     from libs.api import (  # type: ignore
-        play_audio,
+        EngineNotAvailableError,
         TTSException,
         ValidationError,
-        EngineNotAvailableError,
+        play_audio,
     )
 
     """ By Silletr -
@@ -72,131 +70,26 @@ try:
      write it and u can remove Except block
      Cause it local modules that not need installigng
     """
-    from libs.tools import generate_timestamp_filename, ensure_audio_directory
     from libs.tempfiles import safe_unlink
+    from libs.tools import ensure_audio_directory, generate_timestamp_filename
 except ImportError as e:
     logger.error(f"Failed to import TTS library: {e}")
     sys.exit(1)
 
-SPLIT_REGEX = re.compile(r"(?<=[.!?]|,|\n)")
+# Pipeline helpers (chunk_text, concat_wav_files, rec_worker, play_worker) live in libs.cli
+# so they're shared between ttsgen (offline) and ttsapi (HTTP-based) without code duplication.
+from libs.cli import (  # noqa: E402
+    QueueItem as QUEUE_ITEM,
+)
+from libs.cli import (  # noqa: E402
+    chunk_text,
+    concat_wav_files,
+    play_worker,
+    rec_worker,
+)
 
 
-def chunk_text(text: str, max_len: int = 5000) -> List[str]:
-    """Split text by sentence-ish boundaries to chunks <= max_len."""
-    parts = [p.strip() for p in SPLIT_REGEX.split(text) if p and p.strip()]
-    chunks: List[str] = []
-    buf: List[str] = []
-    cur_len = 0
-    for p in parts:
-        if len(p) > max_len:
-            if cur_len:
-                chunks.append(" ".join(buf))
-                buf, cur_len = [], 0
-            for i in range(0, len(p), max_len):
-                chunks.append(p[i : i + max_len])
-            continue
-        add_len = (1 if buf else 0) + len(p)
-        if cur_len + add_len <= max_len:
-            buf.append(p)
-            cur_len += add_len
-        else:
-            if buf:
-                chunks.append(" ".join(buf))
-            buf, cur_len = [p], len(p)
-    if buf:
-        chunks.append(" ".join(buf))
-    return chunks
-
-
-def concat_wav_files(in_paths: List[str], out_stream: IO[bytes]) -> None:
-    """Concat WAV files (with same parametrs) to one WAV file,
-    recordings to out_stream."""
-    if not in_paths:
-        return
-    wout = wave.open(out_stream, "wb")
-    first = True
-    try:
-        for p in in_paths:
-            win = wave.open(p, "rb")
-            try:
-                if first:
-                    wout.setnchannels(win.getnchannels())
-                    wout.setsampwidth(win.getsampwidth())
-                    wout.setframerate(win.getframerate())
-                    first = False
-                else:
-                    if (
-                        win.getnchannels() != wout.getnchannels()
-                        or win.getsampwidth() != wout.getsampwidth()
-                        or win.getframerate() != wout.getframerate()
-                    ):
-                        logger.warning(
-                            f"WAV params mismatch in {p}; attempting naive append (may be invalid)."
-                        )
-                frames = win.readframes(win.getnframes())
-                wout.writeframes(frames)
-            finally:
-                win.close()
-    finally:
-        wout.close()
-
-
-# item in queue: Optional[Tuple[int, str, bytes]] -> (idx, tmp_path, audio_bytes)
-QUEUE_ITEM = Optional[Tuple[int, str, bytes]]
-
-
-def rec_worker(
-    text_chunks: List[str],
-    eng: str,
-    lang: str,
-    q: "queue.Queue[QUEUE_ITEM]",
-    tmp_suffix: str,
-    tmp_dir: Optional[str] = None,
-) -> None:
-    """Generating audio`s and packing its in row (idx, tmp_path, bytes)."""
-    from libs.api import text_to_speech_bytes
-
-    for i, chunk in enumerate(text_chunks, start=1):
-        try:
-            audio_bytes = text_to_speech_bytes(text=chunk, engine=eng, language=lang)
-        except Exception as e:
-            logger.error(f"TTS error on chunk {i}: {e}")
-            audio_bytes = b""
-        fd, tmp_path = tempfile.mkstemp(suffix=tmp_suffix, dir=tmp_dir)
-        os.close(fd)
-        try:
-            with open(tmp_path, "wb") as f:
-                f.write(audio_bytes)
-        except Exception as e:
-            logger.error(f"Failed to write temp audio for chunk {i}: {e}")
-        q.put((i, tmp_path, audio_bytes))
-    q.put(None)  # Signal of end
-
-
-def play_worker(
-    q: "queue.Queue[QUEUE_ITEM]",
-    modes: List[str],
-    collected_paths: List[str],
-    play_func,
-) -> None:
-    """
-    modes: subset ['file','play','stdout']
-    collected_paths: filled with temporary file paths (in order of receipt)
-    """
-    while True:
-        item = q.get()
-        if item is None:
-            break
-        idx, tmp_path, audio_bytes = item
-        collected_paths.append(tmp_path)
-        if "play" in modes:
-            try:
-                play_func(audio_bytes)
-            except Exception as e:
-                logger.error(f"Playback error on chunk {idx}: {e}")
-
-
-def get_config() -> Dict[str, Any]:
+def get_config() -> dict[str, Any]:
     """Load configuration from .env file if it exists."""
     load_dotenv(".env")
     engine = os.getenv("TTS_ENGINE", "gtts")
@@ -226,15 +119,15 @@ def read_file(file_path: str) -> str:
             raise ValidationError(f"File not found: {file_path}")
         if not os.path.isfile(file_path):
             raise ValidationError(f"Path is not a file: {file_path}")
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             content = f.read().strip()
         if not content:
             raise ValidationError(f"File is empty: {file_path}")
         return content
     except UnicodeDecodeError as e:
-        raise ValidationError(f"File encoding error: {e}")
+        raise ValidationError(f"File encoding error: {e}") from e
     except Exception as e:
-        raise ValidationError(f"Could not read file {file_path}: {e}")
+        raise ValidationError(f"Could not read file {file_path}: {e}") from e
 
 
 def parse_arguments() -> argparse.ArgumentParser:
@@ -331,9 +224,7 @@ Environment Configuration:
         "--engine",
         help="TTS engine to use (gtts, pyttsx3, or any custom engine in engines/)",
     )
-    parser.add_argument(
-        "-l", "--language", default="en", help="Language code (default: en)"
-    )
+    parser.add_argument("-l", "--language", default="en", help="Language code (default: en)")
 
     # Audio directory option
     parser.add_argument(
@@ -347,7 +238,7 @@ Environment Configuration:
         "--coqui-model",
         metavar="MODEL",
         help='coqui-tts model identifier (e.g. "tts_models/multilingual/multi-dataset/xtts_v2"). '
-             "Sets COQUITTS_MODEL for this run.",
+        "Sets COQUITTS_MODEL for this run.",
     )
     parser.add_argument(
         "--coqui-sample",
@@ -356,12 +247,8 @@ Environment Configuration:
     )
 
     # Verbosity options
-    parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable verbose output"
-    )
-    parser.add_argument(
-        "-q", "--quiet", action="store_true", help="Suppress non-error output"
-    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
+    parser.add_argument("-q", "--quiet", action="store_true", help="Suppress non-error output")
 
     return parser
 
@@ -386,9 +273,7 @@ def get_text(args: argparse.Namespace) -> str:
         raise ValidationError("No text provided")
 
 
-def to_file(
-    args: argparse.Namespace, config: Dict[str, Any], engine: str
-) -> Optional[str]:
+def to_file(args: argparse.Namespace, config: dict[str, Any], engine: str) -> str | None:
     """Determine output filename from arguments and configuration."""
     if args.file is None:
         return None
@@ -398,9 +283,7 @@ def to_file(
         ensure_audio_directory(audio_dir)
         timestamp_filename = cast(str, generate_timestamp_filename("", extension))
         return os.path.join(audio_dir, timestamp_filename)
-    if args.file.endswith("/") or (
-        os.path.exists(args.file) and os.path.isdir(args.file)
-    ):
+    if args.file.endswith("/") or (os.path.exists(args.file) and os.path.isdir(args.file)):
         ensure_audio_directory(args.file)
         timestamp_filename = cast(str, generate_timestamp_filename("", extension))
         return os.path.join(args.file, timestamp_filename)
@@ -412,14 +295,14 @@ def to_file(
 
 
 ENGINE_MODEL_SOURCES = {
-    "pipertts":  (os.getenv("PIPERTTS_PATH",  ".pipertts"),  ["*.onnx"]),
+    "pipertts": (os.getenv("PIPERTTS_PATH", ".pipertts"), ["*.onnx"]),
     "silerotts": (os.getenv("SILEROTTS_PATH", ".silerotts"), ["**/*.pt", "**/*.jit"]),
-    "coquitts":  (os.getenv("COQUITTS_PATH",  ".coquitts"),  ["tts/*"]),
-    "barktts":   (os.getenv("BARKTTS_PATH",   ".barktts"),   ["**/*.pt"]),
+    "coquitts": (os.getenv("COQUITTS_PATH", ".coquitts"), ["tts/*"]),
+    "barktts": (os.getenv("BARKTTS_PATH", ".barktts"), ["**/*.pt"]),
 }
 
 ENGINE_NOTES = {
-    "gtts":    "cloud — no local models",
+    "gtts": "cloud — no local models",
     "pyttsx3": "uses system espeak voices",
 }
 
@@ -427,6 +310,7 @@ ENGINE_NOTES = {
 def list_engines_and_models() -> None:
     """Print all engines, their availability, and installed model files."""
     from engines import is_engine_available
+
     engines_dir = Path(__file__).resolve().parent / "engines"
     engine_names = sorted(p.stem for p in engines_dir.glob("*.py") if p.name != "__init__.py")
 
@@ -479,6 +363,7 @@ def main() -> int:
     # Load config files (./ttsgen.conf > ~/.config/ttsgen.conf > .env). Existing env
     # (set by shell or by the CLI flags above) is preserved — files only fill gaps.
     from libs.config import load_config
+
     load_config()
 
     if getattr(args, "list", False):
@@ -487,6 +372,7 @@ def main() -> int:
 
     if getattr(args, "install", None):
         from install import run as run_installer
+
         return run_installer(args.install, non_interactive=args.non_interactive)
 
     try:
@@ -497,13 +383,11 @@ def main() -> int:
         language = args.language or config["language"]
 
         # Determine output formats
-        output_formats: List[str] = []
+        output_formats: list[str] = []
         if args.output:
             for fmt in [f.strip() for f in args.output.split(",")]:
                 if fmt not in ["play", "file", "stdout"]:
-                    raise ValidationError(
-                        f"Invalid output format: {fmt}. Valid: play, file, stdout"
-                    )
+                    raise ValidationError(f"Invalid output format: {fmt}. Valid: play, file, stdout")
                 if fmt not in output_formats:
                     output_formats.append(fmt)
         if args.file is not None and "file" not in output_formats:
@@ -518,7 +402,7 @@ def main() -> int:
             output_formats = ["play"]
 
         # Determine output filename if saving to file
-        output_filename: Optional[str] = None
+        output_filename: str | None = None
         if "file" in output_formats:
             if args.file is not None:
                 output_filename = to_file(args, config, engine)
@@ -589,12 +473,18 @@ def main() -> int:
         else:
             tmp_dir = None
 
-        q: "queue.Queue[QUEUE_ITEM]" = queue.Queue(maxsize=2)
-        collected_paths: List[str] = []
+        q: queue.Queue[QUEUE_ITEM] = queue.Queue(maxsize=2)
+        collected_paths: list[str] = []
+
+        # Producer: bind engine/language; rec_worker calls generator(text) per chunk.
+        from libs.api import text_to_speech_bytes
+
+        def generator(text: str) -> bytes:
+            return text_to_speech_bytes(text=text, engine=engine, language=language)
 
         rec = threading.Thread(
             target=rec_worker,
-            args=(chunks, engine, language, q, tmp_suffix, tmp_dir),
+            args=(chunks, generator, q, tmp_suffix, tmp_dir),
             daemon=True,
         )
         play = threading.Thread(
@@ -607,7 +497,7 @@ def main() -> int:
         rec.join()
         play.join()
 
-        saved_files: List[str] = []
+        saved_files: list[str] = []
 
         if out_is_file:
             if output_filename and not os.path.isdir(output_filename):
@@ -618,7 +508,7 @@ def main() -> int:
                     dst = f"{base}_{i:03d}{ext2}"
                     try:
                         shutil.copy2(p, dst)  # copy temp file to destination
-                        safe_unlink(p)         # delete original temp file (Windows-safe)
+                        safe_unlink(p)  # delete original temp file (Windows-safe)
                         saved_files.append(dst)
                     except Exception as e:
                         logger.error(f"Failed to save chunk {i} to {dst}: {e}")
@@ -640,7 +530,6 @@ def main() -> int:
                     except Exception as e:
                         logger.error(f"Failed to save chunk {i} to {dst}: {e}")
 
-
             if "stdout" not in output_formats:
                 for fpath in saved_files:
                     print(fpath, file=sys.stdout)
@@ -655,10 +544,7 @@ def main() -> int:
             if engine == "gtts":
                 # MP3 - don't glue them together without recoding -
                 # write them sequentially
-                logger.warning(
-                    "multiple MP3 chunks written sequentially to stdout; "
-                    "this is not a single valid MP3 file."
-                )
+                logger.warning("multiple MP3 chunks written sequentially to stdout; " "this is not a single valid MP3 file.")
                 src_list = saved_files if saved_files else collected_paths
                 for p in src_list:
                     with open(p, "rb") as f:
