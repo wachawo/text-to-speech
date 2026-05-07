@@ -230,15 +230,22 @@ def main() -> int:
 
     q: queue.Queue[QUEUE_ITEM] = queue.Queue(maxsize=2)
     collected_paths: list[str] = []
+    failures: list[tuple[int, BaseException]] = []
 
     from libs.api import play_audio
 
     rec = threading.Thread(target=rec_worker, args=(chunks, generator, q, tmp_suffix, tmp_dir), daemon=True)
-    play = threading.Thread(target=play_worker, args=(q, output_formats, collected_paths, play_audio), daemon=True)
+    play = threading.Thread(target=play_worker, args=(q, output_formats, collected_paths, play_audio, failures), daemon=True)
     rec.start()
     play.start()
     rec.join()
     play.join()
+
+    if failures:
+        for idx, err in failures:
+            logger.error(f"Chunk {idx} failed: {type(err).__name__}: {err}")
+        logger.error(f"{len(failures)}/{len(chunks)} chunk(s) failed; aborting with exit code 3.")
+        return 3
 
     saved: list[str] = []
     if out_is_file and output_filename:
