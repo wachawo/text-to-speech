@@ -38,6 +38,8 @@ ttsgen.wav
 
 # Audio files
 audio/
+samples/
+texts/
 *.wav
 *.mp3
 *.ogg
