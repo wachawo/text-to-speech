@@ -29,7 +29,7 @@ jobs:
       - uses: astral-sh/setup-uv@v3
       - name: Install system audio libs
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg libsndfile1 libportaudio2
-      - name: Install dev dependencies
-        run: uv pip install --system -r requirements-dev.txt
+      - name: Install package with api + dev extras
+        run: uv pip install --system -e ".[api,dev]"
       - name: Run pytest
         run: pytest

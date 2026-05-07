@@ -75,3 +75,8 @@ htmlcov/
 .backup/
 *.bak
 *.orig
+
+# Docs
+*.md
+!README.md
+!docs/*.md
