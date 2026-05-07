@@ -163,7 +163,6 @@ def generate(text: str, config: dict) -> bytes:
         # Fix for PyTorch 2.6+ weights_only security issue
         # Bark models require weights_only=False or safe_globals
         import torch
-        import numpy as np
 
         torch_version = tuple(map(int, torch.__version__.split(".")[:2]))
         if torch_version >= (2, 6):
