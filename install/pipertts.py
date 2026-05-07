@@ -3,9 +3,7 @@
 """Piper TTS installer — pip + voice model download from HuggingFace."""
 
 import logging
-import os
 from pathlib import Path
-from typing import List
 
 from install.common import (
     download_file,
@@ -24,11 +22,11 @@ BASE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0"
 
 # code → (huggingface_path, file_basename, label)
 VOICES = {
-    "en_US": ("en/en_US/lessac/medium",     "en_US-lessac-medium",     "English (lessac, female)"),
-    "ru_RU": ("ru/ru_RU/ruslan/medium",     "ru_RU-ruslan-medium",     "Russian (ruslan, male)"),
-    "es_ES": ("es/es_ES/davefx/medium",     "es_ES-davefx-medium",     "Spanish (davefx)"),
-    "de_DE": ("de/de_DE/thorsten/medium",   "de_DE-thorsten-medium",   "German (thorsten)"),
-    "fr_FR": ("fr/fr_FR/siwis/medium",      "fr_FR-siwis-medium",      "French (siwis)"),
+    "en_US": ("en/en_US/lessac/medium", "en_US-lessac-medium", "English (lessac, female)"),
+    "ru_RU": ("ru/ru_RU/ruslan/medium", "ru_RU-ruslan-medium", "Russian (ruslan, male)"),
+    "es_ES": ("es/es_ES/davefx/medium", "es_ES-davefx-medium", "Spanish (davefx)"),
+    "de_DE": ("de/de_DE/thorsten/medium", "de_DE-thorsten-medium", "German (thorsten)"),
+    "fr_FR": ("fr/fr_FR/siwis/medium", "fr_FR-siwis-medium", "French (siwis)"),
 }
 
 
@@ -42,7 +40,7 @@ def models_dir(non_interactive: bool = False) -> Path:
     )
 
 
-def select_voices(non_interactive: bool) -> List[str]:
+def select_voices(non_interactive: bool) -> list[str]:
     """Return list of voice codes to install."""
     codes = list(VOICES.keys())
     if non_interactive:
@@ -56,7 +54,7 @@ def select_voices(non_interactive: bool) -> List[str]:
     raw = prompt_text("Your choice", default=str(len(codes) + 1)).strip()
     if not raw:
         return codes
-    chosen: List[str] = []
+    chosen: list[str] = []
     for token in raw.split():
         try:
             idx = int(token)

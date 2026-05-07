@@ -11,9 +11,9 @@ Usage:
     cat audio.wav | python ttsplay.py
 """
 
-import sys
-import os
 import logging
+import os
+import sys
 
 LOGGING = {
     "handlers": [
@@ -76,6 +76,7 @@ def main():
         return 1
     except Exception as exc:
         import traceback
+
         logger.error(f"{type(exc).__name__}: {str(exc)}\n{traceback.format_exc()}")
         return 1
 

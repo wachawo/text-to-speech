@@ -52,22 +52,22 @@ load_dotenv(find_dotenv())
 
 # Config
 TRUE_VALUES = ("1", "true", "yes", "on", "enabled")
-TTS_HOST              = os.getenv("TTS_HOST", "0.0.0.0")
-TTS_PORT              = int(os.getenv("TTS_PORT", "5000"))
-TTS_DEBUG             = os.getenv("TTS_DEBUG", "False").lower() in TRUE_VALUES
-TTS_TOKENS            = {t.strip() for t in os.getenv("TTS_TOKENS", "").split(",") if t.strip()}
-TTS_POOL_SIZE         = int(os.getenv("TTS_POOL_SIZE", "1"))
-TTS_ENGINE_DEFAULT    = os.getenv("TTS_ENGINE", "gtts")
-TTS_LANGUAGE_DEFAULT  = os.getenv("TTS_LANGUAGE", "en")
-TIMEZONE              = pytz.timezone(os.getenv("TZ", "America/New_York"))
-DATETIME_FMT          = "%Y-%m-%d %H:%M:%S"
+TTS_HOST = os.getenv("TTS_HOST", "0.0.0.0")
+TTS_PORT = int(os.getenv("TTS_PORT", "5000"))
+TTS_DEBUG = os.getenv("TTS_DEBUG", "False").lower() in TRUE_VALUES
+TTS_TOKENS = {t.strip() for t in os.getenv("TTS_TOKENS", "").split(",") if t.strip()}
+TTS_POOL_SIZE = int(os.getenv("TTS_POOL_SIZE", "1"))
+TTS_ENGINE_DEFAULT = os.getenv("TTS_ENGINE", "gtts")
+TTS_LANGUAGE_DEFAULT = os.getenv("TTS_LANGUAGE", "en")
+TIMEZONE = pytz.timezone(os.getenv("TZ", "America/New_York"))
+DATETIME_FMT = "%Y-%m-%d %H:%M:%S"
 
 # Logging
 LOGGING = {
     "handlers": [logging.StreamHandler()],
-    "format":   "%(asctime)s.%(msecs)03d [%(levelname)s]: (%(name)s) %(message)s",
-    "level":    logging.INFO,
-    "datefmt":  "%Y-%m-%d %H:%M:%S",
+    "format": "%(asctime)s.%(msecs)03d [%(levelname)s]: (%(name)s) %(message)s",
+    "level": logging.INFO,
+    "datefmt": "%Y-%m-%d %H:%M:%S",
 }
 logging.basicConfig(**LOGGING)  # type: ignore[arg-type]
 logger = logging.getLogger(__name__)
@@ -90,9 +90,7 @@ def init_engine_pool(size: int = TTS_POOL_SIZE) -> None:
             text_to_speech_bytes(text=".", engine=TTS_ENGINE_DEFAULT, language=TTS_LANGUAGE_DEFAULT)
             logger.info(f"Warmup OK ({time.monotonic() - t0:.2f}s)")
         except Exception as exc:
-            logger.warning(
-                f"Warmup failed: {type(exc).__name__}: {exc} — will retry on first request"
-            )
+            logger.warning(f"Warmup failed: {type(exc).__name__}: {exc} — will retry on first request")
 
     for i in range(size):
         ENGINE_POOL.put(i)
@@ -103,7 +101,7 @@ class JSONProvider(DefaultJSONProvider):
     """Custom JSON provider — datetime/date as 'YYYY-MM-DD HH:MM:SS'."""
 
     def default(self, o):
-        if isinstance(o, (datetime, date)):
+        if isinstance(o, datetime | date):
             return o.strftime(DATETIME_FMT)
         return super().default(o)
 
@@ -185,12 +183,17 @@ def after_request(resp):
 
 @app.route("/api/health", methods=["GET"])
 def health():
-    return jsonify({
-        "status":    "ok",
-        "engine":    TTS_ENGINE_DEFAULT,
-        "pool_size": TTS_POOL_SIZE,
-        "available": ENGINE_POOL.qsize(),
-    }), 200
+    return (
+        jsonify(
+            {
+                "status": "ok",
+                "engine": TTS_ENGINE_DEFAULT,
+                "pool_size": TTS_POOL_SIZE,
+                "available": ENGINE_POOL.qsize(),
+            }
+        ),
+        200,
+    )
 
 
 @app.route("/api/engines", methods=["GET"])

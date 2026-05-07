@@ -18,14 +18,14 @@ import queue
 import shutil
 import sys
 import threading
-import wave
-from pathlib import Path
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, cast
 
 import requests
 
 from libs.cli import (
     QueueItem as QUEUE_ITEM,
+)
+from libs.cli import (
     chunk_text,
     concat_wav_files,
     play_worker,
@@ -35,14 +35,14 @@ from libs.tempfiles import safe_unlink
 
 LOGGING = {
     "handlers": [logging.StreamHandler()],
-    "format":   "%(asctime)s.%(msecs)03d [%(levelname)s]: (%(name)s.%(funcName)s) %(message)s",
-    "level":    logging.INFO,
-    "datefmt":  "%Y-%m-%d %H:%M:%S",
+    "format": "%(asctime)s.%(msecs)03d [%(levelname)s]: (%(name)s.%(funcName)s) %(message)s",
+    "level": logging.INFO,
+    "datefmt": "%Y-%m-%d %H:%M:%S",
 }
 logging.basicConfig(**LOGGING)  # type: ignore[arg-type]
 logger = logging.getLogger(__name__)
 
-DEFAULT_URL     = "http://localhost:5000"
+DEFAULT_URL = "http://localhost:5000"
 DEFAULT_TIMEOUT = 120
 
 
@@ -50,7 +50,7 @@ def get_url() -> str:
     return os.getenv("TTS_URL", DEFAULT_URL).rstrip("/")
 
 
-def get_headers() -> Dict[str, str]:
+def get_headers() -> dict[str, str]:
     token = os.getenv("TTS_TOKEN", "").strip()
     if token:
         return {"Authorization": f"Bearer {token}"}
@@ -67,12 +67,12 @@ def fetch_audio(text: str, engine: str, language: str) -> bytes:
     return resp.content
 
 
-def fetch_engines() -> Dict[str, Any]:
+def fetch_engines() -> dict[str, Any]:
     """GET /api/engines → {engines: [...], default: ...}."""
     url = f"{get_url()}/api/engines"
     resp = requests.get(url, headers=get_headers(), timeout=10)
     resp.raise_for_status()
-    return cast(Dict[str, Any], resp.json())
+    return cast(dict[str, Any], resp.json())
 
 
 def list_remote_engines() -> int:
@@ -107,23 +107,18 @@ Configuration (read from process env, ./ttsgen.conf, ~/.config/ttsgen.conf, .env
     )
     text_group = parser.add_mutually_exclusive_group(required=True)
     text_group.add_argument("text", nargs="?", help="Text to synthesize")
-    text_group.add_argument("-i", "--input", metavar="FILE", dest="text_file",
-                            help="Path to text file")
-    text_group.add_argument("--list", action="store_true",
-                            help="List engines available on the remote server")
+    text_group.add_argument("-i", "--input", metavar="FILE", dest="text_file", help="Path to text file")
+    text_group.add_argument("--list", action="store_true", help="List engines available on the remote server")
 
-    parser.add_argument("-f", "--file", nargs="?", const="", metavar="PATH",
-                        help="Save server response to file (auto-name if no PATH)")
+    parser.add_argument(
+        "-f", "--file", nargs="?", const="", metavar="PATH", help="Save server response to file (auto-name if no PATH)"
+    )
     parser.add_argument("-p", "--play", action="store_true", help="Play audio (default)")
     parser.add_argument("--stdout", action="store_true", help="Output audio bytes to stdout")
-    parser.add_argument("-o", "--output", metavar="FORMATS",
-                        help="Comma-separated: play, file, stdout")
-    parser.add_argument("-e", "--engine",
-                        help="Remote engine name (server's TTS_ENGINE if omitted)")
-    parser.add_argument("-l", "--language", default="en",
-                        help="Language code (default: en)")
-    parser.add_argument("--audio-dir", metavar="DIR",
-                        help="Directory for saved files (default: audio/)")
+    parser.add_argument("-o", "--output", metavar="FORMATS", help="Comma-separated: play, file, stdout")
+    parser.add_argument("-e", "--engine", help="Remote engine name (server's TTS_ENGINE if omitted)")
+    parser.add_argument("-l", "--language", default="en", help="Language code (default: en)")
+    parser.add_argument("--audio-dir", metavar="DIR", help="Directory for saved files (default: audio/)")
 
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("-q", "--quiet", action="store_true")
@@ -142,7 +137,7 @@ def setup_logging(verbose: bool, quiet: bool) -> None:
 def read_text_file(path: str) -> str:
     if not os.path.isfile(path):
         raise FileNotFoundError(f"Not a file: {path}")
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         content = f.read().strip()
     if not content:
         raise ValueError(f"File is empty: {path}")
@@ -157,6 +152,7 @@ def main() -> int:
     # Load config files (./ttsgen.conf > ~/.config/ttsgen.conf > .env > defaults)
     try:
         from libs.config import load_config
+
         load_config()
     except ImportError:
         pass
@@ -174,10 +170,10 @@ def main() -> int:
     else:
         text = args.text
 
-    engine   = args.engine   or os.getenv("TTS_ENGINE", "")     # empty → server picks default
+    engine = args.engine or os.getenv("TTS_ENGINE", "")  # empty → server picks default
     language = args.language or os.getenv("TTS_LANGUAGE", "en")
 
-    output_formats: List[str] = []
+    output_formats: list[str] = []
     if args.output:
         for fmt in [f.strip() for f in args.output.split(",")]:
             if fmt not in ("play", "file", "stdout"):
@@ -198,11 +194,12 @@ def main() -> int:
     out_is_file = "file" in output_formats
 
     # Output filename resolution
-    output_filename: Optional[str] = None
+    output_filename: str | None = None
     if out_is_file:
         ext = "mp3" if engine in ("", "gtts") else "wav"
         if args.file == "" or args.file is None:
             from datetime import datetime
+
             audio_dir = args.audio_dir or os.getenv("AUDIO_DIRECTORY", "audio")
             os.makedirs(audio_dir, exist_ok=True)
             output_filename = os.path.join(audio_dir, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.{ext}")
@@ -231,23 +228,19 @@ def main() -> int:
     def generator(text_chunk: str) -> bytes:
         return fetch_audio(text_chunk, engine or "", language)
 
-    q: "queue.Queue[QUEUE_ITEM]" = queue.Queue(maxsize=2)
-    collected_paths: List[str] = []
+    q: queue.Queue[QUEUE_ITEM] = queue.Queue(maxsize=2)
+    collected_paths: list[str] = []
 
     from libs.api import play_audio
 
-    rec = threading.Thread(
-        target=rec_worker, args=(chunks, generator, q, tmp_suffix, tmp_dir), daemon=True
-    )
-    play = threading.Thread(
-        target=play_worker, args=(q, output_formats, collected_paths, play_audio), daemon=True
-    )
+    rec = threading.Thread(target=rec_worker, args=(chunks, generator, q, tmp_suffix, tmp_dir), daemon=True)
+    play = threading.Thread(target=play_worker, args=(q, output_formats, collected_paths, play_audio), daemon=True)
     rec.start()
     play.start()
     rec.join()
     play.join()
 
-    saved: List[str] = []
+    saved: list[str] = []
     if out_is_file and output_filename:
         if len(collected_paths) == 1:
             try:
@@ -272,7 +265,7 @@ def main() -> int:
 
     if out_is_stdout:
         if ext == "mp3":
-            for p in (saved if saved else collected_paths):
+            for p in saved if saved else collected_paths:
                 with open(p, "rb") as f:
                     sys.stdout.buffer.write(f.read())
             sys.stdout.buffer.flush()
@@ -297,5 +290,6 @@ if __name__ == "__main__":
         sys.exit(1)
     except Exception as exc:
         import traceback
+
         logger.error(f"{type(exc).__name__}: {str(exc)}\n{traceback.format_exc()}")
         sys.exit(1)

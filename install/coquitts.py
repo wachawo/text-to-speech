@@ -33,8 +33,8 @@ from install.common import (
     warn_no_venv,
 )
 
-DEFAULT_MODEL  = "tts_models/multilingual/multi-dataset/xtts_v2"
-ENGLISH_MODEL  = "tts_models/en/ljspeech/tacotron2-DDC"
+DEFAULT_MODEL = "tts_models/multilingual/multi-dataset/xtts_v2"
+ENGLISH_MODEL = "tts_models/en/ljspeech/tacotron2-DDC"
 DEFAULT_SAMPLE = "samples/1.wav"
 
 logger = logging.getLogger(__name__)
@@ -101,15 +101,18 @@ def predownload_model(model_name: str) -> int:
     """Download and load a Coqui model. Returns exit code."""
     try:
         from torch.serialization import add_safe_globals
+
         try:
-            from TTS.tts.configs.xtts_config import XttsConfig
-            from TTS.tts.models.xtts import XttsAudioConfig, XttsArgs
             from TTS.config.shared_configs import BaseDatasetConfig
+            from TTS.tts.configs.xtts_config import XttsConfig
+            from TTS.tts.models.xtts import XttsArgs, XttsAudioConfig
+
             add_safe_globals([XttsConfig, XttsAudioConfig, BaseDatasetConfig, XttsArgs])
         except ImportError:
             pass
 
         from TTS.api import TTS
+
         info(f"\nDownloading {model_name}...")
         # Coqui's TTS() asks an in-process `input("y/n")` license confirmation for some
         # models (e.g. xtts_v2). Our installer already collected user consent before
