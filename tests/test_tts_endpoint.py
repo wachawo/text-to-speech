@@ -35,10 +35,16 @@ def test_tts_missing_text_400(client):
 
 
 def test_tts_text_too_long_400(client):
-    resp = client.post("/api/tts", json={"text": "a" * 5001})
+    resp = client.post("/api/tts", json={"text": "a" * 1_000_001})
     assert resp.status_code == 400
     body = resp.get_json()
     assert set(body.keys()) == {"error", "request_id"}
+
+
+def test_tts_long_text_under_limit_ok(client):
+    """Text under 1M chars passes validation — chunking is downstream."""
+    resp = client.post("/api/tts", json={"text": "a" * 50_000})
+    assert resp.status_code == 200
 
 
 def test_tts_invalid_language_400(client):

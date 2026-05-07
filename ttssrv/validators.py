@@ -8,6 +8,8 @@ from marshmallow import Schema, fields, validate
 class TtsRequestSchema(Schema):
     """Request body / query string for /api/tts."""
 
-    text = fields.Str(required=True, validate=validate.Length(min=1, max=5000))
+    # Long text is chunked downstream by libs.cli.chunk_text; the upper bound
+    # here only guards against pathological inputs (memory / multi-hour stalls).
+    text = fields.Str(required=True, validate=validate.Length(min=1, max=1_000_000))
     engine = fields.Str(load_default=None)
     language = fields.Str(load_default=None, validate=validate.Length(equal=2))
