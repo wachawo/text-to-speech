@@ -1,42 +1,25 @@
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
 *.so
-.Python
 build/
-develop-eggs/
 dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
 *.egg
-MANIFEST
 
 # Virtual environments
+.venv/
 venv/
 env/
-ENV/
-env.bak/
-venv.bak/
-.venv/
 
-# Environment variables / configuration
+# Environment / config
 .env
 .env.*
 !.env.example
 ttsgen.conf
 ttsgen.wav
 
-# Audio files
+# Audio
 audio/
 samples/
 texts/
@@ -47,101 +30,48 @@ texts/
 *.m4a
 *.aac
 
-# Piper TTS models
+# Engine model directories
 .pipertts/
-# SileroTTS models
 .silerotts/
-# Coqui TTS models
 .coquitts/
-# Bark TTS models
 .barktts/
 
-# Temporary files
+# Temp
 *.tmp
 *.temp
-temp/
 tmp/
+temp/
 .tmp/
 
-# IDE and editors
+# IDE / editors
 .vscode/
 .idea/
+.claude/
+claude/
 *.swp
 *.swo
 *~
+
+# OS
 .DS_Store
-.DS_Store?
 ._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
 
 # Logs
 *.log
 logs/
-log/
 
-# Test coverage
-htmlcov/
+# Test / coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .coverage
 .coverage.*
 coverage.xml
-*.cover
+htmlcov/
 .hypothesis/
-.pytest_cache/
-.tox/
 
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# pyenv
-.python-version
-
-# pipenv
-Pipfile.lock
-
-# PEP 582
-__pypackages__/
-
-# Celery
-celerybeat-schedule
-celerybeat.pid
-
-# SageMath parsed files
-*.sage.py
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pyre type checker
-.pyre/
-
-# Profiling
-.prof
-
-# Backup files
+# Backup
+.backup/
 *.bak
-*.backup
 *.orig
-
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
