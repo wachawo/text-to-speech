@@ -78,122 +78,15 @@ except ImportError as e:
     logger.error(f"Failed to import TTS library: {e}")
     sys.exit(1)
 
-SPLIT_REGEX = re.compile(r"(?<=[.!?]|,|\n)")
-
-
-def chunk_text(text: str, max_len: int = 5000) -> List[str]:
-    """Split text by sentence-ish boundaries to chunks <= max_len."""
-    parts = [p.strip() for p in SPLIT_REGEX.split(text) if p and p.strip()]
-    chunks: List[str] = []
-    buf: List[str] = []
-    cur_len = 0
-    for p in parts:
-        if len(p) > max_len:
-            if cur_len:
-                chunks.append(" ".join(buf))
-                buf, cur_len = [], 0
-            for i in range(0, len(p), max_len):
-                chunks.append(p[i : i + max_len])
-            continue
-        add_len = (1 if buf else 0) + len(p)
-        if cur_len + add_len <= max_len:
-            buf.append(p)
-            cur_len += add_len
-        else:
-            if buf:
-                chunks.append(" ".join(buf))
-            buf, cur_len = [p], len(p)
-    if buf:
-        chunks.append(" ".join(buf))
-    return chunks
-
-
-def concat_wav_files(in_paths: List[str], out_stream: IO[bytes]) -> None:
-    """Concat WAV files (with same parametrs) to one WAV file,
-    recordings to out_stream."""
-    if not in_paths:
-        return
-    wout = wave.open(out_stream, "wb")
-    first = True
-    try:
-        for p in in_paths:
-            win = wave.open(p, "rb")
-            try:
-                if first:
-                    wout.setnchannels(win.getnchannels())
-                    wout.setsampwidth(win.getsampwidth())
-                    wout.setframerate(win.getframerate())
-                    first = False
-                else:
-                    if (
-                        win.getnchannels() != wout.getnchannels()
-                        or win.getsampwidth() != wout.getsampwidth()
-                        or win.getframerate() != wout.getframerate()
-                    ):
-                        logger.warning(
-                            f"WAV params mismatch in {p}; attempting naive append (may be invalid)."
-                        )
-                frames = win.readframes(win.getnframes())
-                wout.writeframes(frames)
-            finally:
-                win.close()
-    finally:
-        wout.close()
-
-
-# item in queue: Optional[Tuple[int, str, bytes]] -> (idx, tmp_path, audio_bytes)
-QUEUE_ITEM = Optional[Tuple[int, str, bytes]]
-
-
-def rec_worker(
-    text_chunks: List[str],
-    eng: str,
-    lang: str,
-    q: "queue.Queue[QUEUE_ITEM]",
-    tmp_suffix: str,
-    tmp_dir: Optional[str] = None,
-) -> None:
-    """Generating audio`s and packing its in row (idx, tmp_path, bytes)."""
-    from libs.api import text_to_speech_bytes
-
-    for i, chunk in enumerate(text_chunks, start=1):
-        try:
-            audio_bytes = text_to_speech_bytes(text=chunk, engine=eng, language=lang)
-        except Exception as e:
-            logger.error(f"TTS error on chunk {i}: {e}")
-            audio_bytes = b""
-        fd, tmp_path = tempfile.mkstemp(suffix=tmp_suffix, dir=tmp_dir)
-        os.close(fd)
-        try:
-            with open(tmp_path, "wb") as f:
-                f.write(audio_bytes)
-        except Exception as e:
-            logger.error(f"Failed to write temp audio for chunk {i}: {e}")
-        q.put((i, tmp_path, audio_bytes))
-    q.put(None)  # Signal of end
-
-
-def play_worker(
-    q: "queue.Queue[QUEUE_ITEM]",
-    modes: List[str],
-    collected_paths: List[str],
-    play_func,
-) -> None:
-    """
-    modes: subset ['file','play','stdout']
-    collected_paths: filled with temporary file paths (in order of receipt)
-    """
-    while True:
-        item = q.get()
-        if item is None:
-            break
-        idx, tmp_path, audio_bytes = item
-        collected_paths.append(tmp_path)
-        if "play" in modes:
-            try:
-                play_func(audio_bytes)
-            except Exception as e:
-                logger.error(f"Playback error on chunk {idx}: {e}")
+# Pipeline helpers (chunk_text, concat_wav_files, rec_worker, play_worker) live in libs.cli
+# so they're shared between ttsgen (offline) and ttsapi (HTTP-based) without code duplication.
+from libs.cli import (  # noqa: E402
+    QueueItem as QUEUE_ITEM,
+    chunk_text,
+    concat_wav_files,
+    play_worker,
+    rec_worker,
+)
 
 
 def get_config() -> Dict[str, Any]:
@@ -592,9 +485,14 @@ def main() -> int:
         q: "queue.Queue[QUEUE_ITEM]" = queue.Queue(maxsize=2)
         collected_paths: List[str] = []
 
+        # Producer: bind engine/language; rec_worker calls generator(text) per chunk.
+        from libs.api import text_to_speech_bytes
+        def generator(text: str) -> bytes:
+            return text_to_speech_bytes(text=text, engine=engine, language=language)
+
         rec = threading.Thread(
             target=rec_worker,
-            args=(chunks, engine, language, q, tmp_suffix, tmp_dir),
+            args=(chunks, generator, q, tmp_suffix, tmp_dir),
             daemon=True,
         )
         play = threading.Thread(

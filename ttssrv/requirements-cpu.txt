@@ -1,0 +1,11 @@
+# CPU-only build — PyTorch CPU wheels (no CUDA libs, smaller image).
+# Installed by ttssrv/Dockerfile-cpu.
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+-r requirements.txt
+
+torch
+torchaudio
+coqui-tts[codec]
+transformers>=4.46,<5.0

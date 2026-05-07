@@ -59,9 +59,14 @@ COQUITTS_SAMPLE=~/.config/ttsgen.wav
 BARKTTS_PATH=.barktts
 
 
-# HTTP API server (Flask) — used by api/app1.py and docker-compose.yml.
-FLASK_HOST=0.0.0.0
-FLASK_PORT=5000
-FLASK_DEBUG=False
-SECRET_KEY=SuP3rS3cr3tK3y!
+# HTTP API server (used by `ttssrv` and docker-compose.yml).
+TTS_HOST=0.0.0.0
+TTS_PORT=5000
+TTS_DEBUG=False
+TTS_TOKEN=SuP3rS3cr3tK3y!
+TTS_POOL_SIZE=1
 TZ=America/New_York
+
+# HTTP API client (used by `ttsapi` to reach a remote `ttssrv`).
+TTS_URL=http://localhost:5000
+# TTS_TOKEN reused from the server section above.

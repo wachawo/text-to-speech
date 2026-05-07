@@ -1,5 +1,6 @@
-# Development requirements (tools for linting, formatting, typing, and testing)
-# Pin versions where reasonable; keep separate from runtime `requirements.txt`.
+# Development tools — mirrors `[dev]` extras in pyproject.toml.
+# Single-step install: `pip install -e ".[dev]"`.
+# Or `pip install -r requirements-dev.txt` to keep client deps + dev tools.
 -r requirements.txt
 
 black==23.3.0

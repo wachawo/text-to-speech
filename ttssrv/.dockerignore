@@ -1,0 +1,24 @@
+# Build context = ./ttssrv. Exclude caches and dev artifacts.
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# Local env / secrets / per-user wav (server reads model + sample at runtime via volume mount)
+.env
+.env.*
+*.env
+ttsgen.conf
+ttsgen.wav
+*.wav
+*.mp3

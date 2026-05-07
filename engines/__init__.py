@@ -127,7 +127,6 @@ def get_engine_function(engine_name: str) -> Optional[EngineFunction]:
     module = load_engine(engine_name)
 
     if module and hasattr(module, "generate"):
-        # Cast to EngineFunction to satisfy mypy
         generate_func: EngineFunction = module.generate
         return generate_func
 
