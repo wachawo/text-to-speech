@@ -139,7 +139,14 @@ def generate(text: str, config: dict) -> bytes:
         # Load model from torch hub (cached after first download)
         device = torch.device("cpu")  # Use CPU
 
-        # torch.hub.load returns (model, example_text)
+        # torch.hub.load returns (model, example_text).
+        # trust_repo=True suppresses the interactive y/n prompt that torch.hub
+        # raises before executing hubconf.py from snakers4/silero-models. We
+        # accept this exposure because: (1) the model itself is shipped from
+        # the same repo, so refusing the prompt blocks all SileroTTS usage;
+        # (2) the model directory is pinned via torch.hub.set_dir() to the
+        # configured SILEROTTS_PATH, so the fetched code only runs when the
+        # user explicitly opts in by installing this engine.
         result = torch.hub.load(
             repo_or_dir="snakers4/silero-models",
             model="silero_tts",

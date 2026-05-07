@@ -36,6 +36,11 @@ def predownload(models_dir: Path, languages: list) -> None:
 
     torch.hub.set_dir(str(models_dir))
 
+    # trust_repo=True suppresses torch.hub's interactive y/n prompt before
+    # executing hubconf.py from snakers4/silero-models. The user has already
+    # opted into running that code by choosing to install this engine, so we
+    # bypass the prompt rather than fail in non-interactive contexts (CI,
+    # docker build). Models land under the configured SILEROTTS_PATH.
     for lang, speaker in languages:
         info(f"\nDownloading {lang} model (speaker={speaker})...")
         torch.hub.load(
