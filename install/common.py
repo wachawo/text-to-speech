@@ -2,10 +2,13 @@
 # -*- coding: utf-8 -*-
 """Shared helpers for engine installers — pip, downloads, prompts, colored output."""
 
+import hashlib
+import json
 import logging
 import os
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -117,6 +120,61 @@ def download_file(url: str, dest: Path, *, label: str | None = None) -> None:
     urllib.request.urlretrieve(url, dest, reporthook=reporthook)
     sys.stdout.write("\n")
     sys.stdout.flush()
+
+
+_HASH_CHUNK = 1024 * 1024  # 1 MiB read buffer for hashing
+
+
+def hash_file(path: Path, algo: str = "sha256") -> str:
+    """Return hex digest of the file at `path` using the named hashlib algorithm."""
+    h = hashlib.new(algo)
+    with open(path, "rb") as f:
+        while True:
+            block = f.read(_HASH_CHUNK)
+            if not block:
+                break
+            h.update(block)
+    return h.hexdigest()
+
+
+def verify_checksum(path: Path, expected: str, algo: str = "sha256") -> bool:
+    """Compute file's hash and compare to `expected` (case-insensitive hex).
+
+    On mismatch the corrupt file is removed and a warning is emitted; the
+    caller decides how to recover (re-download, abort). Returns True on
+    success, False on mismatch / IO error.
+    """
+    path = Path(path)
+    if not path.exists():
+        warn(f"verify_checksum: {path} does not exist")
+        return False
+    try:
+        actual = hash_file(path, algo=algo)
+    except Exception as exc:
+        warn(f"verify_checksum: failed to hash {path}: {type(exc).__name__}: {exc}")
+        return False
+    if actual.lower() != expected.lower():
+        warn(f"verify_checksum FAILED for {path.name}: " f"expected {algo}={expected[:16]}..., got {actual[:16]}...")
+        try:
+            path.unlink()
+            info(f"  removed corrupt file: {path.name}")
+        except OSError as exc:
+            warn(f"  could not remove {path}: {type(exc).__name__}: {exc}")
+        return False
+    info(f"  verified {algo}: {path.name}")
+    return True
+
+
+def fetch_json(url: str, timeout: int = 30) -> dict | None:
+    """GET `url` and parse JSON. Returns None on any failure (network, parse)."""
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "ttsgen-installer"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = resp.read()
+        return json.loads(data)
+    except (urllib.error.URLError, json.JSONDecodeError, OSError) as exc:
+        warn(f"fetch_json {url}: {type(exc).__name__}: {exc}")
+        return None
 
 
 PYTORCH_CPU_INDEX = "https://download.pytorch.org/whl/cpu"

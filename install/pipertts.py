@@ -7,18 +7,23 @@ from pathlib import Path
 
 from install.common import (
     download_file,
+    fetch_json,
     info,
     pip_install,
     project_root,
     prompt_text,
     resolve_models_dir,
     success,
+    verify_checksum,
     warn,
 )
 
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0"
+# Upstream-published manifest with size + hash for every voice file. Pinned to
+# the same v1.0.0 tag as BASE_URL so the manifest matches what we download.
+VOICES_JSON_URL = f"{BASE_URL}/voices.json"
 
 # code → (huggingface_path, file_basename, label)
 VOICES = {
@@ -72,14 +77,58 @@ def select_voices(non_interactive: bool) -> list[str]:
     return chosen or codes
 
 
-def download_voice(code: str, target_dir: Path) -> None:
+def _expected_hash(manifest: dict | None, voice_path: str, basename: str, ext: str) -> tuple[str, str] | None:
+    """Look up the upstream-declared hash for a voice file.
+
+    rhasspy/piper-voices `voices.json` keys voices by basename (e.g.
+    `en_US-lessac-medium`). Each voice has a `files` map keyed by relative
+    path; the value carries `md5_digest` (and sometimes `size_bytes`). We
+    return (hex_digest, algo) or None when the manifest doesn't cover it.
+    """
+    if not manifest:
+        return None
+    voice_entry = manifest.get(basename)
+    if not isinstance(voice_entry, dict):
+        return None
+    files = voice_entry.get("files")
+    if not isinstance(files, dict):
+        return None
+    rel_path = f"{voice_path}/{basename}{ext}"
+    file_entry = files.get(rel_path) or files.get(f"{basename}{ext}")
+    if not isinstance(file_entry, dict):
+        return None
+    for algo_key, algo in (("sha256", "sha256"), ("md5_digest", "md5"), ("md5", "md5")):
+        digest = file_entry.get(algo_key)
+        if isinstance(digest, str) and digest:
+            return digest, algo
+    return None
+
+
+def download_voice(code: str, target_dir: Path, manifest: dict | None) -> bool:
+    """Download both files for a voice and verify them when a hash is published.
+
+    Returns True on success, False if any file failed verification.
+    """
     path, basename, label = VOICES[code]
     info(f"\nProcessing: {label}")
+    ok = True
     for ext in (".onnx", ".onnx.json"):
         url = f"{BASE_URL}/{path}/{basename}{ext}"
         dest = target_dir / f"{basename}{ext}"
         download_file(url, dest, label=f"{basename}{ext}")
-    success(f"Done: {basename}")
+
+        expected = _expected_hash(manifest, path, basename, ext)
+        if expected is None:
+            warn(f"  no upstream checksum for {basename}{ext} — skipping verification")
+            continue
+        digest, algo = expected
+        if not verify_checksum(dest, digest, algo=algo):
+            ok = False
+    if ok:
+        success(f"Done: {basename}")
+    else:
+        warn(f"Failed: {basename} — file(s) deleted, re-run installer to retry")
+    return ok
 
 
 def install(non_interactive: bool = False) -> int:
@@ -89,9 +138,16 @@ def install(non_interactive: bool = False) -> int:
     target = models_dir(non_interactive=non_interactive)
     info(f"Models directory: {target}")
 
+    info(f"\nFetching voice manifest: {VOICES_JSON_URL}")
+    manifest = fetch_json(VOICES_JSON_URL)
+    if manifest is None:
+        warn("Could not fetch voices.json — downloads will proceed without checksum verification")
+
     voices = select_voices(non_interactive)
-    for code in voices:
-        download_voice(code, target)
+    failed = [code for code in voices if not download_voice(code, target, manifest)]
+    if failed:
+        warn(f"\nSome voices failed checksum verification: {', '.join(failed)}")
+        return 1
 
     success("\nInstallation complete!")
     info(f"Models in: {target}")
