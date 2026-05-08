@@ -79,4 +79,5 @@ htmlcov/
 # Docs
 *.md
 !README.md
+!CHANGELOG.md
 !docs/*.md
