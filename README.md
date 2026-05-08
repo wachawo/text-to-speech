@@ -326,9 +326,22 @@ text-to-speech/
 ```bash
 pip install -e ".[dev]"
 
-# Tests
-python test_tts.py
-python -m pytest test_tts.py -v
+# Tests + coverage (config lives in pyproject.toml — `pytest` runs both)
+pytest                    # full suite, prints per-module coverage
+pytest --no-cov           # disable coverage for a faster local re-run
+
+# Test suite layout (162 tests in tests/test_<word>.py, ~1s on a laptop):
+#   srv-side    test_health, test_auth, test_endpoint, test_errors, test_smoke
+#   client-side test_apiauth, test_apihelpers, test_apimain
+#   ttsgen CLI  test_gencli
+#   library     test_cli, test_config, test_tools, test_tempfiles,
+#               test_resolver, test_engines, test_customerror
+#
+# Coverage today: ~56% project-wide, ~72% on the non-engine surface.
+# The five heavy engines (coquitts/barktts/pipertts/pyttsx3/silerotts)
+# need torch/coqui-tts/espeak and are excluded from unit tests by design —
+# `tests/conftest.py` stubs `libs.api.text_to_speech_bytes` so the HTTP
+# layer can be exercised without loading any model.
 
 # Lint / typecheck / format
 flake8 .
