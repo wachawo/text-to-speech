@@ -1,20 +1,25 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Unit tests for engines/pipertts.py — offline TTS via Piper.
+"""Unit tests for engines/pipertts.py — offline TTS via Piper, plus an
+integration check against the upstream `voices.json` manifest schema.
 
-Fakes the `piper` package and the on-disk .onnx model layout. Pins the
-contract for path resolution (PIPERTTS_MODELS env > .pipertts > default),
-language→voice mapping, and the FileNotFoundError → instructions branch.
+Unit tests fake the `piper` package and the on-disk .onnx model layout.
+The manifest tests at the bottom of this file are network-dependent and
+auto-skip when the manifest cannot be fetched.
 """
 
 import importlib
 import io
+import json
 import sys
 import types
+import urllib.error
+import urllib.request
 import wave
 
 import pytest
 
+from install.pipertts import VOICES, VOICES_JSON_URL, _expected_hash
 from libs.exceptions import EngineNotAvailableError, TTSException
 
 
@@ -190,3 +195,71 @@ def test_generate_returns_valid_wav_bytes(engine, monkeypatch, tmp_path):
         assert w.getnchannels() == 1
         assert w.getsampwidth() == 2
         assert w.getframerate() == 22050
+
+
+# voices.json manifest — schema sanity check (network)
+
+EXPECTED_HASH_KEYS = {"sha256", "md5_digest", "md5"}
+
+
+def _try_fetch_manifest() -> dict | None:
+    try:
+        req = urllib.request.Request(VOICES_JSON_URL, headers={"User-Agent": "ttsgen-tests"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read())
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+
+
+@pytest.fixture(scope="module")
+def manifest() -> dict:
+    data = _try_fetch_manifest()
+    if data is None:
+        pytest.skip(f"manifest not reachable: {VOICES_JSON_URL}")
+    assert data is not None
+    return data
+
+
+def test_manifest_has_entry_for_every_voice_we_install(manifest: dict) -> None:
+    missing = [code for code in VOICES if VOICES[code][1] not in manifest]
+    assert not missing, f"voices.json missing entries for: {missing}"
+
+
+def test_every_voice_file_has_a_known_hash_key(manifest: dict) -> None:
+    """For each voice we ship, both .onnx and .onnx.json must expose at least
+    one of (sha256 | md5_digest | md5). If upstream renames the field this
+    test fails — better than _expected_hash silently returning None."""
+    bad: list[str] = []
+    for code, (path, basename, _label) in VOICES.items():
+        entry = manifest.get(basename)
+        files = entry.get("files") if isinstance(entry, dict) else None
+        if not isinstance(files, dict):
+            bad.append(f"{code}: no `files` map in manifest entry")
+            continue
+        for ext in (".onnx", ".onnx.json"):
+            rel_path = f"{path}/{basename}{ext}"
+            file_entry = files.get(rel_path) or files.get(f"{basename}{ext}")
+            if not isinstance(file_entry, dict):
+                bad.append(f"{code} {ext}: no entry at {rel_path}")
+                continue
+            present = set(file_entry.keys()) & EXPECTED_HASH_KEYS
+            if not present:
+                bad.append(f"{code} {ext}: none of {sorted(EXPECTED_HASH_KEYS)} found " f"(keys={sorted(file_entry.keys())})")
+    assert not bad, "manifest schema drift detected:\n  " + "\n  ".join(bad)
+
+
+def test_expected_hash_extracts_a_value_for_every_voice(manifest: dict) -> None:
+    """Round-trip through the helper itself — any voice for which
+    _expected_hash returns None means verify_checksum will be skipped at
+    install time, which is what we want to know about now (not later)."""
+    skipped: list[str] = []
+    for code, (path, basename, _label) in VOICES.items():
+        for ext in (".onnx", ".onnx.json"):
+            result = _expected_hash(manifest, path, basename, ext)
+            if result is None:
+                skipped.append(f"{code}{ext}")
+            else:
+                digest, algo = result
+                assert isinstance(digest, str) and digest
+                assert algo in {"sha256", "md5"}
+    assert not skipped, "_expected_hash returned None for: " + ", ".join(skipped)

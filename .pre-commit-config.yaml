@@ -14,7 +14,7 @@ repos:
     hooks:
       - id: pytest
         name: pytest
-        entry: pytest --no-cov -q
+        entry: python -m pytest --no-cov -q
         language: system
         pass_filenames: false
         always_run: true
