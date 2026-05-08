@@ -40,9 +40,7 @@ try:
     AVAILABLE = True
 except ImportError:
     AVAILABLE = False
-    logger.warning(
-        "Silero TTS not available. Install with: pip install torch torchaudio"
-    )
+    logger.warning("Silero TTS not available. Install with: pip install torch torchaudio")
 
 
 def is_available() -> bool:
@@ -157,9 +155,7 @@ def generate(text: str, config: dict) -> bytes:
         result = torch.hub.load(
             repo_or_dir="snakers4/silero-models",
             model="silero_tts",
-            language=(
-                language if language in ["ru", "en", "de", "es", "fr", "ua"] else "en"
-            ),
+            language=(language if language in ["ru", "en", "de", "es", "fr", "ua"] else "en"),
             speaker=model_id,
             verbose=False,
             trust_repo=True,
@@ -177,17 +173,13 @@ def generate(text: str, config: dict) -> bytes:
             raise TTSException("Silero model failed to load")
 
         if not hasattr(model, "apply_tts"):
-            raise TTSException(
-                f"Model has no apply_tts method. Model type: {type(model)}"
-            )
+            raise TTSException(f"Model has no apply_tts method. Model type: {type(model)}")
 
         # Note: model.to() returns None for some Silero models, use in-place
         model.to(device)
 
         # Generate audio
-        audio_tensor = model.apply_tts(
-            text=text, speaker=speaker, sample_rate=sample_rate
-        )
+        audio_tensor = model.apply_tts(text=text, speaker=speaker, sample_rate=sample_rate)
 
         # Convert tensor to WAV bytes
         audio_buffer = io.BytesIO()

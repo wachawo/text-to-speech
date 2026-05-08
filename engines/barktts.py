@@ -43,9 +43,7 @@ try:
     AVAILABLE = True
 except ImportError:
     AVAILABLE = False
-    logger.warning(
-        "Bark TTS not available. Install with: pip install git+https://github.com/suno-ai/bark.git"
-    )
+    logger.warning("Bark TTS not available. Install with: pip install git+https://github.com/suno-ai/bark.git")
 
 
 def is_available() -> bool:
@@ -162,9 +160,7 @@ def generate(text: str, config: dict) -> bytes:
         if models_dir != os.path.expanduser("~/.cache/suno/bark_v0"):
             # Bark uses XDG_CACHE_HOME for models
             # Set to custom directory/suno/bark_v0
-            cache_dir = os.path.dirname(
-                os.path.dirname(models_dir)
-            )  # Remove /suno/bark_v0
+            cache_dir = os.path.dirname(os.path.dirname(models_dir))  # Remove /suno/bark_v0
             os.environ["XDG_CACHE_HOME"] = cache_dir
             logger.info(f"Using custom Bark TTS models directory: {models_dir}")
 
@@ -187,9 +183,7 @@ def generate(text: str, config: dict) -> bytes:
 
         # Generate audio
         # Bark returns numpy array with sample rate 24000
-        audio_array = generate_audio(
-            text, history_prompt=history_prompt, text_temp=0.7, waveform_temp=0.7
-        )
+        audio_array = generate_audio(text, history_prompt=history_prompt, text_temp=0.7, waveform_temp=0.7)
 
         # Convert numpy array to WAV bytes
         # Create temporary file

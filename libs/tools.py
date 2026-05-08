@@ -161,9 +161,7 @@ def create_tts_pipeline(engine: str = "gtts", language: str = "en") -> Callable:
         text_to_speech_bytesio,
     )
 
-    def pipeline(
-        text: str, output_format: str = "file", filename: Optional[str] = None
-    ) -> Union[str, bytes, io.BytesIO]:
+    def pipeline(text: str, output_format: str = "file", filename: Optional[str] = None) -> Union[str, bytes, io.BytesIO]:
         if output_format == "file":
             return text_to_speech_file(text, filename, engine, language)
         elif output_format == "bytes":

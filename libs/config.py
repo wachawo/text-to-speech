@@ -20,12 +20,13 @@ logger = logging.getLogger(__name__)
 
 try:
     from dotenv import find_dotenv, load_dotenv
+
     DOTENV_AVAILABLE = True
 except ImportError:
     DOTENV_AVAILABLE = False
 
 
-USER_CONFIG_DIR  = Path.home() / ".config"
+USER_CONFIG_DIR = Path.home() / ".config"
 USER_CONFIG_PATH = USER_CONFIG_DIR / "ttsgen.conf"
 
 DEFAULT_USER_CONFIG = """\

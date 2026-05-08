@@ -47,8 +47,8 @@ if os.path.exists(local_env_file):
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_COQUITTS_PATH   = ".coquitts"
-DEFAULT_COQUITTS_MODEL  = "tts_models/multilingual/multi-dataset/xtts_v2"
+DEFAULT_COQUITTS_PATH = ".coquitts"
+DEFAULT_COQUITTS_MODEL = "tts_models/multilingual/multi-dataset/xtts_v2"
 # Single source of truth shared with `ttsrec`. A fresh `ttsrec` writes here,
 # `ttsgen --engine coquitts` reads from here. Override via COQUITTS_SAMPLE.
 DEFAULT_COQUITTS_SAMPLE = str(os.path.expanduser("~/.config/ttsgen.wav"))
@@ -99,8 +99,7 @@ def generate(text: str, config: dict) -> bytes:
     """
     if not is_available():
         raise EngineNotAvailableError(
-            "Coqui TTS not available. Install with: pip install TTS\n"
-            "See docs/COQUITTS.md for setup instructions."
+            "Coqui TTS not available. Install with: pip install TTS\n" "See docs/COQUITTS.md for setup instructions."
         )
     if len(text) > MAX_TEXT_LENGTH:
         raise ValidationError(f"Text too long for coquitts: {len(text)} > {MAX_TEXT_LENGTH}")

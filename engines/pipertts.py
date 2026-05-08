@@ -17,6 +17,7 @@ import os
 # Centralised config loader handles ./ttsgen.conf > ~/.config/ttsgen.conf > .env > defaults
 try:
     from libs.config import load_config
+
     load_config()
 except ImportError:
     pass  # libs.config or dotenv not available — engine will fall back to env / defaults.
@@ -98,9 +99,7 @@ def get_voice_path(language: str = "en") -> str:
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     voice_dirs = [
         os.path.join(project_root, ".piper", "voices"),  # Project directory
-        os.path.join(
-            os.path.expanduser("~"), ".local", "share", "piper", "voices"
-        ),  # User home
+        os.path.join(os.path.expanduser("~"), ".local", "share", "piper", "voices"),  # User home
         "/usr/share/piper/voices",  # System-wide
         "./voices",  # Current directory
     ]
@@ -123,9 +122,7 @@ def get_download_instructions(language: str) -> str:
         "de": ("de_DE-thorsten-medium", "de/de_DE/thorsten/medium"),
         "fr": ("fr_FR-siwis-medium", "fr/fr_FR/siwis/medium"),
     }
-    model_name, model_path = voice_models.get(
-        language, ("en_US-lessac-medium", "en/en_US/lessac/medium")
-    )
+    model_name, model_path = voice_models.get(language, ("en_US-lessac-medium", "en/en_US/lessac/medium"))
 
     base_url = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0"
 
@@ -161,8 +158,7 @@ def generate(text: str, config: dict) -> bytes:
     """
     if not AVAILABLE:
         raise EngineNotAvailableError(
-            "Piper TTS not available. Install with: pip install piper-tts\n"
-            "See docs/PIPER.md for setup instructions."
+            "Piper TTS not available. Install with: pip install piper-tts\n" "See docs/PIPER.md for setup instructions."
         )
     if len(text) > MAX_TEXT_LENGTH:
         raise ValidationError(f"Text too long for pipertts: {len(text)} > {MAX_TEXT_LENGTH}")
