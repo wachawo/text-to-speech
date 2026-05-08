@@ -17,6 +17,37 @@ import pytest
 from libs.exceptions import CustomError, EngineNotAvailableError, TTSException
 
 
+def _install_fake_torch(monkeypatch):
+    """Stub `torch` and `torch.serialization` for engines/coquitts.py top-level imports.
+
+    Only needed when the dev venv lacks real torch (CI without [coqui] extras).
+    Covers `torch.cuda.is_available()`, `add_safe_globals`, and `safe_globals`
+    (used as a context manager).
+    """
+    if "torch" in sys.modules and hasattr(sys.modules["torch"], "cuda"):
+        return  # real torch already importable, leave it alone
+
+    class _SafeGlobalsCtx:
+        def __init__(self, *_a, **_kw):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+    fake_torch = types.ModuleType("torch")
+    fake_torch.cuda = types.SimpleNamespace(is_available=lambda: False)
+    fake_serialization = types.ModuleType("torch.serialization")
+    fake_serialization.add_safe_globals = lambda items: None
+    fake_serialization.safe_globals = _SafeGlobalsCtx
+    fake_torch.serialization = fake_serialization
+
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setitem(sys.modules, "torch.serialization", fake_serialization)
+
+
 def _install_fake_TTS(monkeypatch, tts_class):
     """Install the minimum TTS.* sub-package tree the engine imports."""
 
@@ -80,6 +111,7 @@ class FakeTTS:
 @pytest.fixture
 def engine(monkeypatch, tmp_path):
     FakeTTS.instances = []
+    _install_fake_torch(monkeypatch)
     _install_fake_TTS(monkeypatch, FakeTTS)
     monkeypatch.delitem(sys.modules, "engines.coquitts", raising=False)
     eng = importlib.import_module("engines.coquitts")
