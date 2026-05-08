@@ -23,7 +23,7 @@ services:
       TTS_LANGUAGE:               ${TTS_LANGUAGE:-en}
       COQUITTS_PATH:              /opt/.coquitts
       COQUITTS_MODEL:             ${COQUITTS_MODEL:-tts_models/multilingual/multi-dataset/xtts_v2}
-      COQUITTS_SAMPLE:            ${COQUITTS_SAMPLE:-maria.wav}
+      COQUITTS_SAMPLE:            ${COQUITTS_SAMPLE:-default.wav}
     ports:
       - "${TTS_PORT:-5000}:5000"
     volumes:
