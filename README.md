@@ -63,8 +63,7 @@ pip install "text-to-speech[piper]  @ git+https://github.com/wachawo/text-to-spe
 pip install "text-to-speech[silero] @ git+https://github.com/wachawo/text-to-speech.git"   # torch + torchaudio + omegaconf
 pip install "text-to-speech[coqui]  @ git+https://github.com/wachawo/text-to-speech.git"   # coqui-tts + torch (Python 3.9–3.12)
 pip install "text-to-speech[bark]   @ git+https://github.com/wachawo/text-to-speech.git"   # bark (git) + scipy
-pip install "text-to-speech[api]    @ git+https://github.com/wachawo/text-to-speech.git"   # Flask stack to run ttssrv/app1.py outside Docker
-pip install "text-to-speech[all]    @ git+https://github.com/wachawo/text-to-speech.git"   # piper + silero + api
+pip install "text-to-speech[all]    @ git+https://github.com/wachawo/text-to-speech.git"   # piper + silero
 ```
 
 `[coqui]` and CUDA wheels: prefer `ttsgen --install coquitts` — it picks the right torch index (cpu / cu121) and persists the model dir to `~/.config/ttsgen.conf`.

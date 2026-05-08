@@ -64,16 +64,8 @@ bark = [
     "scipy",
     "numpy",
 ]
-api = [
-    "Flask==2.3.3",
-    "flask-cors==4.0.0",
-    "marshmallow==3.20.1",
-    "gunicorn==21.2.0",
-    "uvicorn==0.23.2",
-    "asgiref==3.7.2",
-    "pytz>=2023.3",
-]
 dev = [
+    # Lint / format / typecheck / test runner
     "black==23.3.0",
     "ruff>=0.5",
     "pre-commit>=3.5",
@@ -82,9 +74,20 @@ dev = [
     "pytest-cov>=4.1",
     "types-requests==2.28.11.0",
     "types-PyYAML==6.0.12.0",
+    # Web stack — needed by tests/ to exercise ttssrv handlers locally.
+    # In production ttssrv runs only inside Docker (see ttssrv/Dockerfile,
+    # docker-compose.yml); these wheels exist in [dev] solely so that
+    # `pytest` and ad-hoc `python3 ttssrv/app1.py` work in the dev venv.
+    "Flask==2.3.3",
+    "flask-cors==4.0.0",
+    "marshmallow==3.20.1",
+    "gunicorn==21.2.0",
+    "uvicorn==0.23.2",
+    "asgiref==3.7.2",
+    "pytz>=2023.3",
 ]
 all = [
-    "text-to-speech[piper,silero,api]",
+    "text-to-speech[piper,silero]",
 ]
 
 [project.urls]
