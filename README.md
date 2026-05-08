@@ -56,17 +56,16 @@ ttsapi "Hello world"          # send to a remote ttssrv via HTTP (TTS_URL/TTS_TO
 
 The HTTP server `ttssrv` is **not** a console-script — it's deployed via Docker (see below) or run as `python3 ttssrv/app1.py` from a clone.
 
-#### Extras for specific engines
+#### Adding optional engines
+
+There are no pip extras for `pipertts` / `silerotts` / `coquitts` / `barktts`. Use the dedicated installer instead — it picks the right PyTorch wheel index (cpu / cu121), respects driver constraints, persists the model directory to `~/.config/ttsgen.conf`, and verifies download checksums where supported:
 
 ```bash
-pip install "text-to-speech[piper]  @ git+https://github.com/wachawo/text-to-speech.git"   # piper-tts
-pip install "text-to-speech[silero] @ git+https://github.com/wachawo/text-to-speech.git"   # torch + torchaudio + omegaconf
-pip install "text-to-speech[coqui]  @ git+https://github.com/wachawo/text-to-speech.git"   # coqui-tts + torch (Python 3.9–3.12)
-pip install "text-to-speech[bark]   @ git+https://github.com/wachawo/text-to-speech.git"   # bark (git) + scipy
-pip install "text-to-speech[all]    @ git+https://github.com/wachawo/text-to-speech.git"   # piper + silero
+ttsgen --install pipertts        # piper-tts + voice models from HuggingFace
+ttsgen --install silerotts       # torch + torchaudio + omegaconf + Silero models
+ttsgen --install coquitts        # coqui-tts (Idiap fork) + torch + transformers
+ttsgen --install barktts         # bark (git) + scipy + numpy (~10–15 GB models)
 ```
-
-`[coqui]` and CUDA wheels: prefer `ttsgen --install coquitts` — it picks the right torch index (cpu / cu121) and persists the model dir to `~/.config/ttsgen.conf`.
 
 ### Install for development
 
@@ -79,7 +78,8 @@ pip install -e ".[dev]"
 ### Uninstall
 
 ```bash
-# Remove the package (keeps optional engine extras like torch/TTS/bark unless you remove them too)
+# Remove the package (engine packages installed via `ttsgen --install` stay
+# until you remove them explicitly; see the lines below)
 pip uninstall text-to-speech
 
 # Also remove engine deps installed via `ttsgen --install`

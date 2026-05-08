@@ -1,30 +1,32 @@
 # Client-side runtime dependencies for ttsgen / ttsplay / ttsrec / ttsapi.
 # Mirrors `[project].dependencies` in pyproject.toml — keep in sync.
 #
-# Heavier engine deps (torch, coqui-tts, bark, etc.) are NOT installed by this
-# file. Use `ttsgen --install <engine>` — it picks the correct PyTorch wheel
-# index (cpu / cu121) and persists the model directory to ~/.config/ttsgen.conf.
+# This file ships ONLY the lightweight CLI scaffolding: gtts + pyttsx3 (always-
+# available engines), pygame (playback), requests + dotenv, sounddevice + numpy
+# (microphone capture for ttsrec).
+#
+# Optional engines are installed separately via the canonical command:
 #
 #   ttsgen --install pipertts        # piper-tts + voice models from HuggingFace
 #   ttsgen --install silerotts       # torch + torchaudio + omegaconf + models
 #   ttsgen --install coquitts        # coqui-tts (Idiap fork) + torch + transformers
 #   ttsgen --install barktts         # bark (git) + scipy + numpy (~10–15 GB models)
 #
-# pyproject.toml extras:
-#   pip install -e ".[piper]"        # piper-tts                                  (pipertts engine)
-#   pip install -e ".[silero]"       # torch + torchaudio + omegaconf             (silerotts engine)
-#   pip install -e ".[coqui]"        # coqui-tts[codec] + torch + transformers    (coquitts engine; Python 3.9–3.12)
-#   pip install -e ".[bark]"         # bark (git) + scipy + numpy                 (barktts engine; ~10–15 GB models)
-#   pip install -e ".[dev]"          # ruff/black/mypy/pytest + Flask stack       (linting + tests + local ttssrv)
-#   pip install -e ".[all]"          # piper + silero                             (combined common set)
+# `ttsgen --install <engine>` picks the correct PyTorch wheel index (cpu /
+# cu121), respects driver constraints, persists the model directory to
+# ~/.config/ttsgen.conf, and verifies download checksums where supported.
+# This is the ONLY supported way to add an engine — no [piper] / [silero] /
+# [coqui] / [bark] pip extras exist.
 #
 # Server (ttssrv): runs only via Docker. Build deps live in ttssrv/requirements.txt
-# and the two Dockerfiles (`ttssrv/Dockerfile` for CUDA, `ttssrv/Dockerfile-cpu`).
+# and the two Dockerfiles (ttssrv/Dockerfile for CUDA, ttssrv/Dockerfile-cpu).
 #   docker compose up                                    # GPU image
 #   docker compose -f docker-compose-cpu.yml up          # CPU-only image
 #
-# When developing locally and you need to hit ttssrv (pytest, ad-hoc curl),
-# `pip install -e ".[dev]"` already pulls in Flask + uvicorn + marshmallow.
+# Development install (covers tests + local ttssrv smoke):
+#   pip install -e ".[dev]"
+# This pulls ruff/black/mypy/pytest plus Flask/marshmallow/uvicorn so
+# `pytest` and `python3 ttssrv/app1.py` work without Docker.
 
 gtts==2.3.0
 pyttsx3==2.90
