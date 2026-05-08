@@ -41,7 +41,7 @@ import threading
 from pathlib import Path
 from typing import Any, cast
 
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 
 # Configure logging
 LOGGING = {
@@ -90,8 +90,12 @@ from libs.cli import (  # noqa: E402
 
 
 def get_config() -> dict[str, Any]:
-    """Load configuration from .env file if it exists."""
-    load_dotenv(".env")
+    """Load configuration from .env (base) → .env.local (override)."""
+    found = find_dotenv(usecwd=True)
+    if found:
+        load_dotenv(found)
+    if os.path.exists(".env.local"):
+        load_dotenv(".env.local", override=True)
     engine = os.getenv("TTS_ENGINE", "gtts")
     language = os.getenv("TTS_LANGUAGE", "en")
     audio_directory = os.getenv("AUDIO_DIRECTORY", "audio")
@@ -475,6 +479,7 @@ def main() -> int:
 
         q: queue.Queue[QUEUE_ITEM] = queue.Queue(maxsize=2)
         collected_paths: list[str] = []
+        failures: list[tuple[int, BaseException]] = []
 
         # Producer: bind engine/language; rec_worker calls generator(text) per chunk.
         from libs.api import text_to_speech_bytes
@@ -489,13 +494,19 @@ def main() -> int:
         )
         play = threading.Thread(
             target=play_worker,
-            args=(q, output_formats, collected_paths, play_audio),
+            args=(q, output_formats, collected_paths, play_audio, failures),
             daemon=True,
         )
         rec.start()
         play.start()
         rec.join()
         play.join()
+
+        if failures:
+            for idx, err in failures:
+                logger.error(f"Chunk {idx} failed: {type(err).__name__}: {err}")
+            logger.error(f"{len(failures)}/{len(chunks)} chunk(s) failed; aborting with exit code 3.")
+            return 3
 
         saved_files: list[str] = []
 

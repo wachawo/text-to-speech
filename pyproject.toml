@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "text-to-speech"
-version = "0.2.1"
+version = "1.0.0"
 description = "Universal TTS CLI and library — gTTS, espeak/pyttsx3, Piper, Silero, Coqui, Bark behind a single interface."
 readme = "README.md"
 license = { text = "MIT" }
@@ -39,41 +39,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-piper = [
-    "piper-tts",
-]
-silero = [
-    "torch>=2.0",
-    "torchaudio",
-    "omegaconf",
-]
-coqui = [
-    # Community fork from Idiap (original Coqui project shut down in Jan 2024).
-    # Distribution name `coqui-tts`, import name `TTS` — API-compatible with
-    # the abandoned upstream. Supports Python 3.9+ including 3.12.
-    # `[codec]` extra pulls torchcodec — required by coqui-tts under PyTorch 2.9+.
-    "coqui-tts[codec]",
-    "torch>=2.0",
-    # `TTS.tts.models.xtts` does `import torchaudio` at module load.
-    "torchaudio",
-    # transformers 5.x removed `isin_mps_friendly`; coqui-tts < 0.28 still imports it.
-    "transformers>=4.46,<5.0",
-]
-bark = [
-    "bark @ git+https://github.com/suno-ai/bark.git",
-    "scipy",
-    "numpy",
-]
-api = [
-    "Flask==2.3.3",
-    "flask-cors==4.0.0",
-    "marshmallow==3.20.1",
-    "gunicorn==21.2.0",
-    "uvicorn==0.23.2",
-    "asgiref==3.7.2",
-    "pytz>=2023.3",
-]
+# Engine-specific deps (pipertts / silerotts / coquitts / barktts) are NOT
+# exposed as pip extras. The single canonical install path is:
+#     ttsgen --install <engine>
+# It picks the correct PyTorch wheel index (cpu / cu121), respects driver
+# constraints, persists the model directory to ~/.config/ttsgen.conf, and
+# downloads voice models with checksum verification where supported.
+#
+# The base `pip install` ships only gtts + pyttsx3 plus shared infrastructure
+# (pygame for playback, requests/dotenv, sounddevice/numpy for ttsrec).
 dev = [
+    # Lint / format / typecheck / test runner
     "black==23.3.0",
     "ruff>=0.5",
     "pre-commit>=3.5",
@@ -82,9 +58,17 @@ dev = [
     "pytest-cov>=4.1",
     "types-requests==2.28.11.0",
     "types-PyYAML==6.0.12.0",
-]
-all = [
-    "text-to-speech[piper,silero,api]",
+    # Web stack — needed by tests/ to exercise ttssrv handlers locally.
+    # In production ttssrv runs only inside Docker (see ttssrv/Dockerfile,
+    # docker-compose.yml); these wheels exist in [dev] solely so that
+    # `pytest` and ad-hoc `python3 ttssrv/app1.py` work in the dev venv.
+    "Flask==2.3.3",
+    "flask-cors==4.0.0",
+    "marshmallow==3.20.1",
+    "gunicorn==21.2.0",
+    "uvicorn==0.23.2",
+    "asgiref==3.7.2",
+    "pytz>=2023.3",
 ]
 
 [project.urls]
@@ -138,5 +122,11 @@ ignore = ["E501", "UP009", "E203", "E266"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts   = "-q"
+addopts   = "-q --cov --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["libs", "engines", "ttssrv", "ttsgen", "ttsapi", "ttsplay", "ttsrec"]
+
+[tool.coverage.report]
+show_missing = true
 

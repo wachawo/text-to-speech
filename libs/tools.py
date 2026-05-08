@@ -44,8 +44,11 @@ def validate_text(text: str) -> str:
     if not cleaned_text:
         raise ValidationError("Text cannot be empty")
 
-    if len(cleaned_text) > 5000:
-        raise ValidationError("Text too long (max 5000 characters)")
+    # Long text is the chunker's job (libs/cli.chunk_text). validate_text only
+    # rejects pathological inputs that could exhaust memory or stall a worker
+    # for hours. 1M chars ≈ a book chapter — far above realistic real-time use.
+    if len(cleaned_text) > 1_000_000:
+        raise ValidationError("Text too long (max 1,000,000 characters)")
 
     return cleaned_text
 
@@ -158,9 +161,7 @@ def create_tts_pipeline(engine: str = "gtts", language: str = "en") -> Callable:
         text_to_speech_bytesio,
     )
 
-    def pipeline(
-        text: str, output_format: str = "file", filename: Optional[str] = None
-    ) -> Union[str, bytes, io.BytesIO]:
+    def pipeline(text: str, output_format: str = "file", filename: Optional[str] = None) -> Union[str, bytes, io.BytesIO]:
         if output_format == "file":
             return text_to_speech_file(text, filename, engine, language)
         elif output_format == "bytes":

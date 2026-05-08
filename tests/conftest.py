@@ -46,6 +46,11 @@ def _default_text_to_speech_bytes(text, engine=None, language=None):
 # Stub libs.api before ttssrv.app1 imports it.
 fake_libs_api = types.ModuleType("libs.api")
 fake_libs_api.text_to_speech_bytes = _default_text_to_speech_bytes
+fake_libs_api.text_to_speech_file = lambda text, filename=None, engine=None, language=None: filename or "out.wav"
+fake_libs_api.text_to_speech_bytesio = lambda text, engine=None, language=None: io.BytesIO(_default_text_to_speech_bytes(text))
+fake_libs_api.play_audio = lambda data: None
+fake_libs_api.play_audio_file = lambda filename: None
+fake_libs_api.play_audio_bytes = lambda data: None
 fake_libs_api.TTSException = TTSException
 fake_libs_api.ValidationError = ValidationError
 fake_libs_api.EngineNotAvailableError = EngineNotAvailableError

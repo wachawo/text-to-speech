@@ -13,18 +13,23 @@ import logging
 import sys
 import os
 
-from libs.exceptions import EngineNotAvailableError, TTSException
+from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
+
+# Bark generates ~14s of audio per minute on CPU; 5k chars is already heavy.
+MAX_TEXT_LENGTH = 5_000
 from libs.tempfiles import safe_unlink
 
-# Load environment variables from .env file
+# .env via find_dotenv (walks up from cwd) → then .env.local override.
 try:
-    from dotenv import load_dotenv
+    from dotenv import find_dotenv, load_dotenv
 
-    # Get project root and load .env
+    _found = find_dotenv(usecwd=True)
+    if _found:
+        load_dotenv(_found)
     _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    _env_file = os.path.join(_project_root, ".env")
-    if os.path.exists(_env_file):
-        load_dotenv(_env_file)
+    _local_env_file = os.path.join(_project_root, ".env.local")
+    if os.path.exists(_local_env_file):
+        load_dotenv(_local_env_file, override=True)
 except ImportError:
     pass  # dotenv not installed, skip
 
@@ -38,9 +43,7 @@ try:
     AVAILABLE = True
 except ImportError:
     AVAILABLE = False
-    logger.warning(
-        "Bark TTS not available. Install with: pip install git+https://github.com/suno-ai/bark.git"
-    )
+    logger.warning("Bark TTS not available. Install with: pip install git+https://github.com/suno-ai/bark.git")
 
 
 def is_available() -> bool:
@@ -143,6 +146,9 @@ def generate(text: str, config: dict) -> bytes:
             "See docs/BARK.md for setup instructions."
         )
 
+    if len(text) > MAX_TEXT_LENGTH:
+        raise ValidationError(f"Text too long for barktts: {len(text)} > {MAX_TEXT_LENGTH}")
+
     try:
         import scipy.io.wavfile
         import tempfile
@@ -154,16 +160,13 @@ def generate(text: str, config: dict) -> bytes:
         if models_dir != os.path.expanduser("~/.cache/suno/bark_v0"):
             # Bark uses XDG_CACHE_HOME for models
             # Set to custom directory/suno/bark_v0
-            cache_dir = os.path.dirname(
-                os.path.dirname(models_dir)
-            )  # Remove /suno/bark_v0
+            cache_dir = os.path.dirname(os.path.dirname(models_dir))  # Remove /suno/bark_v0
             os.environ["XDG_CACHE_HOME"] = cache_dir
             logger.info(f"Using custom Bark TTS models directory: {models_dir}")
 
         # Fix for PyTorch 2.6+ weights_only security issue
         # Bark models require weights_only=False or safe_globals
         import torch
-        import numpy as np
 
         torch_version = tuple(map(int, torch.__version__.split(".")[:2]))
         if torch_version >= (2, 6):
@@ -180,9 +183,7 @@ def generate(text: str, config: dict) -> bytes:
 
         # Generate audio
         # Bark returns numpy array with sample rate 24000
-        audio_array = generate_audio(
-            text, history_prompt=history_prompt, text_temp=0.7, waveform_temp=0.7
-        )
+        audio_array = generate_audio(text, history_prompt=history_prompt, text_temp=0.7, waveform_temp=0.7)
 
         # Convert numpy array to WAV bytes
         # Create temporary file

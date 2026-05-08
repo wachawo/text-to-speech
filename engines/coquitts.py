@@ -17,31 +17,38 @@ from torch.serialization import add_safe_globals, safe_globals
 from TTS.tts.configs.xtts_config import XttsConfig
 from TTS.tts.models.xtts import XttsAudioConfig, XttsArgs
 from TTS.config.shared_configs import BaseDatasetConfig
-from libs.exceptions import EngineNotAvailableError, TTSException
+from libs.exceptions import CustomError, EngineNotAvailableError, TTSException, ValidationError
+
+# Coqui xtts_v2 is the slowest engine but voice-cloning works on book-length text.
+# Kept high deliberately — chunking and pacing are the caller's job.
+MAX_TEXT_LENGTH = 1_000_000
+from libs.sample_resolver import resolve_sample_path
 from libs.tempfiles import safe_unlink
 
-# Load environment variables from .env file
+# .env via find_dotenv (walks up from cwd) → then .env.local override.
 try:
-    from dotenv import load_dotenv
-
-    # Get project root and load .env
+    from dotenv import find_dotenv, load_dotenv
 except ImportError:
+
+    def find_dotenv(*args, **kwargs):
+        return ""
 
     def load_dotenv(*args, **kwargs):
         pass
 
 
+found = find_dotenv(usecwd=True)
+if found:
+    load_dotenv(found)
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-env_file = os.path.join(project_root, ".env")
-if os.path.exists(env_file):
-    load_dotenv(env_file)
-else:
-    load_dotenv()
+local_env_file = os.path.join(project_root, ".env.local")
+if os.path.exists(local_env_file):
+    load_dotenv(local_env_file, override=True)
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_COQUITTS_PATH   = ".coquitts"
-DEFAULT_COQUITTS_MODEL  = "tts_models/multilingual/multi-dataset/xtts_v2"
+DEFAULT_COQUITTS_PATH = ".coquitts"
+DEFAULT_COQUITTS_MODEL = "tts_models/multilingual/multi-dataset/xtts_v2"
 # Single source of truth shared with `ttsrec`. A fresh `ttsrec` writes here,
 # `ttsgen --engine coquitts` reads from here. Override via COQUITTS_SAMPLE.
 DEFAULT_COQUITTS_SAMPLE = str(os.path.expanduser("~/.config/ttsgen.wav"))
@@ -92,22 +99,27 @@ def generate(text: str, config: dict) -> bytes:
     """
     if not is_available():
         raise EngineNotAvailableError(
-            "Coqui TTS not available. Install with: pip install TTS\n"
-            "See docs/COQUITTS.md for setup instructions."
+            "Coqui TTS not available. Install with: pip install TTS\n" "See docs/COQUITTS.md for setup instructions."
         )
-    sample_wav = os.path.expanduser(os.getenv("COQUITTS_SAMPLE", DEFAULT_COQUITTS_SAMPLE))
+    if len(text) > MAX_TEXT_LENGTH:
+        raise ValidationError(f"Text too long for coquitts: {len(text)} > {MAX_TEXT_LENGTH}")
+    sample_wav = resolve_sample_path(os.getenv("COQUITTS_SAMPLE", DEFAULT_COQUITTS_SAMPLE))
     if not os.path.exists(sample_wav):
-        raise TTSException(
-            f"Voice sample WAV not found: {sample_wav}\n"
-            f"\n"
-            f"xtts_v2 needs a 5-10s recording of a target voice. Create one with:\n"
-            f"\n"
-            f"    ttsrec                           # record into the configured path (recommended)\n"
-            f"    ttsrec {sample_wav}              # record into this exact path\n"
-            f"    ttsrec /path/to/your_voice.wav   # record into a custom path\n"
-            f"\n"
-            f"Or point at an existing recording:\n"
-            f"    ttsgen \"...\" --engine coquitts --coqui-sample /path/to/voice.wav"
+        raise CustomError(
+            {
+                "error": "voice_sample_missing",
+                "message": (
+                    f"Voice sample WAV not found: {sample_wav}\n"
+                    f"\n"
+                    f"xtts_v2 needs a 5-10s recording of a target voice. Create one with:\n"
+                    f"    ttsrec                           # record into the configured path\n"
+                    f"    ttsrec {sample_wav}\n"
+                    f"    ttsrec /path/to/your_voice.wav\n"
+                    f"\n"
+                    f"Or set COQUITTS_SAMPLE in .env / .env.local to an existing recording."
+                ),
+                "path": sample_wav,
+            }
         )
     try:
         language = config.get("language", "en")

@@ -11,17 +11,22 @@ import io
 import os
 import logging
 
-from libs.exceptions import EngineNotAvailableError, TTSException
+from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
 
-# Load environment variables from .env file
+# Silero is fast offline; protect single calls from runaway memory.
+MAX_TEXT_LENGTH = 50_000
+
+# .env via find_dotenv (walks up from cwd) → then .env.local override.
 try:
-    from dotenv import load_dotenv
+    from dotenv import find_dotenv, load_dotenv
 
-    # Get project root and load .env
+    found = find_dotenv(usecwd=True)
+    if found:
+        load_dotenv(found)
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    env_file = os.path.join(project_root, ".env")
-    if os.path.exists(env_file):
-        load_dotenv(env_file)
+    local_env_file = os.path.join(project_root, ".env.local")
+    if os.path.exists(local_env_file):
+        load_dotenv(local_env_file, override=True)
 except ImportError:
     pass  # dotenv not installed, skip
 
@@ -35,9 +40,7 @@ try:
     AVAILABLE = True
 except ImportError:
     AVAILABLE = False
-    logger.warning(
-        "Silero TTS not available. Install with: pip install torch torchaudio"
-    )
+    logger.warning("Silero TTS not available. Install with: pip install torch torchaudio")
 
 
 def is_available() -> bool:
@@ -126,6 +129,8 @@ def generate(text: str, config: dict) -> bytes:
             "Silero TTS not available. Install with: pip install torch torchaudio\n"
             "See docs/SILEROTTS.md for setup instructions."
         )
+    if len(text) > MAX_TEXT_LENGTH:
+        raise ValidationError(f"Text too long for silerotts: {len(text)} > {MAX_TEXT_LENGTH}")
     language = config.get("language", "en")
     try:
         model_id, speaker, sample_rate = get_model_info(language)
@@ -139,13 +144,18 @@ def generate(text: str, config: dict) -> bytes:
         # Load model from torch hub (cached after first download)
         device = torch.device("cpu")  # Use CPU
 
-        # torch.hub.load returns (model, example_text)
+        # torch.hub.load returns (model, example_text).
+        # trust_repo=True suppresses the interactive y/n prompt that torch.hub
+        # raises before executing hubconf.py from snakers4/silero-models. We
+        # accept this exposure because: (1) the model itself is shipped from
+        # the same repo, so refusing the prompt blocks all SileroTTS usage;
+        # (2) the model directory is pinned via torch.hub.set_dir() to the
+        # configured SILEROTTS_PATH, so the fetched code only runs when the
+        # user explicitly opts in by installing this engine.
         result = torch.hub.load(
             repo_or_dir="snakers4/silero-models",
             model="silero_tts",
-            language=(
-                language if language in ["ru", "en", "de", "es", "fr", "ua"] else "en"
-            ),
+            language=(language if language in ["ru", "en", "de", "es", "fr", "ua"] else "en"),
             speaker=model_id,
             verbose=False,
             trust_repo=True,
@@ -163,17 +173,13 @@ def generate(text: str, config: dict) -> bytes:
             raise TTSException("Silero model failed to load")
 
         if not hasattr(model, "apply_tts"):
-            raise TTSException(
-                f"Model has no apply_tts method. Model type: {type(model)}"
-            )
+            raise TTSException(f"Model has no apply_tts method. Model type: {type(model)}")
 
         # Note: model.to() returns None for some Silero models, use in-place
         model.to(device)
 
         # Generate audio
-        audio_tensor = model.apply_tts(
-            text=text, speaker=speaker, sample_rate=sample_rate
-        )
+        audio_tensor = model.apply_tts(text=text, speaker=speaker, sample_rate=sample_rate)
 
         # Convert tensor to WAV bytes
         audio_buffer = io.BytesIO()

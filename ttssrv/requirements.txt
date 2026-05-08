@@ -1,6 +1,8 @@
-# Server runtime dependencies for `ttssrv` (mirrors `[api]` extra in pyproject.toml).
+# Server runtime dependencies for `ttssrv` — used inside the Docker image only
+# (see ttssrv/Dockerfile and Dockerfile-cpu). Outside Docker the same web stack
+# is available via `pip install -e ".[dev]"` for tests and local debugging.
 # Heavy ML deps (torch, torchaudio, coqui-tts) are installed separately by the
-# Dockerfile from a CUDA-aware index — see ttssrv/Dockerfile and Dockerfile-cpu.
+# Dockerfile from a CUDA-aware index.
 
 # Web stack
 Flask==2.3.3

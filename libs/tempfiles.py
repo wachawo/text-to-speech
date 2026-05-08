@@ -48,10 +48,7 @@ def safe_unlink(path: Union[str, Path], retries: int = 5, delay: float = 0.1) ->
             last_exc = exc
             time.sleep(delay)
 
-    logger.warning(
-        f"Failed to delete {p} after {retries} attempts: "
-        f"{type(last_exc).__name__}: {last_exc}"
-    )
+    logger.warning(f"Failed to delete {p} after {retries} attempts: " f"{type(last_exc).__name__}: {last_exc}")
     return False
 
 

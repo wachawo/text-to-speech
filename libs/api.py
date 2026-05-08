@@ -42,9 +42,7 @@ logger = logging.getLogger(__name__)
 AudioSource = Union[str, bytes]
 
 
-def text_to_speech_bytes(
-    text: str, engine: str = "gtts", language: str = "en"
-) -> bytes:
+def text_to_speech_bytes(text: str, engine: str = "gtts", language: str = "en") -> bytes:
     """
     Convert text to speech and return as bytes.
 
@@ -104,11 +102,7 @@ def text_to_speech_file(
     if filename is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         # Determine extension based on content
-        extension = (
-            "mp3"
-            if audio_bytes.startswith(b"ID3") or audio_bytes[0:2] == b"\xff\xfb"
-            else "wav"
-        )
+        extension = "mp3" if audio_bytes.startswith(b"ID3") or audio_bytes[0:2] == b"\xff\xfb" else "wav"
         filename = f"{timestamp}.{extension}"
 
     # Save to file
@@ -118,9 +112,7 @@ def text_to_speech_file(
     return filename
 
 
-def text_to_speech_bytesio(
-    text: str, engine: str = "gtts", language: str = "en"
-) -> io.BytesIO:
+def text_to_speech_bytesio(text: str, engine: str = "gtts", language: str = "en") -> io.BytesIO:
     """Convert text to speech and return as BytesIO object."""
     audio_bytes = text_to_speech_bytes(text, engine, language)
     return io.BytesIO(audio_bytes)
