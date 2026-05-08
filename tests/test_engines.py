@@ -9,8 +9,6 @@ down its behaviour without depending on torch/coqui/etc.
 
 import types
 
-import pytest
-
 import engines as engines_pkg
 from engines import (
     get_engine_function,
@@ -19,8 +17,8 @@ from engines import (
     load_engine,
 )
 
-
 # get_engine_module_path
+
 
 def test_module_path_for_known_engine_is_a_file():
     """gtts.py exists in the real engines/ directory."""
@@ -35,6 +33,7 @@ def test_module_path_for_unknown_returns_none():
 
 
 # load_engine — exercises real engine modules; result depends on optional deps
+
 
 def test_load_engine_unknown_returns_none():
     assert load_engine("definitely_not_a_real_engine_xyz") is None
@@ -92,6 +91,7 @@ def test_load_engine_swallows_unexpected_exception(monkeypatch, caplog):
 
 # is_engine_available — thin wrapper on load_engine
 
+
 def test_is_engine_available_true_for_loaded_module(monkeypatch):
     monkeypatch.setattr(engines_pkg, "load_engine", lambda name: types.ModuleType("x"))
     assert is_engine_available("anything") is True
@@ -103,6 +103,7 @@ def test_is_engine_available_false_when_loader_returns_none(monkeypatch):
 
 
 # get_engine_function
+
 
 def test_get_engine_function_returns_callable_when_module_has_generate(monkeypatch):
     fake = types.ModuleType("fake")

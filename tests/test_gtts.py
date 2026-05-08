@@ -39,6 +39,7 @@ def engine(monkeypatch):
 
 # is_available
 
+
 def test_is_available_true_when_gtts_imports(engine):
     assert engine.is_available() is True
 
@@ -49,6 +50,7 @@ def test_is_available_false_when_flag_off(engine, monkeypatch):
 
 
 # is_available — ImportError path (line 18-20 of gtts.py)
+
 
 def test_is_available_false_when_gtts_not_installed(monkeypatch):
     """If gtts cannot be imported, AVAILABLE must be False after fresh import."""
@@ -70,6 +72,7 @@ def test_is_available_false_when_gtts_not_installed(monkeypatch):
 
 # generate
 
+
 def test_generate_passes_lang_and_slow_to_gtts(engine):
     audio = engine.generate("hello", {"language": "ru", "slow": True})
     assert audio == b"MP3:ru:True:hello"
@@ -89,6 +92,7 @@ def test_generate_raises_engine_not_available_when_flag_off(engine, monkeypatch)
 def test_generate_wraps_underlying_failure_as_tts_exception(engine, monkeypatch):
     """A network/library error inside gTTS must surface as TTSException,
     not as a raw exception leaking the upstream type."""
+
     class BoomGTTS:
         def __init__(self, *a, **kw):
             raise RuntimeError("network down")

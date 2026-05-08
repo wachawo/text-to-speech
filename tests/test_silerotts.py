@@ -18,7 +18,6 @@ from libs.exceptions import EngineNotAvailableError, TTSException
 
 def _make_fake_torch():
     """Minimal torch stand-in covering only what silerotts.py touches at runtime."""
-    fake_torch = sys.modules.get("torch") or types.ModuleType("torch")  # type: ignore[name-defined]
 
     class _FakeHub:
         def load(self, **kw):  # overridden per-test
@@ -54,6 +53,7 @@ def engine(monkeypatch):
 
 # is_available
 
+
 def test_is_available_reflects_module_flag(engine, monkeypatch):
     monkeypatch.setattr(engine, "AVAILABLE", True)
     assert engine.is_available() is True
@@ -62,6 +62,7 @@ def test_is_available_reflects_module_flag(engine, monkeypatch):
 
 
 # get_model_info — language → (model_id, speaker, sample_rate)
+
 
 @pytest.mark.parametrize(
     "lang,expected_speaker",
@@ -89,6 +90,7 @@ def test_get_model_info_unknown_falls_back_to_english(engine):
 
 # get_models_directory
 
+
 def test_models_dir_env_var_absolute(engine, monkeypatch, tmp_path):
     monkeypatch.setenv("SILEROTTS_MODELS", str(tmp_path / "abs"))
     assert engine.get_models_directory() == str(tmp_path / "abs")
@@ -110,6 +112,7 @@ def test_models_dir_default_when_no_env_and_no_dotdir(engine, monkeypatch):
 
 # generate — error paths
 
+
 def test_generate_raises_engine_not_available_when_flag_off(engine, monkeypatch):
     monkeypatch.setattr(engine, "AVAILABLE", False)
     with pytest.raises(EngineNotAvailableError, match="not available"):
@@ -120,7 +123,9 @@ def test_generate_translates_no_module_error_to_engine_not_available(engine, mon
     """A 'No module named X' inside generate must surface as EngineNotAvailableError,
     not TTSException — actionable diagnostic for the user."""
     monkeypatch.setattr(engine, "AVAILABLE", True)
-    monkeypatch.setattr(engine.torch.hub, "load", lambda **kw: (_ for _ in ()).throw(ImportError("No module named 'silero_helpers'")))
+    monkeypatch.setattr(
+        engine.torch.hub, "load", lambda **kw: (_ for _ in ()).throw(ImportError("No module named 'silero_helpers'"))
+    )
 
     with pytest.raises(EngineNotAvailableError, match="dependencies missing"):
         engine.generate("hi", {"language": "en"})
@@ -148,6 +153,7 @@ def test_generate_unexpected_hub_result_shape_raises(engine, monkeypatch):
 
 def test_generate_model_without_apply_tts_raises(engine, monkeypatch):
     """Wrong model object (no apply_tts attr) → TTSException with hint."""
+
     class StubModel:
         def to(self, device):
             return None
@@ -159,6 +165,7 @@ def test_generate_model_without_apply_tts_raises(engine, monkeypatch):
 
 
 # generate — happy path
+
 
 def test_generate_returns_bytes_from_torchaudio_save(engine, monkeypatch):
     """End-to-end stubbed pipeline: torch.hub.load → model.apply_tts →

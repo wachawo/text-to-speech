@@ -11,8 +11,6 @@ Pins the contract:
 
 import os
 
-import pytest
-
 from libs import tempfiles
 from libs.tempfiles import safe_unlink
 

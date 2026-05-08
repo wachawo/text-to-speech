@@ -19,8 +19,8 @@ if str(ROOT) not in sys.path:
 
 import ttsapi  # noqa: E402
 
-
 # read_text_file
+
 
 def test_read_text_file_reads_and_strips(tmp_path):
     f = tmp_path / "in.txt"
@@ -47,6 +47,7 @@ def test_read_text_file_rejects_directory(tmp_path):
 
 
 # parse_arguments — argparse contract
+
 
 def test_parser_requires_text_or_input_or_list():
     parser = ttsapi.parse_arguments()
@@ -101,6 +102,7 @@ def test_parser_default_language_is_en():
 
 # setup_logging
 
+
 @pytest.mark.parametrize(
     "verbose,quiet,expected_level",
     [
@@ -116,6 +118,7 @@ def test_setup_logging_levels(verbose, quiet, expected_level):
 
 
 # list_remote_engines — exit code + output format
+
 
 def test_list_remote_engines_marks_default_with_asterisk(monkeypatch, capsys):
     monkeypatch.setattr(
@@ -154,6 +157,7 @@ def test_list_remote_engines_handles_empty_engine_list(monkeypatch, capsys):
 
 
 # fetch_audio — error paths (success path covered in test_ttsapi_auth)
+
 
 def test_fetch_audio_raises_on_4xx_with_status_code_and_body(monkeypatch):
     class FakeResp:

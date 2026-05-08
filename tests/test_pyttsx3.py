@@ -59,6 +59,7 @@ def engine(monkeypatch):
 
 # is_available
 
+
 def test_is_available_true_when_pyttsx3_imports(engine):
     assert engine.is_available() is True
 
@@ -69,6 +70,7 @@ def test_is_available_false_when_module_flag_off(engine, monkeypatch):
 
 
 # generate — happy path + properties wiring
+
 
 def test_generate_returns_file_bytes(engine):
     audio = engine.generate("hello", {"language": "en", "rate": 200, "volume": 0.5})
@@ -96,6 +98,7 @@ def test_generate_uses_defaults_when_config_lacks_keys(engine):
 
 
 # generate — error paths
+
 
 def test_generate_raises_engine_not_available_when_flag_off(engine, monkeypatch):
     monkeypatch.setattr(engine, "AVAILABLE", False)

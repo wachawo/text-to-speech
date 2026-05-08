@@ -49,9 +49,7 @@ def test_handler_returns_payload_verbatim(client, app_module, monkeypatch):
     """Server must mirror payload as response body and use exc.status."""
 
     def boom(text, engine=None, language=None):
-        raise CustomError(
-            {"error": "voice_sample_missing", "message": "no wav at /opt/x.wav", "path": "/opt/x.wav"}
-        )
+        raise CustomError({"error": "voice_sample_missing", "message": "no wav at /opt/x.wav", "path": "/opt/x.wav"})
 
     monkeypatch.setattr(app_module, "text_to_speech_bytes", boom)
 

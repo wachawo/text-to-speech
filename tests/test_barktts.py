@@ -67,6 +67,7 @@ def engine(monkeypatch):
 
 # is_available
 
+
 def test_is_available_true_with_fake_bark(engine):
     assert engine.is_available() is True
 
@@ -77,6 +78,7 @@ def test_is_available_reflects_module_flag(engine, monkeypatch):
 
 
 # get_speaker_for_language — preset map
+
 
 @pytest.mark.parametrize(
     "lang,expected",
@@ -98,6 +100,7 @@ def test_speaker_unknown_language_falls_back_to_english(engine):
 
 # get_models_directory
 
+
 def test_models_dir_env_var_absolute(engine, monkeypatch, tmp_path):
     monkeypatch.setenv("BARKTTS_MODELS", str(tmp_path / "models"))
     assert engine.get_models_directory() == str(tmp_path / "models")
@@ -118,6 +121,7 @@ def test_models_dir_default_when_no_env_and_no_dotdir(engine, monkeypatch):
 
 # generate — error paths
 
+
 def test_generate_raises_engine_not_available_when_flag_off(engine, monkeypatch):
     monkeypatch.setattr(engine, "AVAILABLE", False)
     with pytest.raises(EngineNotAvailableError, match="not available"):
@@ -127,6 +131,7 @@ def test_generate_raises_engine_not_available_when_flag_off(engine, monkeypatch)
 def test_generate_translates_missing_module_to_engine_not_available(engine, monkeypatch):
     """`No module named` inside generate must surface as
     EngineNotAvailableError with install instructions."""
+
     def boom():
         raise ImportError("No module named 'numba'")
 
@@ -138,6 +143,7 @@ def test_generate_translates_missing_module_to_engine_not_available(engine, monk
 def test_generate_translates_cuda_memory_error_to_tts_exception(engine, monkeypatch):
     """CUDA OOM must surface as TTSException with the GPU/memory hint —
     actionable, not a generic 'generation failed'."""
+
     def boom():
         raise RuntimeError("CUDA out of memory")
 
@@ -156,6 +162,7 @@ def test_generate_other_failure_wrapped_as_tts_exception(engine, monkeypatch):
 
 
 # generate — happy path
+
 
 def test_generate_writes_wav_file_and_returns_bytes(engine, monkeypatch):
     """Full stubbed pipeline: preload_models → generate_audio → scipy.write

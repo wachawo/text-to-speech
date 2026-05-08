@@ -49,11 +49,13 @@ def engine(monkeypatch):
 
 # is_available
 
+
 def test_is_available_true_with_fake_piper(engine):
     assert engine.is_available() is True
 
 
 # get_models_directory — three-priority resolution
+
 
 def test_models_dir_uses_env_var_absolute(engine, monkeypatch, tmp_path):
     monkeypatch.setenv("PIPERTTS_MODELS", str(tmp_path / "abs_models"))
@@ -103,6 +105,7 @@ def test_models_dir_default_when_nothing_configured(engine, monkeypatch, tmp_pat
 
 # get_voice_path — language → file mapping
 
+
 def test_voice_path_known_language_uses_mapped_name(engine, monkeypatch, tmp_path):
     monkeypatch.setattr(engine, "get_models_directory", lambda: str(tmp_path))
     # Pre-create the file so the first existence check wins.
@@ -128,6 +131,7 @@ def test_voice_path_returns_models_dir_path_when_file_missing(engine, monkeypatc
 
 # get_download_instructions
 
+
 def test_download_instructions_mention_installer_and_url(engine):
     out = engine.get_download_instructions("ru")
     assert "ttsgen --install pipertts" in out
@@ -141,6 +145,7 @@ def test_download_instructions_unknown_language_falls_back_to_en(engine):
 
 
 # generate — error paths
+
 
 def test_generate_raises_engine_not_available_when_flag_off(engine, monkeypatch):
     monkeypatch.setattr(engine, "AVAILABLE", False)
@@ -173,6 +178,7 @@ def test_generate_other_failure_wrapped_as_tts_exception(engine, monkeypatch, tm
 
 
 # generate — happy path
+
 
 def test_generate_returns_valid_wav_bytes(engine, monkeypatch, tmp_path):
     """generate writes WAV via wave.open into BytesIO; result must be parseable."""

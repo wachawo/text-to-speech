@@ -27,6 +27,7 @@ def isolated_user_config(tmp_path, monkeypatch):
 
 # ensure_user_config
 
+
 def test_ensure_user_config_creates_with_defaults(isolated_user_config):
     assert not isolated_user_config.exists()
     returned = cfg.ensure_user_config()
@@ -63,6 +64,7 @@ def test_ensure_user_config_silent_on_oserror(monkeypatch, tmp_path, caplog):
 
 
 # persist_config_value
+
 
 def test_persist_appends_when_key_absent(isolated_user_config):
     cfg.persist_config_value("MY_NEW_KEY", "value1")
@@ -103,6 +105,7 @@ def test_persist_only_replaces_first_match(isolated_user_config):
 
 
 # load_config — dotenv priority chain
+
 
 def test_load_config_no_op_when_dotenv_missing(monkeypatch, isolated_user_config, tmp_path):
     """Without python-dotenv installed, load_config must early-return cleanly."""

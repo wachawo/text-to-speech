@@ -24,8 +24,8 @@ from libs.tools import (
     with_language,
 )
 
-
 # get_default_config — must return a fresh dict each time so callers can mutate freely
+
 
 def test_get_default_config_keys():
     cfg = get_default_config()
@@ -41,6 +41,7 @@ def test_get_default_config_returns_fresh_dict():
 
 
 # validate_text
+
 
 @pytest.mark.parametrize("bad", [None, 123, b"bytes", [], {}])
 def test_validate_text_rejects_non_string(bad):
@@ -71,6 +72,7 @@ def test_validate_text_rejects_pathological_length():
 
 # validate_language
 
+
 @pytest.mark.parametrize("ok,expected", [("en", "en"), ("EN", "en"), ("Ru", "ru")])
 def test_validate_language_lowercases_two_char_code(ok, expected):
     assert validate_language(ok) == expected
@@ -83,6 +85,7 @@ def test_validate_language_rejects_wrong_shape(bad):
 
 
 # validate_engine — exercises real engines/__init__ logic against tests/stubs/gtts
+
 
 def test_validate_engine_accepts_gtts():
     """gtts.py exists in engines/ AND requests is importable in dev venv."""
@@ -113,9 +116,14 @@ def test_validate_engine_distinguishes_missing_deps_from_missing_file(monkeypatc
 
 # compose — right-to-left function composition
 
+
 def test_compose_two_functions_applies_right_to_left():
-    add_one = lambda x: x + 1
-    times_two = lambda x: x * 2
+    def add_one(x):
+        return x + 1
+
+    def times_two(x):
+        return x * 2
+
     pipeline = compose(add_one, times_two)
     # times_two applied first (rightmost), then add_one
     assert pipeline(3) == (3 * 2) + 1
@@ -136,6 +144,7 @@ def test_compose_single_function_acts_like_the_function():
 
 
 # with_engine / with_language — kwarg injection wrappers
+
 
 def test_with_engine_injects_kwarg_into_call():
     captured = {}
@@ -175,6 +184,7 @@ def test_with_language_composes_with_with_engine():
 
 
 # generate_timestamp_filename / ensure_audio_directory
+
 
 def test_generate_timestamp_filename_format_without_prefix():
     name = generate_timestamp_filename(extension="wav")
