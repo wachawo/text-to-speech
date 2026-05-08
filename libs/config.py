@@ -6,8 +6,9 @@ Priority (highest wins):
     1. Process env (set by shell or CLI flag)
     2. ./ttsgen.conf (project-local override)
     3. ~/.config/ttsgen.conf (user-wide defaults)
-    4. .env (legacy, current directory)
-    5. Built-in defaults baked into engine modules.
+    4. ./.env.local (local-only overrides on top of .env, gitignored)
+    5. ./.env (current directory, versioned defaults shared with Docker)
+    6. Built-in defaults baked into engine modules.
 
 Files use the same KEY=VALUE format as `.env`.
 """
@@ -33,8 +34,9 @@ DEFAULT_USER_CONFIG = """\
 #   1. Process env (shell, --coqui-model flag, etc.)
 #   2. ./ttsgen.conf (project-local override)
 #   3. ~/.config/ttsgen.conf (this file — user defaults)
-#   4. .env (legacy, current directory)
-#   5. Built-in defaults
+#   4. ./.env.local (gitignored, local overrides on top of .env)
+#   5. ./.env (versioned, shared with Docker)
+#   6. Built-in defaults
 #
 # Uncomment and edit the lines below to set your defaults.
 
@@ -95,15 +97,18 @@ def load_config() -> None:
     ensure_user_config()
 
     local_config = Path("ttsgen.conf")
-    legacy_env = Path(".env")
+    local_env = Path(".env.local")
+    shared_env = Path(".env")
 
     # Highest-priority file first; subsequent ones don't override what's already set.
     if local_config.exists():
         load_dotenv(local_config, override=False)
     if USER_CONFIG_PATH.exists():
         load_dotenv(USER_CONFIG_PATH, override=False)
-    if legacy_env.exists():
-        load_dotenv(legacy_env, override=False)
+    if local_env.exists():
+        load_dotenv(local_env, override=False)
+    if shared_env.exists():
+        load_dotenv(shared_env, override=False)
 
 
 def persist_config_value(key: str, value: str) -> None:

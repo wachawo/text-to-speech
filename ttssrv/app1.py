@@ -37,18 +37,25 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from dotenv import find_dotenv, load_dotenv  # noqa: E402
+from dotenv import load_dotenv  # noqa: E402
 
 from engines import get_available_engines  # noqa: E402
 from libs.api import text_to_speech_bytes  # noqa: E402
 from libs.exceptions import (  # noqa: E402
+    CustomError,
     EngineNotAvailableError,
     TTSException,
     ValidationError,
 )
 from ttssrv.validators import TtsRequestSchema  # noqa: E402
 
-load_dotenv(find_dotenv())
+# .env.local takes precedence over .env (gitignored, for local overrides).
+local_env = PROJECT_ROOT / ".env.local"
+shared_env = PROJECT_ROOT / ".env"
+if local_env.exists():
+    load_dotenv(local_env, override=False)
+if shared_env.exists():
+    load_dotenv(shared_env, override=False)
 
 # Config
 TRUE_VALUES = ("1", "true", "yes", "on", "enabled")
@@ -259,6 +266,16 @@ def handle_tts_validation_error(error):
 def handle_engine_not_available(error):
     logger.warning(f"[{get_req_id()}] {type(error).__name__}: {str(error)}")
     return jsonify({"error": "Service Unavailable", "request_id": get_req_id()}), 503
+
+
+@app.errorhandler(CustomError)
+def handle_custom_error(error):
+    # Engine produced a structured payload — return it verbatim, log a one-liner.
+    body = dict(error.payload)
+    body.setdefault("request_id", get_req_id())
+    summary = (body.get("message") or body.get("error") or "").splitlines()[0][:200]
+    logger.warning(f"[{get_req_id()}] CustomError ({body.get('error')}): {summary}")
+    return jsonify(body), error.status
 
 
 @app.errorhandler(TTSException)

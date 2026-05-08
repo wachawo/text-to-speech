@@ -17,7 +17,8 @@ from torch.serialization import add_safe_globals, safe_globals
 from TTS.tts.configs.xtts_config import XttsConfig
 from TTS.tts.models.xtts import XttsAudioConfig, XttsArgs
 from TTS.config.shared_configs import BaseDatasetConfig
-from libs.exceptions import EngineNotAvailableError, TTSException
+from libs.exceptions import CustomError, EngineNotAvailableError, TTSException
+from libs.sample_resolver import resolve_sample_path
 from libs.tempfiles import safe_unlink
 
 # Load environment variables from .env file
@@ -32,10 +33,14 @@ except ImportError:
 
 
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# .env.local takes precedence over .env (gitignored, for local overrides).
+local_env_file = os.path.join(project_root, ".env.local")
 env_file = os.path.join(project_root, ".env")
+if os.path.exists(local_env_file):
+    load_dotenv(local_env_file)
 if os.path.exists(env_file):
     load_dotenv(env_file)
-else:
+elif not os.path.exists(local_env_file):
     load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -95,19 +100,23 @@ def generate(text: str, config: dict) -> bytes:
             "Coqui TTS not available. Install with: pip install TTS\n"
             "See docs/COQUITTS.md for setup instructions."
         )
-    sample_wav = os.path.expanduser(os.getenv("COQUITTS_SAMPLE", DEFAULT_COQUITTS_SAMPLE))
+    sample_wav = resolve_sample_path(os.getenv("COQUITTS_SAMPLE", DEFAULT_COQUITTS_SAMPLE))
     if not os.path.exists(sample_wav):
-        raise TTSException(
-            f"Voice sample WAV not found: {sample_wav}\n"
-            f"\n"
-            f"xtts_v2 needs a 5-10s recording of a target voice. Create one with:\n"
-            f"\n"
-            f"    ttsrec                           # record into the configured path (recommended)\n"
-            f"    ttsrec {sample_wav}              # record into this exact path\n"
-            f"    ttsrec /path/to/your_voice.wav   # record into a custom path\n"
-            f"\n"
-            f"Or point at an existing recording:\n"
-            f"    ttsgen \"...\" --engine coquitts --coqui-sample /path/to/voice.wav"
+        raise CustomError(
+            {
+                "error": "voice_sample_missing",
+                "message": (
+                    f"Voice sample WAV not found: {sample_wav}\n"
+                    f"\n"
+                    f"xtts_v2 needs a 5-10s recording of a target voice. Create one with:\n"
+                    f"    ttsrec                           # record into the configured path\n"
+                    f"    ttsrec {sample_wav}\n"
+                    f"    ttsrec /path/to/your_voice.wav\n"
+                    f"\n"
+                    f"Or set COQUITTS_SAMPLE in .env / .env.local to an existing recording."
+                ),
+                "path": sample_wav,
+            }
         )
     try:
         language = config.get("language", "en")
