@@ -41,7 +41,7 @@ import threading
 from pathlib import Path
 from typing import Any, cast
 
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 
 # Configure logging
 LOGGING = {
@@ -90,8 +90,12 @@ from libs.cli import (  # noqa: E402
 
 
 def get_config() -> dict[str, Any]:
-    """Load configuration from .env file if it exists."""
-    load_dotenv(".env")
+    """Load configuration from .env (base) → .env.local (override)."""
+    found = find_dotenv(usecwd=True)
+    if found:
+        load_dotenv(found)
+    if os.path.exists(".env.local"):
+        load_dotenv(".env.local", override=True)
     engine = os.getenv("TTS_ENGINE", "gtts")
     language = os.getenv("TTS_LANGUAGE", "en")
     audio_directory = os.getenv("AUDIO_DIRECTORY", "audio")

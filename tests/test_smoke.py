@@ -1,24 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Smoke test — exercises /api/tts and writes the result to samples/test.mp3.
+"""Smoke test — exercises /api/tts end-to-end with the stubbed audio pipeline.
 
-The file is gitignored (see .gitignore: samples/) and serves as a manual
-artifact you can play after `pytest` to confirm the audio pipeline works
-end-to-end.
+Writes to pytest's tmp_path to stay race-free under `pytest -n auto` and
+shared CI workspaces; the file is discarded after the run.
 """
 
-from pathlib import Path
 
-SAMPLES_DIR = Path(__file__).resolve().parent.parent / "samples"
-SAMPLE_FILE = SAMPLES_DIR / "test.mp3"
-
-
-def test_smoke_writes_sample(client):
-    SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
+def test_smoke_writes_sample(client, tmp_path):
     resp = client.post("/api/tts", json={"text": "smoke test"})
     assert resp.status_code == 200
     assert len(resp.data) > 44
 
-    SAMPLE_FILE.write_bytes(resp.data)
-    assert SAMPLE_FILE.exists()
-    assert SAMPLE_FILE.stat().st_size == len(resp.data)
+    out = tmp_path / "test.mp3"
+    out.write_bytes(resp.data)
+    assert out.stat().st_size == len(resp.data)

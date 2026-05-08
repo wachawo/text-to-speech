@@ -36,5 +36,8 @@ class CustomError(TTSException):
 
     def __init__(self, payload: dict, status: int = 422):
         self.payload = dict(payload)
-        self.status = status
+        # Clamp to a valid client/server error range so a buggy engine
+        # cannot return a 2xx with an `error` payload (which a client would
+        # interpret as success).
+        self.status = max(400, min(599, int(status)))
         super().__init__(self.payload.get("message") or self.payload.get("error") or "CustomError")

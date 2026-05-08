@@ -2,15 +2,15 @@
 # -*- coding: utf-8 -*-
 """Config loader with priority chain.
 
-Priority (highest wins):
-    1. Process env (set by shell or CLI flag)
-    2. ./ttsgen.conf (project-local override)
-    3. ~/.config/ttsgen.conf (user-wide defaults)
-    4. ./.env.local (local-only overrides on top of .env, gitignored)
-    5. ./.env (current directory, versioned defaults shared with Docker)
-    6. Built-in defaults baked into engine modules.
+Load order (later wins for overlapping keys):
+    1. ./.env                       (versioned defaults, shared with Docker)
+    2. ./.env.local                 (gitignored local overrides — override=True)
+    3. ~/.config/ttsgen.conf        (user-wide fallback — override=False)
+    4. ./ttsgen.conf                (project-local fallback — override=False)
 
-Files use the same KEY=VALUE format as `.env`.
+Files use the same KEY=VALUE format as `.env`. Configs (3, 4) are loaded
+last with override=False so they only fill keys not already set by the
+.env pair above — they act as last-resort defaults.
 """
 
 import logging
@@ -19,7 +19,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 try:
-    from dotenv import load_dotenv
+    from dotenv import find_dotenv, load_dotenv
     DOTENV_AVAILABLE = True
 except ImportError:
     DOTENV_AVAILABLE = False
@@ -30,13 +30,11 @@ USER_CONFIG_PATH = USER_CONFIG_DIR / "ttsgen.conf"
 
 DEFAULT_USER_CONFIG = """\
 # ttsgen configuration — KEY=VALUE format (same as .env).
-# Priority (highest wins):
-#   1. Process env (shell, --coqui-model flag, etc.)
-#   2. ./ttsgen.conf (project-local override)
-#   3. ~/.config/ttsgen.conf (this file — user defaults)
-#   4. ./.env.local (gitignored, local overrides on top of .env)
-#   5. ./.env (versioned, shared with Docker)
-#   6. Built-in defaults
+# Load order (later wins for overlapping keys):
+#   1. ./.env                       (versioned defaults)
+#   2. ./.env.local                 (gitignored override, beats .env)
+#   3. ~/.config/ttsgen.conf        (this file — fallback default)
+#   4. ./ttsgen.conf                (project fallback)
 #
 # Uncomment and edit the lines below to set your defaults.
 
@@ -86,29 +84,28 @@ def ensure_user_config() -> Path:
 
 
 def load_config() -> None:
-    """Populate os.environ from config files in priority order.
+    """Populate os.environ from config files.
 
-    Process env always wins (override=False everywhere). Files load from highest
-    priority to lowest, each only filling values not already set by previous loads.
+    Order: .env (base) → .env.local (override=True) → user/project ttsgen.conf
+    (override=False, last-resort fallback for keys neither .env nor .env.local set).
     """
     if not DOTENV_AVAILABLE:
         return
 
     ensure_user_config()
 
-    local_config = Path("ttsgen.conf")
+    # .env — found by walking up from cwd; .env.local — local override.
+    found = find_dotenv(usecwd=True)
+    if found:
+        load_dotenv(found)
     local_env = Path(".env.local")
-    shared_env = Path(".env")
-
-    # Highest-priority file first; subsequent ones don't override what's already set.
-    if local_config.exists():
-        load_dotenv(local_config, override=False)
-    if USER_CONFIG_PATH.exists():
-        load_dotenv(USER_CONFIG_PATH, override=False)
     if local_env.exists():
-        load_dotenv(local_env, override=False)
-    if shared_env.exists():
-        load_dotenv(shared_env, override=False)
+        load_dotenv(local_env, override=True)
+    if USER_CONFIG_PATH.exists():
+        load_dotenv(USER_CONFIG_PATH)
+    local_config = Path("ttsgen.conf")
+    if local_config.exists():
+        load_dotenv(local_config)
 
 
 def persist_config_value(key: str, value: str) -> None:

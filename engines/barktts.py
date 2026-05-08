@@ -13,18 +13,23 @@ import logging
 import sys
 import os
 
-from libs.exceptions import EngineNotAvailableError, TTSException
+from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
+
+# Bark generates ~14s of audio per minute on CPU; 5k chars is already heavy.
+MAX_TEXT_LENGTH = 5_000
 from libs.tempfiles import safe_unlink
 
-# Load environment variables from .env file
+# .env via find_dotenv (walks up from cwd) → then .env.local override.
 try:
-    from dotenv import load_dotenv
+    from dotenv import find_dotenv, load_dotenv
 
-    # Get project root and load .env
+    _found = find_dotenv(usecwd=True)
+    if _found:
+        load_dotenv(_found)
     _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    _env_file = os.path.join(_project_root, ".env")
-    if os.path.exists(_env_file):
-        load_dotenv(_env_file)
+    _local_env_file = os.path.join(_project_root, ".env.local")
+    if os.path.exists(_local_env_file):
+        load_dotenv(_local_env_file, override=True)
 except ImportError:
     pass  # dotenv not installed, skip
 
@@ -142,6 +147,9 @@ def generate(text: str, config: dict) -> bytes:
             "   pip install git+https://github.com/suno-ai/bark.git\n"
             "See docs/BARK.md for setup instructions."
         )
+
+    if len(text) > MAX_TEXT_LENGTH:
+        raise ValidationError(f"Text too long for barktts: {len(text)} > {MAX_TEXT_LENGTH}")
 
     try:
         import scipy.io.wavfile

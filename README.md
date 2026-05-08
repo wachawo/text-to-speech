@@ -329,6 +329,7 @@ pip install -e ".[dev]"
 # Tests + coverage (config lives in pyproject.toml — `pytest` runs both)
 pytest                    # full suite, prints per-module coverage
 pytest --no-cov           # disable coverage for a faster local re-run
+pytest --cov
 
 # Test suite layout (162 tests in tests/test_<word>.py, ~1s on a laptop):
 #   srv-side    test_health, test_auth, test_endpoint, test_errors, test_smoke

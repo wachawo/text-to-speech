@@ -4,7 +4,11 @@ gTTS Engine
 Online text-to-speech using Google Text-to-Speech.
 """
 
-from libs.exceptions import EngineNotAvailableError, TTSException
+from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
+
+# Google rate-limits gTTS aggressively (one HTTP request per ≤200-char chunk).
+# Above ~5k chars a single ttsgen run starts triggering bans.
+MAX_TEXT_LENGTH = 5_000
 import io
 import logging
 
@@ -38,6 +42,9 @@ def generate(text: str, config: dict) -> bytes:
     """
     if not AVAILABLE:
         raise EngineNotAvailableError("gTTS not available")
+
+    if len(text) > MAX_TEXT_LENGTH:
+        raise ValidationError(f"Text too long for gtts: {len(text)} > {MAX_TEXT_LENGTH}")
 
     try:
         language = config.get("language", "en")

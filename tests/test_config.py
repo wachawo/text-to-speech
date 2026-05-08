@@ -33,8 +33,8 @@ def test_ensure_user_config_creates_with_defaults(isolated_user_config):
     returned = cfg.ensure_user_config()
     assert returned == isolated_user_config
     body = isolated_user_config.read_text()
-    # Must contain the priority chain comment + at least one example key
-    assert "Priority (highest wins)" in body
+    # Must contain the load-order comment + at least one example key
+    assert "Load order" in body
     assert "TTS_ENGINE=" in body
 
 
@@ -124,15 +124,15 @@ def test_load_config_priority_local_over_shared_env(monkeypatch, isolated_user_c
     assert os.environ.get("MY_KEY") == "local_wins"
 
 
-def test_load_config_user_config_beats_dotenv(monkeypatch, isolated_user_config, tmp_path):
-    """~/.config/ttsgen.conf is priority 3, .env is priority 5 — user wins."""
+def test_load_config_dotenv_beats_user_config(monkeypatch, isolated_user_config, tmp_path):
+    """.env is priority 3, ~/.config/ttsgen.conf is priority 5 — .env wins."""
     monkeypatch.chdir(tmp_path)
     isolated_user_config.parent.mkdir(parents=True, exist_ok=True)
-    isolated_user_config.write_text("USER_PRIORITY=user_wins\n")
-    (tmp_path / ".env").write_text("USER_PRIORITY=env_loses\n")
+    isolated_user_config.write_text("USER_PRIORITY=user_loses\n")
+    (tmp_path / ".env").write_text("USER_PRIORITY=env_wins\n")
     monkeypatch.delenv("USER_PRIORITY", raising=False)
     cfg.load_config()
-    assert os.environ.get("USER_PRIORITY") == "user_wins"
+    assert os.environ.get("USER_PRIORITY") == "env_wins"
 
 
 def test_load_config_process_env_beats_files(monkeypatch, isolated_user_config, tmp_path):

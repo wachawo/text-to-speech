@@ -11,17 +11,22 @@ import io
 import os
 import logging
 
-from libs.exceptions import EngineNotAvailableError, TTSException
+from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
 
-# Load environment variables from .env file
+# Silero is fast offline; protect single calls from runaway memory.
+MAX_TEXT_LENGTH = 50_000
+
+# .env via find_dotenv (walks up from cwd) → then .env.local override.
 try:
-    from dotenv import load_dotenv
+    from dotenv import find_dotenv, load_dotenv
 
-    # Get project root and load .env
+    found = find_dotenv(usecwd=True)
+    if found:
+        load_dotenv(found)
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    env_file = os.path.join(project_root, ".env")
-    if os.path.exists(env_file):
-        load_dotenv(env_file)
+    local_env_file = os.path.join(project_root, ".env.local")
+    if os.path.exists(local_env_file):
+        load_dotenv(local_env_file, override=True)
 except ImportError:
     pass  # dotenv not installed, skip
 
@@ -126,6 +131,8 @@ def generate(text: str, config: dict) -> bytes:
             "Silero TTS not available. Install with: pip install torch torchaudio\n"
             "See docs/SILEROTTS.md for setup instructions."
         )
+    if len(text) > MAX_TEXT_LENGTH:
+        raise ValidationError(f"Text too long for silerotts: {len(text)} > {MAX_TEXT_LENGTH}")
     language = config.get("language", "en")
     try:
         model_id, speaker, sample_rate = get_model_info(language)

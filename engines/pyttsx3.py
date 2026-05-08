@@ -4,7 +4,10 @@ pyttsx3 TTS Engine
 Offline text-to-speech using espeak backend.
 """
 
-from libs.exceptions import EngineNotAvailableError, TTSException
+from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
+
+# Offline espeak; fast but text >10k chars stalls audio threads.
+MAX_TEXT_LENGTH = 10_000
 from libs.tempfiles import safe_unlink
 import os
 import tempfile
@@ -46,6 +49,9 @@ def generate(text: str, config: dict) -> bytes:
     """
     if not AVAILABLE:
         raise EngineNotAvailableError("pyttsx3 not available")
+
+    if len(text) > MAX_TEXT_LENGTH:
+        raise ValidationError(f"Text too long for pyttsx3: {len(text)} > {MAX_TEXT_LENGTH}")
 
     try:
         # Initialize engine

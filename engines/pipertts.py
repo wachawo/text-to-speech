@@ -5,7 +5,10 @@ High-quality offline text-to-speech using Piper.
 Fast, natural-sounding voices with support for 50+ languages.
 """
 
-from libs.exceptions import EngineNotAvailableError, TTSException
+from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
+
+# Offline ONNX, ~300x realtime — large texts are fine but bound memory.
+MAX_TEXT_LENGTH = 50_000
 import io
 import wave
 import logging
@@ -161,6 +164,8 @@ def generate(text: str, config: dict) -> bytes:
             "Piper TTS not available. Install with: pip install piper-tts\n"
             "See docs/PIPER.md for setup instructions."
         )
+    if len(text) > MAX_TEXT_LENGTH:
+        raise ValidationError(f"Text too long for pipertts: {len(text)} > {MAX_TEXT_LENGTH}")
     language = config.get("language", "en")
     try:
         voice_path = get_voice_path(language)

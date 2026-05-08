@@ -37,7 +37,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from dotenv import load_dotenv  # noqa: E402
+from dotenv import find_dotenv, load_dotenv  # noqa: E402
 
 from engines import get_available_engines  # noqa: E402
 from libs.api import text_to_speech_bytes  # noqa: E402
@@ -49,13 +49,13 @@ from libs.exceptions import (  # noqa: E402
 )
 from ttssrv.validators import TtsRequestSchema  # noqa: E402
 
-# .env.local takes precedence over .env (gitignored, for local overrides).
+# .env via find_dotenv (walks up from cwd) → then .env.local override.
+found = find_dotenv(usecwd=True)
+if found:
+    load_dotenv(found)
 local_env = PROJECT_ROOT / ".env.local"
-shared_env = PROJECT_ROOT / ".env"
 if local_env.exists():
-    load_dotenv(local_env, override=False)
-if shared_env.exists():
-    load_dotenv(shared_env, override=False)
+    load_dotenv(local_env, override=True)
 
 # Config
 TRUE_VALUES = ("1", "true", "yes", "on", "enabled")
