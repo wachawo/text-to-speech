@@ -183,7 +183,7 @@ Environment Configuration:
     text_group.add_argument(
         "--install",
         metavar="ENGINE",
-        help="Install an engine (pipertts, silerotts, coquitts, barktts) and exit",
+        help="Install an engine (pipertts, silerotts, coquitts, barktts, kokorotts) and exit",
     )
 
     # Non-interactive flag — only meaningful with --install
@@ -303,6 +303,7 @@ ENGINE_MODEL_SOURCES = {
     "silerotts": (os.getenv("SILEROTTS_PATH", ".silerotts"), ["**/*.pt", "**/*.jit"]),
     "coquitts": (os.getenv("COQUITTS_PATH", ".coquitts"), ["tts/*"]),
     "barktts": (os.getenv("BARKTTS_PATH", ".barktts"), ["**/*.pt"]),
+    "kokorotts": (os.getenv("KOKOROTTS_PATH", ".kokorotts"), ["*.onnx", "*.bin"]),
 }
 
 ENGINE_NOTES = {

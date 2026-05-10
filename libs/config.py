@@ -51,10 +51,11 @@ DEFAULT_USER_CONFIG = """\
 # COQUITTS_MODEL=tts_models/multilingual/multi-dataset/xtts_v2
 # COQUITTS_SAMPLE=~/.config/ttsgen.wav
 
-# Piper / Silero / Bark model directories (defaults are project-local dotfolders)
+# Piper / Silero / Bark / Kokoro model directories (defaults are project-local dotfolders)
 # PIPERTTS_PATH=.pipertts
 # SILEROTTS_PATH=.silerotts
 # BARKTTS_PATH=.barktts
+# KOKOROTTS_PATH=.kokorotts
 
 # HTTP client (used by `ttsapi` to reach a remote `ttssrv`)
 # TTS_URL=http://localhost:5000

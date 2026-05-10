@@ -14,7 +14,7 @@ try:
 except ImportError:
     pass
 
-INSTALLERS = ("pipertts", "silerotts", "coquitts", "barktts")
+INSTALLERS = ("pipertts", "silerotts", "coquitts", "barktts", "kokorotts")
 NO_INSTALLER_NEEDED = ("gtts", "pyttsx3")
 
 

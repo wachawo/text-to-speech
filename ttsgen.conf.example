@@ -13,7 +13,7 @@
 
 
 # Default engine and language used when not specified on the command line.
-# Engines: gtts, pyttsx3, pipertts, silerotts, coquitts, barktts.
+# Engines: gtts, pyttsx3, pipertts, silerotts, coquitts, barktts, kokorotts.
 TTS_ENGINE=gtts
 TTS_LANGUAGE=en
 
@@ -57,6 +57,15 @@ COQUITTS_SAMPLE=~/.config/ttsgen.wav
 
 # Bark TTS — model cache directory (large: ~10–15 GB).
 BARKTTS_PATH=.barktts
+
+
+# Kokoro TTS — directory holding kokoro-v1.0.onnx + voices-v1.0.bin (~340 MB).
+KOKOROTTS_PATH=.kokorotts
+# Default voice (override the per-language default like af_sarah / ff_siwis).
+# See https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md
+# KOKOROTTS_VOICE=af_heart
+# Speech speed multiplier (1.0 = normal).
+# KOKOROTTS_SPEED=1.0
 
 
 # HTTP API server (used by `ttssrv` and docker-compose.yml).

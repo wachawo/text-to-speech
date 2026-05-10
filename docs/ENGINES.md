@@ -17,6 +17,7 @@ Each engine is an optional module that can be installed as needed.
 | silerotts | 4/5 | Very Fast | 60MB | Yes | Fast offline, Russian |
 | coquitts | 5/5 | Slow* | 1-4GB | Yes | Best quality + GPU |
 | barktts | 5/5 | Very Slow* | 10GB | Yes | Emotions + music |
+| kokorotts | 4/5 | Very Fast | 340MB | Yes | Multi-language ONNX (en/fr/it/ja/zh/es/hi/pt) |
 
 *Fast with GPU
 
@@ -71,6 +72,12 @@ Each engine is an optional module that can be installed as needed.
 - Cons: Very slow, large models (10GB), high memory
 - Install: `pip install git+https://github.com/suno-ai/bark.git scipy`
 - Docs: docs/BARKTTS.md
+
+**kokorotts**
+- Pros: Fast on CPU, ONNX runtime, multi-language voices
+- Cons: ~340 MB ONNX model, requires download from upstream release
+- Install: `ttsgen --install kokorotts` (kokoro-onnx + onnxruntime + soundfile)
+- Docs: docs/KOKOROTTS.md
 
 ## Structure
 

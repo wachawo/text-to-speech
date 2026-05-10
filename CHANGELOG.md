@@ -1,5 +1,17 @@
 ## Changelog
 
+### [Unreleased]
+
+#### Added
+- Kokoro TTS engine (`engines/kokorotts.py`) — offline ONNX synthesis via
+  `kokoro-onnx`, multi-language (en/fr/it/ja/zh/es/hi/pt), per-language default
+  voices and `KOKOROTTS_VOICE` / `KOKOROTTS_SPEED` overrides.
+- `ttsgen --install kokorotts` installer — picks `onnxruntime` (CPU) or
+  `onnxruntime-gpu`, installs `kokoro-onnx` + `soundfile`, downloads
+  `kokoro-v1.0.onnx` and `voices-v1.0.bin` from the upstream `nazdridoy/kokoro-tts`
+  v1.0.0 release.
+- `docs/KOKOROTTS.md` setup and usage guide.
+
 ### [1.0.0] — 2026-05-09
 
 First public release. Highlights of this release:

@@ -14,6 +14,7 @@ Switch transparently between cloud and local TTS engines via a single interface.
 | `silerotts` | 4/5 | Very fast | ✅ | Fast offline, Russian |
 | `coquitts` | 5/5 | Slow (fast w/ GPU) | ✅ | Best quality, voice cloning |
 | `barktts` | 5/5 | Very slow (fast w/ GPU) | ✅ | Emotions, music, singing |
+| `kokorotts` | 4/5 | Very fast | ✅ | Fast offline, multi-language, ONNX |
 
 See [`docs/ENGINES.md`](docs/ENGINES.md) for the full engine matrix and tuning.
 
@@ -58,13 +59,14 @@ The HTTP server `ttssrv` is **not** a console-script — it's deployed via Docke
 
 #### Adding optional engines
 
-There are no pip extras for `pipertts` / `silerotts` / `coquitts` / `barktts`. Use the dedicated installer instead — it picks the right PyTorch wheel index (cpu / cu121), respects driver constraints, persists the model directory to `~/.config/ttsgen.conf`, and verifies download checksums where supported:
+There are no pip extras for `pipertts` / `silerotts` / `coquitts` / `barktts` / `kokorotts`. Use the dedicated installer instead — it picks the right PyTorch wheel index (cpu / cu121), respects driver constraints, persists the model directory to `~/.config/ttsgen.conf`, and verifies download checksums where supported:
 
 ```bash
 ttsgen --install pipertts        # piper-tts + voice models from HuggingFace
 ttsgen --install silerotts       # torch + torchaudio + omegaconf + Silero models
 ttsgen --install coquitts        # coqui-tts (Idiap fork) + torch + transformers
 ttsgen --install barktts         # bark (git) + scipy + numpy (~10–15 GB models)
+ttsgen --install kokorotts       # kokoro-onnx + onnxruntime + ~340 MB ONNX/voices
 ```
 
 ### Install for development
@@ -87,9 +89,10 @@ pip uninstall piper-tts                       # if pipertts was installed
 pip uninstall torch torchaudio omegaconf      # if silerotts was installed
 pip uninstall coqui-tts torchcodec transformers # if coquitts was installed
 pip uninstall bark scipy numpy                # if barktts was installed
+pip uninstall kokoro-onnx soundfile onnxruntime # if kokorotts was installed
 
 # Remove downloaded model files (optional — these can be 10+ GB)
-rm -rf .pipertts/ .silerotts/ .coquitts/ .barktts/
+rm -rf .pipertts/ .silerotts/ .coquitts/ .barktts/ .kokorotts/
 rm -rf ~/.cache/torch/hub/snakers4_silero-models_master   # silero (if stored in standard cache)
 rm -rf ~/.cache/suno/bark_v0/                              # bark
 ```
@@ -104,18 +107,19 @@ python ttsgen.py "Hello world"
 
 ### Optional engine model downloads
 
-Heavier engines need model files. The `ttsgen --install` command downloads them into per-engine dotfolders (`.pipertts/`, `.silerotts/`, `.coquitts/`, `.barktts/`):
+Heavier engines need model files. The `ttsgen --install` command downloads them into per-engine dotfolders (`.pipertts/`, `.silerotts/`, `.coquitts/`, `.barktts/`, `.kokorotts/`):
 
 ```bash
 ttsgen --install pipertts        # interactive
 ttsgen --install silerotts
 ttsgen --install coquitts
 ttsgen --install barktts
+ttsgen --install kokorotts
 
 ttsgen --install pipertts --non-interactive   # accept defaults, no prompts
 ```
 
-Per-engine guides: [`docs/PIPERTTS.md`](docs/PIPERTTS.md), [`docs/SILEROTTS.md`](docs/SILEROTTS.md), [`docs/COQUITTS.md`](docs/COQUITTS.md), [`docs/BARKTTS.md`](docs/BARKTTS.md).
+Per-engine guides: [`docs/PIPERTTS.md`](docs/PIPERTTS.md), [`docs/SILEROTTS.md`](docs/SILEROTTS.md), [`docs/COQUITTS.md`](docs/COQUITTS.md), [`docs/BARKTTS.md`](docs/BARKTTS.md), [`docs/KOKOROTTS.md`](docs/KOKOROTTS.md).
 
 ## Usage
 
@@ -161,7 +165,7 @@ ttsgen "Hello world" --engine coquitts
 ```
 
 Without a local `.env` (e.g. after `pip install git+...`), pass engine config via flags:
-- `--engine NAME` — pick an engine (`gtts`, `pyttsx3`, `pipertts`, `silerotts`, `coquitts`, `barktts`).
+- `--engine NAME` — pick an engine (`gtts`, `pyttsx3`, `pipertts`, `silerotts`, `coquitts`, `barktts`, `kokorotts`).
 - `--language XX` — 2-letter language code.
 - `--coqui-model MODEL`, `--coqui-sample PATH` — override `COQUITTS_MODEL` / `COQUITTS_SAMPLE` for one run. Same flags work with `ttsgen --install coquitts`.
 
