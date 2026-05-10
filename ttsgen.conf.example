@@ -35,17 +35,17 @@ AUDIO_RATE=150
 AUDIO_VOLUME=0.9
 
 
-# Piper TTS — model directory (.onnx files). Default: project-local .pipertts/.
-PIPERTTS_PATH=.pipertts
+# Piper TTS — model directory (.onnx files). Default: project-local cache/pipertts/.
+PIPERTTS_PATH=cache/pipertts
 
 
-# Silero TTS — model directory. Default: project-local .silerotts/.
+# Silero TTS — model directory. Default: project-local cache/silerotts/.
 # Set to ~/.cache/torch/hub for the standard torch.hub layout.
-SILEROTTS_PATH=.silerotts
+SILEROTTS_PATH=cache/silerotts
 
 
 # Coqui TTS configuration.
-COQUITTS_PATH=.coquitts
+COQUITTS_PATH=cache/coquitts
 # Full Coqui model identifier. Used at runtime AND by `ttsgen --install coquitts`.
 # Common choices:
 #   tts_models/multilingual/multi-dataset/xtts_v2          (best quality, voice cloning, ~1.8 GB, CPML license)
@@ -56,11 +56,11 @@ COQUITTS_SAMPLE=~/.config/ttsgen.wav
 
 
 # Bark TTS — model cache directory (large: ~10–15 GB).
-BARKTTS_PATH=.barktts
+BARKTTS_PATH=cache/barktts
 
 
 # Kokoro TTS — directory holding kokoro-v1.0.onnx + voices-v1.0.bin (~340 MB).
-KOKOROTTS_PATH=.kokorotts
+KOKOROTTS_PATH=cache/kokorotts
 # Default voice (override the per-language default like af_sarah / ff_siwis).
 # See https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md
 # KOKOROTTS_VOICE=af_heart

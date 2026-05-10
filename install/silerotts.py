@@ -25,7 +25,7 @@ def get_silero_dir(non_interactive: bool) -> Path:
         engine_label="Silero TTS",
         env_key="SILEROTTS_PATH",
         default_dir=Path.home() / ".cache" / "torch" / "hub",
-        project_dir=project_root() / ".silerotts",
+        project_dir=project_root() / "cache" / "silerotts",
         non_interactive=non_interactive,
     )
 

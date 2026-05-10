@@ -57,14 +57,14 @@ The script will:
 
 ### Default Location
 
-Models are stored in `.silerotts/` directory in project root (created automatically during installation).
+Models are stored in `cache/silerotts/` directory in project root (created automatically during installation).
 
-Example: `/path/to/tts/.silerotts/`
+Example: `/path/to/tts/cache/silerotts/`
 
 ### Custom Location
 
 During installation, you can choose from:
-1. **Default:** `.silerotts/` (in project directory)
+1. **Default:** `cache/silerotts/` (in project directory)
 2. **Standard:** `~/.cache/torch/hub/` (default Silero location)
 3. **Custom:** any directory you specify
 

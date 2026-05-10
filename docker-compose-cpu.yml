@@ -13,25 +13,31 @@ services:
     env_file:
       - .env
     environment:
-      TZ:                         ${TZ:-America/New_York}
-      TTS_HOST:                   ${TTS_HOST:-0.0.0.0}
-      TTS_PORT:                   ${TTS_PORT:-5000}
-      TTS_DEBUG:                  ${TTS_DEBUG:-False}
-      TTS_TOKEN:                  ${TTS_TOKEN:-}
-      TTS_POOL_SIZE:              ${TTS_POOL_SIZE:-1}
-      TTS_ENGINE:                 ${TTS_ENGINE:-gtts}
-      TTS_LANGUAGE:               ${TTS_LANGUAGE:-en}
-      COQUITTS_PATH:              /opt/.coquitts
-      COQUITTS_MODEL:             ${COQUITTS_MODEL:-tts_models/multilingual/multi-dataset/xtts_v2}
-      COQUITTS_SAMPLE:            ${COQUITTS_SAMPLE:-default.wav}
+      TZ:                ${TZ:-America/New_York}
+      TTS_HOST:          ${TTS_HOST:-0.0.0.0}
+      TTS_PORT:          ${TTS_PORT:-5000}
+      TTS_DEBUG:         ${TTS_DEBUG:-False}
+      TTS_TOKENS:        ${TTS_TOKENS:-}
+      TTS_POOL_SIZE:     ${TTS_POOL_SIZE:-1}
+      TTS_ENGINE:        ${TTS_ENGINE:-gtts}
+      TTS_LANGUAGE:      ${TTS_LANGUAGE:-en}
+      COQUITTS_PATH:     /opt/cache/coquitts
+      COQUITTS_MODEL:    ${COQUITTS_MODEL:-tts_models/multilingual/multi-dataset/xtts_v2}
+      COQUITTS_SAMPLE:   ${COQUITTS_SAMPLE:-default.wav}
+      KOKOROTTS_PATH:    /opt/cache/kokorotts
+      PIPERTTS_PATH:     /opt/cache/pipertts
+      SILEROTTS_PATH:    /opt/cache/silerotts
+      BARKTTS_PATH:      /opt/cache/barktts
+      PYTHONUSERBASE:    /opt/userbase
+      PIP_CACHE_DIR:     /opt/pip-cache
     ports:
       - "${TTS_PORT:-5000}:5000"
     volumes:
-      - ./.coquitts:/opt/.coquitts
+      - ./userbase:/opt/userbase
+      - ./pip-cache:/opt/pip-cache
+      - ./cache:/opt/cache
       - ./samples:/opt/samples:ro
       - .env:/opt/.env:ro
-      # Bind-mount local source over the git-installed package so edits
-      # survive any rebuild/recreate without depending on `docker cp`.
       - ./libs:/usr/local/lib/python3.12/site-packages/libs:ro
       - ./engines:/usr/local/lib/python3.12/site-packages/engines:ro
       - ./ttssrv:/opt/ttssrv:ro
@@ -42,7 +48,7 @@ services:
              "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/health', timeout=5)"]
       interval: 30s
       timeout: 10s
-      start_period: 60s
+      start_period: 600s
       retries: 3
     logging:
       driver: "json-file"
@@ -55,10 +61,6 @@ services:
       nofile:
         soft: 65535
         hard: 65535
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - "python3 /opt/ttssrv/app1.py"
-      # - "gunicorn --config /opt/ttssrv/gu.py ttssrv.app1:app"
 
 networks:
   tts_network:

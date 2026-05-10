@@ -47,15 +47,15 @@ DEFAULT_USER_CONFIG = """\
 # AUDIO_DIRECTORY=audio
 
 # coqui-tts configuration
-# COQUITTS_PATH=.coquitts
+# COQUITTS_PATH=cache/coquitts
 # COQUITTS_MODEL=tts_models/multilingual/multi-dataset/xtts_v2
 # COQUITTS_SAMPLE=~/.config/ttsgen.wav
 
-# Piper / Silero / Bark / Kokoro model directories (defaults are project-local dotfolders)
-# PIPERTTS_PATH=.pipertts
-# SILEROTTS_PATH=.silerotts
-# BARKTTS_PATH=.barktts
-# KOKOROTTS_PATH=.kokorotts
+# Piper / Silero / Bark / Kokoro model directories (defaults: cache/<engine>/ in project root)
+# PIPERTTS_PATH=cache/pipertts
+# SILEROTTS_PATH=cache/silerotts
+# BARKTTS_PATH=cache/barktts
+# KOKOROTTS_PATH=cache/kokorotts
 
 # HTTP client (used by `ttsapi` to reach a remote `ttssrv`)
 # TTS_URL=http://localhost:5000

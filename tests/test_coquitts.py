@@ -121,7 +121,7 @@ def engine(monkeypatch, tmp_path):
     sample = tmp_path / "voice.wav"
     sample.write_bytes(b"RIFF")
     monkeypatch.setenv("COQUITTS_SAMPLE", str(sample))
-    monkeypatch.setenv("COQUITTS_PATH", str(tmp_path / ".coquitts"))
+    monkeypatch.setenv("COQUITTS_PATH", str(tmp_path / "cache" / "coquitts"))
     return eng
 
 

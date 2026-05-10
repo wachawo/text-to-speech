@@ -31,7 +31,7 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_KOKOROTTS_PATH = ".kokorotts"
+DEFAULT_KOKOROTTS_PATH = "cache/kokorotts"
 DEFAULT_KOKOROTTS_MODEL = "kokoro-v1.0.onnx"
 DEFAULT_KOKOROTTS_VOICES = "voices-v1.0.bin"
 DEFAULT_KOKOROTTS_SPEED = 1.0
@@ -73,7 +73,7 @@ def get_models_directory() -> str:
 
     Priority:
     1. KOKOROTTS_PATH env (from CLI flag, ttsgen.conf, .env)
-    2. .kokorotts/ in project root (if exists)
+    2. cache/kokorotts/ in project root (if exists)
     3. ~/.local/share/ttsgen/kokorotts (default)
     """
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

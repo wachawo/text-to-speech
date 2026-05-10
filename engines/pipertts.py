@@ -45,7 +45,7 @@ def get_models_directory() -> str:
 
     Priority:
     1. Environment variable PIPERTTS_MODELS (from .env or export)
-    2. .pipertts directory in project root (if exists)
+    2. cache/pipertts directory in project root (if exists)
     3. Default: .piper/voices in project root
 
     Returns:
@@ -63,8 +63,8 @@ def get_models_directory() -> str:
             models_path = os.path.join(project_root, models_path)
         return os.path.expanduser(models_path)
 
-    # Priority 2: Check .pipertts directory in project root
-    pipertts_dir = os.path.join(project_root, ".pipertts")
+    # Priority 2: Check cache/pipertts directory in project root
+    pipertts_dir = os.path.join(project_root, "cache", "pipertts")
     if os.path.exists(pipertts_dir) and os.path.isdir(pipertts_dir):
         return pipertts_dir
 

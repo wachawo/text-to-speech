@@ -92,7 +92,7 @@ pip uninstall bark scipy numpy                # if barktts was installed
 pip uninstall kokoro-onnx soundfile onnxruntime # if kokorotts was installed
 
 # Remove downloaded model files (optional — these can be 10+ GB)
-rm -rf .pipertts/ .silerotts/ .coquitts/ .barktts/ .kokorotts/
+rm -rf cache/                                              # all per-engine model caches
 rm -rf ~/.cache/torch/hub/snakers4_silero-models_master   # silero (if stored in standard cache)
 rm -rf ~/.cache/suno/bark_v0/                              # bark
 ```
@@ -107,7 +107,7 @@ python ttsgen.py "Hello world"
 
 ### Optional engine model downloads
 
-Heavier engines need model files. The `ttsgen --install` command downloads them into per-engine dotfolders (`.pipertts/`, `.silerotts/`, `.coquitts/`, `.barktts/`, `.kokorotts/`):
+Heavier engines need model files. The `ttsgen --install` command downloads them into per-engine subdirs of `cache/` (`cache/pipertts/`, `cache/silerotts/`, `cache/coquitts/`, `cache/barktts/`, `cache/kokorotts/`):
 
 ```bash
 ttsgen --install pipertts        # interactive
@@ -156,11 +156,11 @@ ttsgen --list
 # coqui-tts with explicit model + voice sample (no .env needed)
 ttsgen "Hello world" --engine coquitts \
   --coqui-model tts_models/en/ljspeech/tacotron2-DDC \
-  --coqui-sample samples/Maria.wav
+  --coqui-sample samples/default.wav
 
 # Same via env vars (handy in scripts and CI)
 COQUITTS_MODEL=tts_models/en/ljspeech/tacotron2-DDC \
-COQUITTS_SAMPLE=samples/Maria.wav \
+COQUITTS_SAMPLE=samples/default.wav \
 ttsgen "Hello world" --engine coquitts
 ```
 
@@ -185,7 +185,7 @@ All config files use the same `KEY=VALUE` format. Available keys: `TTS_ENGINE`, 
 TTS_ENGINE=coquitts
 TTS_LANGUAGE=en
 COQUITTS_MODEL=tts_models/en/ljspeech/tacotron2-DDC
-COQUITTS_SAMPLE=samples/Maria.wav
+COQUITTS_SAMPLE=samples/default.wav
 ```
 
 ### Python API

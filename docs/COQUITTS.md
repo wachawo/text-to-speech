@@ -85,14 +85,14 @@ ttsgen --install coquitts
 
 ### Default Location
 
-Models are stored in `.coquitts/` directory in project root (created automatically during installation).
+Models are stored in `cache/coquitts/` directory in project root (created automatically during installation).
 
-Example: `/path/to/tts/.coquitts/`
+Example: `/path/to/tts/cache/coquitts/`
 
 ### Custom Location
 
 During installation, you can choose from:
-1. **Default:** `.coquitts/` (in project directory)
+1. **Default:** `cache/coquitts/` (in project directory)
 2. **Standard:** `~/.local/share/tts/` (default Coqui location)
 3. **Custom:** any directory you specify
 

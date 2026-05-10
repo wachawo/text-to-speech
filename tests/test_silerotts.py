@@ -103,7 +103,7 @@ def test_models_dir_env_var_relative_resolved_against_project(engine, monkeypatc
 
 
 def test_models_dir_default_when_no_env_and_no_dotdir(engine, monkeypatch):
-    """Without env var and without project-local .silerotts/ → torch hub default."""
+    """Without env var and without project-local cache/silerotts/ → torch hub default."""
     monkeypatch.delenv("SILEROTTS_MODELS", raising=False)
     monkeypatch.setattr(engine.os.path, "exists", lambda p: False)
     result = engine.get_models_directory()
