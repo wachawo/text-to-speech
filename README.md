@@ -209,10 +209,10 @@ The Flask server (`ttssrv`) preloads the engine once at startup, then serves syn
 
 ```bash
 # GPU (CUDA 12.1, requires nvidia-container-toolkit on host)
-docker compose up --build -d
+docker compose -f docker/gpu/docker-compose.yml up --build -d
 
-# CPU-only (no nvidia libs, smaller image)
-docker compose -f docker-compose-cpu.yml up --build -d
+# CPU-only
+docker compose -f docker/cpu/docker-compose.yml up --build -d
 ```
 
 Direct HTTP usage:
@@ -278,8 +278,10 @@ text-to-speech/
 ├── ttsplay.py                   # stdin player (`ttsplay` command)
 ├── ttsrec.py                    # microphone recorder (`ttsrec` command)
 ├── pyproject.toml            # Package config and dependencies
-├── docker-compose.yml        # ttssrv service (GPU)
-├── docker-compose-cpu.yml    # ttssrv service (CPU-only)
+├── docker/                   # Docker configs (split by accelerator)
+│   ├── gpu/                  #   GPU build: Dockerfile + docker-compose.yml + requirements.txt (cu121)
+│   └── cpu/                  #   CPU build: same files, cpu wheel index
+├── cache/                    # Per-engine model caches (cache/coquitts, cache/kokorotts, …)
 ├── engines/                  # Pluggable TTS engines
 │   ├── __init__.py           #   Dynamic loader
 │   ├── gtts.py
@@ -298,8 +300,8 @@ text-to-speech/
 │   ├── app1.py               #   Endpoints, pool, token auth
 │   ├── validators.py
 │   ├── gu.py
-│   ├── Dockerfile            #   GPU image (CUDA 12.1)
-│   └── Dockerfile-cpu        #   CPU-only image
+│   ├── entrypoint.sh         #   Container init: ensures TTS_ENGINE is installed
+│   └── requirements.txt      #   Light web stack (Flask, gtts, pyttsx3, …)
 ├── ttsapi.py                 # HTTP client (`ttsapi` console script — mirror of ttsgen)
 ├── install/                  # Engine installers (`ttsgen --install <engine>`)
 │   ├── __init__.py           #   Dispatcher

@@ -1,0 +1,10 @@
+# GPU build — heavy ML stack added on top of ttssrv/requirements.txt (the
+# lightweight web stack). The Dockerfile passes both via `pip install -r`.
+# PyTorch wheels for CUDA 12.1 (works with NVIDIA driver 525+).
+
+--extra-index-url https://download.pytorch.org/whl/cu121
+
+torch
+torchaudio
+coqui-tts[codec]
+transformers>=4.46,<5.0

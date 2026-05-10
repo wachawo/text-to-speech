@@ -27,7 +27,8 @@ echo "[entrypoint] TTS_ENGINE=$ENGINE  PYTHONUSERBASE=${PYTHONUSERBASE:-/opt/use
 
 python3 - <<'PY'
 import os, sys
-sys.path.insert(0, "/opt")  # bind-mounted libs/ + engines/ + install/ live here
+# install/, libs/, engines/ are bind-mounted by compose into site-packages,
+# so they're already on sys.path — no path tweak needed here.
 engine = os.environ.get("TTS_ENGINE", "gtts")
 from install import run
 sys.exit(run(engine, non_interactive=True))
