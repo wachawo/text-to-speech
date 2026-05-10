@@ -1,9 +1,14 @@
 # CPU image — same architecture as docker/gpu/Dockerfile (heavy ML stack baked
-# in at build time). Only difference is the torch wheel index (cpu vs cu121).
-# See docker/gpu/Dockerfile for the full architectural notes.
+# in at build time, uv for fast install). Only difference is the torch wheel
+# index (cpu vs cu121). See docker/gpu/Dockerfile for the full architectural
+# notes.
 #
 # Build context is the repo root — see compose `build.context: ../..`.
-FROM python:3.12-slim
+ARG BASE_IMAGE=python
+ARG BASE_IMAGE_TAG=3.12-slim
+FROM ${BASE_IMAGE}:${BASE_IMAGE_TAG} AS base
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /opt
 
@@ -15,7 +20,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY ttssrv/requirements.txt        /tmp/base.txt
 COPY docker/cpu/requirements.txt    /tmp/extra.txt
-RUN pip install --no-cache-dir -r /tmp/base.txt -r /tmp/extra.txt && rm /tmp/*.txt
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system --index-strategy=unsafe-best-match \
+        -r /tmp/base.txt -r /tmp/extra.txt \
+ && rm /tmp/*.txt
 
 COPY ttssrv/__init__.py ttssrv/app1.py ttssrv/validators.py ttssrv/gu.py ttssrv/entrypoint.sh \
      /opt/ttssrv/
