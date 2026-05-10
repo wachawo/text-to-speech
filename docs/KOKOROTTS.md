@@ -74,8 +74,116 @@ Standard config-file priority applies: process env > `./ttsgen.conf` > `~/.confi
 | `hi` | `hi`    | `hf_alpha` | Hindi |
 | `pt` | `pt-br` | `pf_dora`  | Brazilian Portuguese |
 
-Full voice catalog: <https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md>.
-Override `KOKOROTTS_VOICE` to pick male / British / blended voices.
+Override `KOKOROTTS_VOICE` to pick male / British / blended voices. The full
+catalog (mirrored from <https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md>)
+is below. Grades come from upstream subjective evaluation (A best → F worst);
+ungraded voices are listed without one.
+
+## Full voice list
+
+Voice ID prefix encodes language + gender:
+`af_*`/`am_*` American Female/Male, `bf_*`/`bm_*` British, `jf_*`/`jm_*`
+Japanese, `zf_*`/`zm_*` Mandarin, `ef_*`/`em_*` Spanish, `ff_*` French,
+`hf_*`/`hm_*` Hindi, `if_*`/`im_*` Italian, `pf_*`/`pm_*` Brazilian Portuguese.
+
+### American English (`--language en` → `en-us`)
+
+| Voice ID | Gender | Grade |
+|---|---|---|
+| `af_heart` | Female | A |
+| `af_bella` | Female | A- |
+| `af_nicole` | Female | B- |
+| `af_aoede` | Female | C+ |
+| `af_kore` | Female | C+ |
+| `af_sarah` *(default)* | Female | C+ |
+| `af_alloy` | Female | C |
+| `af_nova` | Female | C |
+| `af_sky` | Female | C- |
+| `af_jessica` | Female | D |
+| `af_river` | Female | D |
+| `am_fenrir` | Male | C+ |
+| `am_michael` | Male | C+ |
+| `am_puck` | Male | C+ |
+| `am_echo` | Male | D |
+| `am_eric` | Male | D |
+| `am_liam` | Male | D |
+| `am_onyx` | Male | D |
+| `am_santa` | Male | D- |
+| `am_adam` | Male | F+ |
+
+### British English (no default — set `KOKOROTTS_VOICE` and use `--language en`)
+
+| Voice ID | Gender | Grade |
+|---|---|---|
+| `bf_emma` | Female | B- |
+| `bf_isabella` | Female | C |
+| `bf_alice` | Female | D |
+| `bf_lily` | Female | D |
+| `bm_fable` | Male | C |
+| `bm_george` | Male | C |
+| `bm_lewis` | Male | D+ |
+| `bm_daniel` | Male | D |
+
+### Japanese (`--language ja` → `ja`)
+
+| Voice ID | Gender | Grade |
+|---|---|---|
+| `jf_alpha` *(default)* | Female | C+ |
+| `jf_gongitsune` | Female | C |
+| `jf_tebukuro` | Female | C |
+| `jf_nezumi` | Female | C- |
+| `jm_kumo` | Male | C- |
+
+### Mandarin Chinese (`--language zh` → `cmn`)
+
+| Voice ID | Gender | Grade |
+|---|---|---|
+| `zf_xiaobei` *(default)* | Female | D |
+| `zf_xiaoni` | Female | D |
+| `zf_xiaoxiao` | Female | D |
+| `zf_xiaoyi` | Female | D |
+| `zm_yunjian` | Male | D |
+| `zm_yunxi` | Male | D |
+| `zm_yunxia` | Male | D |
+| `zm_yunyang` | Male | D |
+
+### Spanish (`--language es` → `es`)
+
+| Voice ID | Gender | Grade |
+|---|---|---|
+| `ef_dora` *(default)* | Female | — |
+| `em_alex` | Male | — |
+| `em_santa` | Male | — |
+
+### French (`--language fr` → `fr-fr`)
+
+| Voice ID | Gender | Grade |
+|---|---|---|
+| `ff_siwis` *(default)* | Female | B- |
+
+### Hindi (`--language hi` → `hi`)
+
+| Voice ID | Gender | Grade |
+|---|---|---|
+| `hf_alpha` *(default)* | Female | C |
+| `hf_beta` | Female | C |
+| `hm_omega` | Male | C |
+| `hm_psi` | Male | C |
+
+### Italian (`--language it` → `it`)
+
+| Voice ID | Gender | Grade |
+|---|---|---|
+| `if_sara` *(default)* | Female | C |
+| `im_nicola` | Male | C |
+
+### Brazilian Portuguese (`--language pt` → `pt-br`)
+
+| Voice ID | Gender | Grade |
+|---|---|---|
+| `pf_dora` *(default)* | Female | — |
+| `pm_alex` | Male | — |
+| `pm_santa` | Male | — |
 
 ## Output format
 
