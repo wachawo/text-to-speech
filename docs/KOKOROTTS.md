@@ -28,7 +28,7 @@ wget https://github.com/nazdridoy/kokoro-tts/releases/download/v1.0.0/kokoro-v1.
 wget https://github.com/nazdridoy/kokoro-tts/releases/download/v1.0.0/voices-v1.0.bin
 ```
 
-Set `KOKOROTTS_PATH` if you want models in another directory.
+Set `KOKOROTTS_MODELS` if you want models in another directory.
 
 ## Usage
 
@@ -53,9 +53,9 @@ KOKOROTTS_SPEED=1.2         ttsgen "Hi" --engine kokorotts
 
 | Variable | Default | Notes |
 |---|---|---|
-| `KOKOROTTS_PATH` | `~/.local/share/ttsgen/kokorotts` | Directory holding the two model files |
-| `KOKOROTTS_MODEL` | `kokoro-v1.0.onnx` | Filename inside `KOKOROTTS_PATH` |
-| `KOKOROTTS_VOICES` | `voices-v1.0.bin` | Filename inside `KOKOROTTS_PATH` |
+| `KOKOROTTS_MODELS` | `~/.local/share/ttsgen/kokorotts` | Directory holding the two model files |
+| `KOKOROTTS_MODEL` | `kokoro-v1.0.onnx` | Filename inside `KOKOROTTS_MODELS` |
+| `KOKOROTTS_VOICES` | `voices-v1.0.bin` | Filename inside `KOKOROTTS_MODELS` |
 | `KOKOROTTS_VOICE` | per-language default (`af_sarah`, `ff_siwis`, …) | Any voice ID supported by the model |
 | `KOKOROTTS_SPEED` | `1.0` | Speech speed multiplier |
 
@@ -193,7 +193,7 @@ concatenates chunks via `wave` from the standard library — no re-encoding.
 ## Troubleshooting
 
 **`Kokoro TTS model files not found`**
-Run `ttsgen --install kokorotts`, or check that `KOKOROTTS_PATH` points to a
+Run `ttsgen --install kokorotts`, or check that `KOKOROTTS_MODELS` points to a
 directory containing both `kokoro-v1.0.onnx` and `voices-v1.0.bin`.
 
 **`onnxruntime` import error**

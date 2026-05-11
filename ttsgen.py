@@ -26,7 +26,7 @@ Usage:
     python ttsgen.py --install coquitts               # Install an engine and download models
 
 Author: TTS Library Team
-Version: 1.0.1
+Version: 1.0.2
 License: MIT
 """
 
@@ -299,11 +299,11 @@ def to_file(args: argparse.Namespace, config: dict[str, Any], engine: str) -> st
 
 
 ENGINE_MODEL_SOURCES = {
-    "pipertts": (os.getenv("PIPERTTS_PATH", "cache/pipertts"), ["*.onnx"]),
-    "silerotts": (os.getenv("SILEROTTS_PATH", "cache/silerotts"), ["**/*.pt", "**/*.jit"]),
-    "coquitts": (os.getenv("COQUITTS_PATH", "cache/coquitts"), ["tts/*"]),
-    "barktts": (os.getenv("BARKTTS_PATH", "cache/barktts"), ["**/*.pt"]),
-    "kokorotts": (os.getenv("KOKOROTTS_PATH", "cache/kokorotts"), ["*.onnx", "*.bin"]),
+    "pipertts": (os.getenv("PIPERTTS_MODELS", "cache/pipertts"), ["*.onnx"]),
+    "silerotts": (os.getenv("SILEROTTS_MODELS", "cache/silerotts"), ["**/*.pt", "**/*.jit"]),
+    "coquitts": (os.getenv("COQUITTS_MODELS", "cache/coquitts"), ["tts/*"]),
+    "barktts": (os.getenv("BARKTTS_MODELS", "cache/barktts"), ["**/*.pt"]),
+    "kokorotts": (os.getenv("KOKOROTTS_MODELS", "cache/kokorotts"), ["*.onnx", "*.bin"]),
 }
 
 ENGINE_NOTES = {

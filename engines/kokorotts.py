@@ -31,7 +31,7 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_KOKOROTTS_PATH = "cache/kokorotts"
+DEFAULT_KOKOROTTS_MODELS = "cache/kokorotts"
 DEFAULT_KOKOROTTS_MODEL = "kokoro-v1.0.onnx"
 DEFAULT_KOKOROTTS_VOICES = "voices-v1.0.bin"
 DEFAULT_KOKOROTTS_SPEED = 1.0
@@ -76,20 +76,20 @@ def get_models_directory() -> str:
     Resolve directory containing kokoro-v1.0.onnx and voices-v1.0.bin.
 
     Priority:
-    1. KOKOROTTS_PATH env (from CLI flag, ttsgen.conf, .env)
+    1. KOKOROTTS_MODELS env (from CLI flag, ttsgen.conf, .env)
     2. cache/kokorotts/ in project root (if exists)
     3. ~/.local/share/ttsgen/kokorotts (default)
     """
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-    env_var = os.environ.get("KOKOROTTS_PATH", "").strip()
+    env_var = os.environ.get("KOKOROTTS_MODELS", "").strip()
     if env_var:
         models_path = env_var
         if not os.path.isabs(models_path):
             models_path = os.path.join(project_root, models_path)
         return os.path.expanduser(models_path)
 
-    project_dir = os.path.join(project_root, DEFAULT_KOKOROTTS_PATH)
+    project_dir = os.path.join(project_root, DEFAULT_KOKOROTTS_MODELS)
     if os.path.isdir(project_dir):
         return project_dir
 

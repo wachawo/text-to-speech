@@ -91,12 +91,12 @@ def test_is_available_false_without_soundfile(monkeypatch):
 
 def test_models_dir_env_var_absolute(engine, monkeypatch, tmp_path):
     target = tmp_path / "abs_kokoro"
-    monkeypatch.setenv("KOKOROTTS_PATH", str(target))
+    monkeypatch.setenv("KOKOROTTS_MODELS", str(target))
     assert engine.get_models_directory() == str(target)
 
 
 def test_models_dir_env_var_relative_resolved_against_project(engine, monkeypatch):
-    monkeypatch.setenv("KOKOROTTS_PATH", "custom_kokoro")
+    monkeypatch.setenv("KOKOROTTS_MODELS", "custom_kokoro")
     result = engine.get_models_directory()
     assert result.endswith("custom_kokoro")
     # Must be anchored on the project root, not cwd.
@@ -104,7 +104,7 @@ def test_models_dir_env_var_relative_resolved_against_project(engine, monkeypatc
 
 
 def test_models_dir_falls_back_to_default_when_unset(engine, monkeypatch):
-    monkeypatch.delenv("KOKOROTTS_PATH", raising=False)
+    monkeypatch.delenv("KOKOROTTS_MODELS", raising=False)
     # Force-skip the cache/kokorotts branch.
     monkeypatch.setattr(engine.os.path, "isdir", lambda p: False)
     result = engine.get_models_directory()
@@ -115,7 +115,7 @@ def test_models_dir_falls_back_to_default_when_unset(engine, monkeypatch):
 
 
 def test_get_model_paths_uses_defaults(engine, monkeypatch, tmp_path):
-    monkeypatch.setenv("KOKOROTTS_PATH", str(tmp_path))
+    monkeypatch.setenv("KOKOROTTS_MODELS", str(tmp_path))
     monkeypatch.delenv("KOKOROTTS_MODEL", raising=False)
     monkeypatch.delenv("KOKOROTTS_VOICES", raising=False)
     model, voices = engine.get_model_paths()
@@ -124,7 +124,7 @@ def test_get_model_paths_uses_defaults(engine, monkeypatch, tmp_path):
 
 
 def test_get_model_paths_respects_overrides(engine, monkeypatch, tmp_path):
-    monkeypatch.setenv("KOKOROTTS_PATH", str(tmp_path))
+    monkeypatch.setenv("KOKOROTTS_MODELS", str(tmp_path))
     monkeypatch.setenv("KOKOROTTS_MODEL", "custom.onnx")
     monkeypatch.setenv("KOKOROTTS_VOICES", "custom-voices.bin")
     model, voices = engine.get_model_paths()
@@ -136,7 +136,7 @@ def test_get_model_paths_respects_overrides(engine, monkeypatch, tmp_path):
 
 
 def test_download_instructions_mentions_installer_and_files(engine, monkeypatch, tmp_path):
-    monkeypatch.setenv("KOKOROTTS_PATH", str(tmp_path))
+    monkeypatch.setenv("KOKOROTTS_MODELS", str(tmp_path))
     text = engine.get_download_instructions()
     assert "ttsgen --install kokorotts" in text
     assert "kokoro-v1.0.onnx" in text
@@ -159,7 +159,7 @@ def test_generate_validates_max_text_length(engine):
 
 
 def test_generate_raises_when_model_missing(engine, monkeypatch, tmp_path):
-    monkeypatch.setenv("KOKOROTTS_PATH", str(tmp_path))  # empty dir, no .onnx
+    monkeypatch.setenv("KOKOROTTS_MODELS", str(tmp_path))  # empty dir, no .onnx
     with pytest.raises(TTSException) as exc:
         engine.generate("hello", {"language": "en"})
     assert "Kokoro TTS model files not found" in str(exc.value)
@@ -172,7 +172,7 @@ def test_generate_returns_wav_bytes(engine, monkeypatch, tmp_path):
     # Plant the expected model files so the missing-files check passes.
     (tmp_path / "kokoro-v1.0.onnx").write_bytes(b"fake-onnx")
     (tmp_path / "voices-v1.0.bin").write_bytes(b"fake-voices")
-    monkeypatch.setenv("KOKOROTTS_PATH", str(tmp_path))
+    monkeypatch.setenv("KOKOROTTS_MODELS", str(tmp_path))
 
     result = engine.generate("hello world", {"language": "en"})
     assert isinstance(result, bytes)
@@ -186,7 +186,7 @@ def test_generate_caches_kokoro_instance(engine, monkeypatch, tmp_path):
     """Second call with same paths must reuse the cached Kokoro instance."""
     (tmp_path / "kokoro-v1.0.onnx").write_bytes(b"x")
     (tmp_path / "voices-v1.0.bin").write_bytes(b"x")
-    monkeypatch.setenv("KOKOROTTS_PATH", str(tmp_path))
+    monkeypatch.setenv("KOKOROTTS_MODELS", str(tmp_path))
 
     engine.generate("first", {"language": "en"})
     assert len(engine.KOKORO_CACHE) == 1
@@ -212,7 +212,7 @@ def test_language_map_has_expected_entries(engine):
 def test_generate_unknown_language_falls_back_to_en(engine, monkeypatch, tmp_path):
     (tmp_path / "kokoro-v1.0.onnx").write_bytes(b"x")
     (tmp_path / "voices-v1.0.bin").write_bytes(b"x")
-    monkeypatch.setenv("KOKOROTTS_PATH", str(tmp_path))
+    monkeypatch.setenv("KOKOROTTS_MODELS", str(tmp_path))
 
     # Should not raise — unknown language falls back to LANGUAGE_MAP["en"].
     out = engine.generate("hi", {"language": "xx"})

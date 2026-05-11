@@ -141,10 +141,10 @@ def install(non_interactive: bool = False) -> int:
         warn("Installation cancelled.")
         return 0
 
-    # Where to store coqui models (Coqui reads TTS_HOME env var; we tunnel it through COQUITTS_PATH).
+    # Where to store coqui models (Coqui reads TTS_HOME env var; we tunnel it through COQUITTS_MODELS).
     target = resolve_models_dir(
         engine_label="Coqui TTS",
-        env_key="COQUITTS_PATH",
+        env_key="COQUITTS_MODELS",
         default_dir=Path.home() / ".local" / "share" / "tts",
         project_dir=project_root() / "cache" / "coquitts",
         non_interactive=non_interactive,

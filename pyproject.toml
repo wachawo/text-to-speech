@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "text-to-speech"
-version = "1.0.1"
+version = "1.0.2"
 description = "Universal TTS CLI and library — gTTS, espeak/pyttsx3, Piper, Silero, Coqui, Bark behind a single interface."
 readme = "README.md"
 license = { text = "MIT" }

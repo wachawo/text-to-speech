@@ -47,7 +47,7 @@ if os.path.exists(local_env_file):
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_COQUITTS_PATH = "cache/coquitts"
+DEFAULT_COQUITTS_MODELS = "cache/coquitts"
 DEFAULT_COQUITTS_MODEL = "tts_models/multilingual/multi-dataset/xtts_v2"
 # Single source of truth shared with `ttsrec`. A fresh `ttsrec` writes here,
 # `ttsgen --engine coquitts` reads from here. Override via COQUITTS_SAMPLE.
@@ -73,7 +73,7 @@ def is_available() -> bool:
 
 
 def get_models_directory() -> str:
-    coquitts_path = os.getenv("COQUITTS_PATH", DEFAULT_COQUITTS_PATH)
+    coquitts_path = os.getenv("COQUITTS_MODELS", DEFAULT_COQUITTS_MODELS)
     if coquitts_path:
         return os.path.abspath(os.path.expanduser(coquitts_path))
     local_dir = os.path.join(os.getcwd(), "cache", "coquitts")

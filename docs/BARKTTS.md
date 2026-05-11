@@ -121,10 +121,17 @@ python ttsgen.py "Oh no! [gasp] That's TERRIBLE [sigh]" --engine barktts
 ### First Run
 
 The first time you use Bark:
-- Models download automatically (10-15GB)
+- Models download automatically (10-15 GB)
 - Can take 30-60 minutes
-- Models cached in: `~/.cache/suno/bark/`
+- Models cached in: `~/.cache/suno/bark_v0/` (path hard-coded by upstream Bark)
 - Subsequent runs use cached models
+
+> **Note on `BARKTTS_MODELS`.** Unlike pipertts/silerotts/coquitts/kokorotts, Bark
+> hard-codes its model cache path inside the library. Setting
+> `BARKTTS_MODELS=<dir>` in `.env` / `~/.config/ttsgen.conf` only affects
+> what `ttsgen --list` inspects; it does **not** relocate the actual
+> download. If you need the models on another disk, symlink
+> `~/.cache/suno/bark_v0/` to that location before the first run.
 
 ### Pre-download Models
 
@@ -151,7 +158,7 @@ from libs.api import text_to_speech_bytes
 # Generate with Bark
 audio = text_to_speech_bytes(
     text="Hello world!",
-    engine="bark",
+    engine="barktts",
     language="en"
 )
 ```
@@ -159,7 +166,7 @@ audio = text_to_speech_bytes(
 ### In .env
 
 ```bash
-TTS_ENGINE=bark
+TTS_ENGINE=barktts
 TTS_LANGUAGE=en
 DEFAULT_OUTPUT_FORMAT=play
 ```
@@ -182,7 +189,7 @@ DEFAULT_OUTPUT_FORMAT=play
 
 ### Voice Selection
 
-Bark has 100+ speaker presets. To use different voice, modify `engines/bark.py`:
+Bark has 100+ speaker presets. To use different voice, modify `engines/barktts.py`:
 
 ```python
 # Change speaker in get_speaker_for_language()
@@ -224,9 +231,9 @@ Models include:
 ```bash
 # Bark requires significant RAM/VRAM
 # Solutions:
-# 1. Use smaller models (modify engines/bark.py)
+# 1. Use smaller models (modify engines/barktts.py)
 # 2. Use GPU with more VRAM
-# 3. Use different engine (piper, silerotts)
+# 3. Use different engine (pipertts, silerotts)
 # 4. Reduce text length
 ```
 
@@ -238,7 +245,7 @@ Models include:
 # Solutions:
 # 1. Use GPU (much faster)
 # 2. Pre-generate audio files
-# 3. Use faster engine (piper, silerotts) for real-time
+# 3. Use faster engine (pipertts, silerotts) for real-time
 ```
 
 ### Model download fails
@@ -309,9 +316,9 @@ pip install torch==2.5.0 torchaudio==2.5.0
 ## Recommendations
 
 - **For production**: Use GPU, pre-generate audio
-- **For development**: Use faster engines (piper, silerotts)
+- **For development**: Use faster engines (pipertts, silerotts)
 - **For emotions**: Bark is unique
-- **For speed**: Use piper or silerotts instead
+- **For speed**: Use pipertts or silerotts instead
 
 ## Resources
 
