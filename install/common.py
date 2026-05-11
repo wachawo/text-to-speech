@@ -196,6 +196,7 @@ def install_torch_choice(non_interactive: bool = False, packages: list[str] | No
 
     try:
         import importlib.util
+
         if all(importlib.util.find_spec(p) is not None for p in pkgs):
             info(f"{', '.join(pkgs)} already importable — skipping torch install")
             return
