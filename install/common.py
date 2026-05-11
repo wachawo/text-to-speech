@@ -342,7 +342,7 @@ def warn_no_venv(non_interactive: bool = False) -> bool:
     if non_interactive:
         return True
     warn("Virtual environment not detected. It's recommended to activate venv first.")
-    return prompt_yes_no("Continue anyway?", default=False, non_interactive=False)
+    return prompt_yes_no("Continue anyway?", default=False)
 
 
 def main():

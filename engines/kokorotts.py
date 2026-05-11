@@ -51,10 +51,14 @@ LANGUAGE_MAP = {
 
 # Cache (model_path, voices_path) → Kokoro instance. Loading the ONNX model
 # costs ~1-3s on CPU; reuse across calls within one process.
-_KOKORO_CACHE: dict = {}
+KOKORO_CACHE: dict = {}
 
+# Both kokoro_onnx (ONNX runtime + model wrapper) and soundfile (WAV encoder)
+# are required for synthesis. If either is missing the engine is unusable —
+# report False from is_available() so `ttsgen --list` doesn't lie.
 try:
     from kokoro_onnx import Kokoro  # type: ignore
+    import soundfile  # type: ignore  # noqa: F401
 
     AVAILABLE = True
 except ImportError:
@@ -116,12 +120,14 @@ def get_download_instructions() -> str:
     )
 
 
-def _samples_to_wav_bytes(samples, sample_rate: int) -> bytes:
-    """Encode numpy float samples to WAV bytes (16-bit PCM)."""
-    try:
-        import soundfile as sf  # type: ignore
-    except ImportError:
-        raise EngineNotAvailableError("Kokoro TTS requires `soundfile` to encode audio. " "Install with: pip install soundfile")
+def samples_to_wav_bytes(samples, sample_rate: int) -> bytes:
+    """Encode numpy float samples to WAV bytes (16-bit PCM).
+
+    `soundfile` import is guarded at module level in the AVAILABLE check,
+    so by the time generate() reaches us we know it imports cleanly.
+    """
+    import soundfile as sf  # type: ignore
+
     buf = io.BytesIO()
     sf.write(buf, samples, sample_rate, format="WAV", subtype="PCM_16")
     buf.seek(0)
@@ -162,18 +168,18 @@ def generate(text: str, config: dict) -> bytes:
         raise TTSException(get_download_instructions())
 
     cache_key = (model_path, voices_path)
-    kokoro = _KOKORO_CACHE.get(cache_key)
+    kokoro = KOKORO_CACHE.get(cache_key)
     if kokoro is None:
         logger.info(f"Loading Kokoro model: {model_path}")
         kokoro = Kokoro(model_path, voices_path)
-        _KOKORO_CACHE[cache_key] = kokoro
+        KOKORO_CACHE[cache_key] = kokoro
 
     try:
         samples, sample_rate = kokoro.create(text, voice=voice, speed=speed, lang=lang_code)
     except Exception as exc:
         raise TTSException(f"Kokoro TTS generation failed ({type(exc).__name__}): {exc}")
 
-    return _samples_to_wav_bytes(samples, int(sample_rate))
+    return samples_to_wav_bytes(samples, int(sample_rate))
 
 
 def main():

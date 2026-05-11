@@ -26,7 +26,7 @@ Usage:
     python ttsgen.py --install coquitts               # Install an engine and download models
 
 Author: TTS Library Team
-Version: 1.0.0
+Version: 1.0.1
 License: MIT
 """
 
