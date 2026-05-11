@@ -75,12 +75,12 @@ def test_models_dir_resolves_relative_env_against_project_root(engine, monkeypat
     assert "/text-to-speech/" in result or result.endswith("text-to-speech/custom_voices")
 
 
-def test_models_dir_falls_back_to_dot_pipertts_in_project(engine, monkeypatch, tmp_path):
-    """If env var is unset, .pipertts in project root wins over the default."""
+def test_models_dir_falls_back_to_cache_pipertts_in_project(engine, monkeypatch, tmp_path):
+    """If env var is unset, cache/pipertts in project root wins over the default."""
     monkeypatch.delenv("PIPERTTS_MODELS", raising=False)
     # Stub the project-root path lookup by patching the module attribute.
     fake_project = tmp_path / "fake_project"
-    pipertts_dir = fake_project / ".pipertts"
+    pipertts_dir = fake_project / "cache" / "pipertts"
     pipertts_dir.mkdir(parents=True)
 
     import os as _os
@@ -98,11 +98,11 @@ def test_models_dir_falls_back_to_dot_pipertts_in_project(engine, monkeypatch, t
 
 
 def test_models_dir_default_when_nothing_configured(engine, monkeypatch, tmp_path):
-    """Neither env var nor .pipertts/ → fallback to <project>/.piper/voices."""
+    """Neither env var nor cache/pipertts/ → fallback to <project>/.piper/voices."""
     monkeypatch.delenv("PIPERTTS_MODELS", raising=False)
-    # Move CWD somewhere that has no .pipertts so the project-root one wins —
+    # Move CWD somewhere that has no cache/pipertts so the project-root one wins —
     # but the project DOES contain it in real life. We only assert the path
-    # ends with .piper/voices when we force-skip the .pipertts branch.
+    # ends with .piper/voices when we force-skip the cache/pipertts branch.
     monkeypatch.setattr(engine.os.path, "exists", lambda p: False)
     result = engine.get_models_directory()
     assert result.endswith(".piper/voices")

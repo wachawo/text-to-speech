@@ -1,0 +1,10 @@
+# CPU build — heavy ML stack added on top of ttssrv/requirements.txt (the
+# lightweight web stack). The Dockerfile passes both via `pip install -r`.
+# PyTorch CPU wheels (no CUDA libs, smaller image).
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+torch
+torchaudio
+coqui-tts[codec]
+transformers>=4.46,<5.0

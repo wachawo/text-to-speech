@@ -1,0 +1,102 @@
+# Run from anywhere:
+#   docker compose -f docker/gpu/docker-compose.yml up -d
+# Or from this directory:
+#   cd docker/gpu && docker compose up -d
+# Volume / build paths use ../.. so both forms resolve to the repo root.
+
+services:
+  ttssrv:
+    build:
+      context: ../..
+      dockerfile: docker/gpu/Dockerfile
+    image: ttssrv_gpu
+    pull_policy: build
+    container_name: ttssrv
+    hostname: ttssrv
+    restart: unless-stopped
+    networks:
+      - tts_network
+    env_file:
+      - ../../.env
+    environment:
+      TZ:                         ${TZ:-America/New_York}
+      TTS_HOST:                   ${TTS_HOST:-0.0.0.0}
+      TTS_PORT:                   ${TTS_PORT:-5000}
+      TTS_DEBUG:                  ${TTS_DEBUG:-False}
+      # Server-side allow-list (comma-separated). Empty = auth OFF. NOT the same
+      # var as TTS_TOKEN, which is the client-side token used by ttsapi.
+      TTS_TOKENS:                 ${TTS_TOKENS:-}
+      TTS_POOL_SIZE:              ${TTS_POOL_SIZE:-1}
+      TTS_ENGINE:                 ${TTS_ENGINE:-gtts}
+      TTS_LANGUAGE:               ${TTS_LANGUAGE:-en}
+      # Per-engine model cache directories — bind-mounted from host below.
+      # Engines read these via *_PATH env (see engines/<name>.py:get_models_directory()).
+      COQUITTS_PATH:              /opt/cache/coquitts
+      COQUITTS_MODEL:             ${COQUITTS_MODEL:-tts_models/multilingual/multi-dataset/xtts_v2}
+      COQUITTS_SAMPLE:            ${COQUITTS_SAMPLE:-default.wav}
+      KOKOROTTS_PATH:             /opt/cache/kokorotts
+      PIPERTTS_PATH:              /opt/cache/pipertts
+      SILEROTTS_PATH:             /opt/cache/silerotts
+      BARKTTS_PATH:               /opt/cache/barktts
+      # Lazy-install target for heavy engine deps (kokoro-onnx, piper-tts, bark, …).
+      # Shared with host so packages survive container recreate. See entrypoint.sh.
+      PYTHONUSERBASE:             /opt/userbase
+      PIP_CACHE_DIR:              /opt/pip-cache
+      NVIDIA_VISIBLE_DEVICES:     "all"
+      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
+    ports:
+      - "${TTS_PORT:-5000}:5000"
+    volumes:
+      # Engine packages installed at runtime via `pip install --user`.
+      # First start of a new engine = pip download + install (slow); subsequent
+      # starts hit the wheel cache below and finish in <1s.
+      - ../../userbase:/opt/userbase
+      - ../../pip-cache:/opt/pip-cache
+      # All per-engine model caches (cache/coquitts, cache/kokorotts, …) under
+      # one root — survive container recreate.
+      - ../../cache:/opt/cache
+      # Voice samples (xtts_v2 voice cloning) + .env passthrough.
+      - ../../samples:/opt/samples:ro
+      - ../../.env:/opt/.env:ro
+      # Live source for dev — survive rebuilds without `docker cp`.
+      - ../../libs:/usr/local/lib/python3.12/site-packages/libs:ro
+      - ../../engines:/usr/local/lib/python3.12/site-packages/engines:ro
+      - ../../install:/usr/local/lib/python3.12/site-packages/install:ro
+      - ../../ttssrv:/opt/ttssrv:ro
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    healthcheck:
+      test: ["CMD", "python3", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      # First start may download xtts_v2 (~1.8 GB) into the cache volume.
+      start_period: 600s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "128m"
+        max-file: "3"
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=1
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    # GPU passthrough — requires nvidia-container-toolkit on host.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+networks:
+  tts_network:
+    name: tts_network
+    driver: bridge
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.enable_ipv6: "false"

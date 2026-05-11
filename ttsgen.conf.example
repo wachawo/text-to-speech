@@ -13,7 +13,7 @@
 
 
 # Default engine and language used when not specified on the command line.
-# Engines: gtts, pyttsx3, pipertts, silerotts, coquitts, barktts.
+# Engines: gtts, pyttsx3, pipertts, silerotts, coquitts, barktts, kokorotts.
 TTS_ENGINE=gtts
 TTS_LANGUAGE=en
 
@@ -35,17 +35,17 @@ AUDIO_RATE=150
 AUDIO_VOLUME=0.9
 
 
-# Piper TTS — model directory (.onnx files). Default: project-local .pipertts/.
-PIPERTTS_PATH=.pipertts
+# Piper TTS — model directory (.onnx files). Default: project-local cache/pipertts/.
+PIPERTTS_PATH=cache/pipertts
 
 
-# Silero TTS — model directory. Default: project-local .silerotts/.
+# Silero TTS — model directory. Default: project-local cache/silerotts/.
 # Set to ~/.cache/torch/hub for the standard torch.hub layout.
-SILEROTTS_PATH=.silerotts
+SILEROTTS_PATH=cache/silerotts
 
 
 # Coqui TTS configuration.
-COQUITTS_PATH=.coquitts
+COQUITTS_PATH=cache/coquitts
 # Full Coqui model identifier. Used at runtime AND by `ttsgen --install coquitts`.
 # Common choices:
 #   tts_models/multilingual/multi-dataset/xtts_v2          (best quality, voice cloning, ~1.8 GB, CPML license)
@@ -56,17 +56,31 @@ COQUITTS_SAMPLE=~/.config/ttsgen.wav
 
 
 # Bark TTS — model cache directory (large: ~10–15 GB).
-BARKTTS_PATH=.barktts
+BARKTTS_PATH=cache/barktts
 
 
-# HTTP API server (used by `ttssrv` and docker-compose.yml).
+# Kokoro TTS — directory holding kokoro-v1.0.onnx + voices-v1.0.bin (~340 MB).
+KOKOROTTS_PATH=cache/kokorotts
+# Default voice (override the per-language default like af_sarah / ff_siwis).
+# See https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md
+# KOKOROTTS_VOICE=af_heart
+# Speech speed multiplier (1.0 = normal).
+# KOKOROTTS_SPEED=1.0
+
+
+# HTTP API server (used by `ttssrv` and docker/{cpu,gpu}/docker-compose.yml).
 TTS_HOST=0.0.0.0
 TTS_PORT=5000
 TTS_DEBUG=False
-TTS_TOKEN=SuP3rS3cr3tK3y!
-TTS_POOL_SIZE=1
 TZ=America/New_York
+# Server auth: comma-separated bearer tokens. Empty (default) DISABLES auth.
+# Example: TTS_TOKENS=alice-token,bob-token
+TTS_TOKENS=
+# Engine pool size for ttssrv (number of pre-warmed engine slots).
+# 0 = unlimited concurrency, no warmup. 1+ = bound on parallel synthesis.
+TTS_POOL_SIZE=1
 
 # HTTP API client (used by `ttsapi` to reach a remote `ttssrv`).
+# TTS_TOKEN must match one of TTS_TOKENS on the server when auth is enabled.
 TTS_URL=http://localhost:5000
-# TTS_TOKEN reused from the server section above.
+TTS_TOKEN=

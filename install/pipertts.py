@@ -40,7 +40,7 @@ def models_dir(non_interactive: bool = False) -> Path:
         engine_label="Piper TTS",
         env_key="PIPERTTS_PATH",
         default_dir=Path.home() / ".local" / "share" / "ttsgen" / "pipertts",
-        project_dir=project_root() / ".pipertts",
+        project_dir=project_root() / "cache" / "pipertts",
         non_interactive=non_interactive,
     )
 

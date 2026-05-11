@@ -18,10 +18,11 @@
 # This is the ONLY supported way to add an engine — no [piper] / [silero] /
 # [coqui] / [bark] pip extras exist.
 #
-# Server (ttssrv): runs only via Docker. Build deps live in ttssrv/requirements.txt
-# and the two Dockerfiles (ttssrv/Dockerfile for CUDA, ttssrv/Dockerfile-cpu).
-#   docker compose up                                    # GPU image
-#   docker compose -f docker-compose-cpu.yml up          # CPU-only image
+# Server (ttssrv): runs only via Docker. Light web-stack deps live in
+# ttssrv/requirements.txt; heavy ML deps live in docker/{cpu,gpu}/requirements.txt
+# and are installed into the matching image at build time.
+#   docker compose -f docker/gpu/docker-compose.yml up   # GPU (CUDA 12.1)
+#   docker compose -f docker/cpu/docker-compose.yml up   # CPU-only
 #
 # Development install (covers tests + local ttssrv smoke):
 #   pip install -e ".[dev]"

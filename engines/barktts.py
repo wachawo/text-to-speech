@@ -57,7 +57,7 @@ def get_models_directory() -> str:
 
     Priority:
     1. Environment variable BARKTTS_MODELS (from .env or export)
-    2. .barktts directory in project root (if exists)
+    2. cache/barktts directory in project root (if exists)
     3. Default: ~/.cache/suno/bark_v0
 
     Returns:
@@ -75,8 +75,8 @@ def get_models_directory() -> str:
             models_path = os.path.join(project_root, models_path)
         return os.path.expanduser(models_path)
 
-    # Priority 2: Check .barktts directory in project root
-    barktts_dir = os.path.join(project_root, ".barktts")
+    # Priority 2: Check cache/barktts directory in project root
+    barktts_dir = os.path.join(project_root, "cache", "barktts")
     if os.path.exists(barktts_dir) and os.path.isdir(barktts_dir):
         return barktts_dir
 

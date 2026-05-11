@@ -26,7 +26,7 @@ Usage:
     python ttsgen.py --install coquitts               # Install an engine and download models
 
 Author: TTS Library Team
-Version: 1.0.0
+Version: 1.0.1
 License: MIT
 """
 
@@ -183,7 +183,7 @@ Environment Configuration:
     text_group.add_argument(
         "--install",
         metavar="ENGINE",
-        help="Install an engine (pipertts, silerotts, coquitts, barktts) and exit",
+        help="Install an engine (pipertts, silerotts, coquitts, barktts, kokorotts) and exit",
     )
 
     # Non-interactive flag — only meaningful with --install
@@ -299,10 +299,11 @@ def to_file(args: argparse.Namespace, config: dict[str, Any], engine: str) -> st
 
 
 ENGINE_MODEL_SOURCES = {
-    "pipertts": (os.getenv("PIPERTTS_PATH", ".pipertts"), ["*.onnx"]),
-    "silerotts": (os.getenv("SILEROTTS_PATH", ".silerotts"), ["**/*.pt", "**/*.jit"]),
-    "coquitts": (os.getenv("COQUITTS_PATH", ".coquitts"), ["tts/*"]),
-    "barktts": (os.getenv("BARKTTS_PATH", ".barktts"), ["**/*.pt"]),
+    "pipertts": (os.getenv("PIPERTTS_PATH", "cache/pipertts"), ["*.onnx"]),
+    "silerotts": (os.getenv("SILEROTTS_PATH", "cache/silerotts"), ["**/*.pt", "**/*.jit"]),
+    "coquitts": (os.getenv("COQUITTS_PATH", "cache/coquitts"), ["tts/*"]),
+    "barktts": (os.getenv("BARKTTS_PATH", "cache/barktts"), ["**/*.pt"]),
+    "kokorotts": (os.getenv("KOKOROTTS_PATH", "cache/kokorotts"), ["*.onnx", "*.bin"]),
 }
 
 ENGINE_NOTES = {
@@ -311,46 +312,69 @@ ENGINE_NOTES = {
 }
 
 
+def _model_display_name(engine: str, rel: Path) -> str:
+    """Render a glob match into a grep-friendly model identifier.
+
+    coqui caches models as tts/tts_models--multilingual--multi-dataset--xtts_v2/.
+    We strip the tts/ prefix and restore '/' so the displayed name matches the
+    string users put in COQUITTS_MODEL.
+    """
+    s = str(rel)
+    if engine == "coquitts":
+        s = s.removeprefix("tts/").replace("--", "/")
+    return s
+
+
 def list_engines_and_models() -> None:
-    """Print all engines, their availability, and installed model files."""
+    """Print engines and installed model files as a fixed-width table.
+
+    Format:  ENGINE  STATUS  MODEL    one row per (engine, model). Designed for
+    grep: `ttsgen --list | grep installed`, `... | grep xtts_v2`, etc.
+    """
     from engines import is_engine_available
 
     engines_dir = Path(__file__).resolve().parent / "engines"
     engine_names = sorted(p.stem for p in engines_dir.glob("*.py") if p.name != "__init__.py")
 
-    # Silence engine-loader probe warnings — we already report unavailable status below.
+    # Silence engine-loader probe warnings — status column already reports it.
     engines_logger = logging.getLogger("engines")
     prev_level = engines_logger.level
     engines_logger.setLevel(logging.ERROR)
 
-    print("Engines:")
+    rows: list[tuple[str, str, str]] = []
     for name in engine_names:
-        available = is_engine_available(name)
-        marker = "✓" if available else "✗"
-        status = "available" if available else "unavailable (deps missing)"
-        print(f"  {marker} {name:<10} {status}")
+        status = "installed" if is_engine_available(name) else "missing"
 
+        # Cloud / system-voice engines have no on-disk model files.
         if name in ENGINE_NOTES:
-            print(f"      ({ENGINE_NOTES[name]})")
+            rows.append((name, status, ENGINE_NOTES[name]))
             continue
 
-        if name in ENGINE_MODEL_SOURCES:
-            model_dir, patterns = ENGINE_MODEL_SOURCES[name]
-            d = Path(model_dir)
-            if not d.exists():
-                print(f"      (model dir {d}/ not found — run `ttsgen --install {name}`)")
-                continue
-            files: list[Path] = []
+        # Engine deps not present → no point looking for models.
+        if status == "missing" or name not in ENGINE_MODEL_SOURCES:
+            rows.append((name, status, "-"))
+            continue
+
+        model_dir, patterns = ENGINE_MODEL_SOURCES[name]
+        d = Path(model_dir)
+        files: list[Path] = []
+        if d.exists():
             for pat in patterns:
                 files.extend(sorted(d.glob(pat)))
-            if not files:
-                print(f"      (no models in {d}/)")
-            else:
-                for f in files:
-                    rel = f.relative_to(d) if f.is_relative_to(d) else f
-                    print(f"      {d}/{rel}")
+        if not files:
+            rows.append((name, status, "-"))
+        else:
+            for f in files:
+                rel = f.relative_to(d) if f.is_relative_to(d) else f
+                rows.append((name, status, _model_display_name(name, rel)))
 
     engines_logger.setLevel(prev_level)
+
+    name_w = max(len("ENGINE"), max(len(r[0]) for r in rows)) + 2
+    stat_w = max(len("STATUS"), max(len(r[1]) for r in rows)) + 2
+    print(f"{'ENGINE':<{name_w}}{'STATUS':<{stat_w}}MODEL")
+    for engine, status, model in rows:
+        print(f"{engine:<{name_w}}{status:<{stat_w}}{model}")
 
 
 def main() -> int:

@@ -37,11 +37,8 @@ ENV/
 ttsgen.conf
 ttsgen.wav
 
-# Engine model dirs (mounted as volumes at runtime, not baked into image)
-.pipertts/
-.silerotts/
-.coquitts/
-.barktts/
+# Engine model caches (mounted as volumes at runtime, not baked into image)
+cache/
 .backup/
 
 # Generated audio

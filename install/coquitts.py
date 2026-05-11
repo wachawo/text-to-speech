@@ -146,7 +146,7 @@ def install(non_interactive: bool = False) -> int:
         engine_label="Coqui TTS",
         env_key="COQUITTS_PATH",
         default_dir=Path.home() / ".local" / "share" / "tts",
-        project_dir=project_root() / ".coquitts",
+        project_dir=project_root() / "cache" / "coquitts",
         non_interactive=non_interactive,
     )
     os.environ["TTS_HOME"] = str(target)

@@ -1,8 +1,8 @@
-# Server runtime dependencies for `ttssrv` — used inside the Docker image only
-# (see ttssrv/Dockerfile and Dockerfile-cpu). Outside Docker the same web stack
-# is available via `pip install -e ".[dev]"` for tests and local debugging.
-# Heavy ML deps (torch, torchaudio, coqui-tts) are installed separately by the
-# Dockerfile from a CUDA-aware index.
+# Lightweight runtime deps for `ttssrv` — web stack + zero-config engines.
+# Used by both Docker images (docker/{cpu,gpu}/Dockerfile pulls this file plus
+# its own docker/<flavor>/requirements.txt with the heavy ML stack). Outside
+# Docker the same web stack is available via `pip install -e ".[dev]"` for
+# tests and local debugging.
 
 # Web stack
 Flask==2.3.3

@@ -30,11 +30,12 @@ texts/
 *.m4a
 *.aac
 
-# Engine model directories
-.pipertts/
-.silerotts/
-.coquitts/
-.barktts/
+# Engine model caches (per-engine subdirs: cache/coquitts, cache/kokorotts, …)
+cache/
+
+# Docker shared volumes — engine pip --user installs + wheel cache
+userbase/
+pip-cache/
 
 # Temp
 *.tmp

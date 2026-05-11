@@ -14,6 +14,7 @@ Switch transparently between cloud and local TTS engines via a single interface.
 | `silerotts` | 4/5 | Very fast | ✅ | Fast offline, Russian |
 | `coquitts` | 5/5 | Slow (fast w/ GPU) | ✅ | Best quality, voice cloning |
 | `barktts` | 5/5 | Very slow (fast w/ GPU) | ✅ | Emotions, music, singing |
+| `kokorotts` | 4/5 | Very fast | ✅ | Fast offline, multi-language, ONNX |
 
 See [`docs/ENGINES.md`](docs/ENGINES.md) for the full engine matrix and tuning.
 
@@ -58,13 +59,14 @@ The HTTP server `ttssrv` is **not** a console-script — it's deployed via Docke
 
 #### Adding optional engines
 
-There are no pip extras for `pipertts` / `silerotts` / `coquitts` / `barktts`. Use the dedicated installer instead — it picks the right PyTorch wheel index (cpu / cu121), respects driver constraints, persists the model directory to `~/.config/ttsgen.conf`, and verifies download checksums where supported:
+There are no pip extras for `pipertts` / `silerotts` / `coquitts` / `barktts` / `kokorotts`. Use the dedicated installer instead — it picks the right PyTorch wheel index (cpu / cu121), respects driver constraints, persists the model directory to `~/.config/ttsgen.conf`, and verifies download checksums where supported:
 
 ```bash
 ttsgen --install pipertts        # piper-tts + voice models from HuggingFace
 ttsgen --install silerotts       # torch + torchaudio + omegaconf + Silero models
 ttsgen --install coquitts        # coqui-tts (Idiap fork) + torch + transformers
 ttsgen --install barktts         # bark (git) + scipy + numpy (~10–15 GB models)
+ttsgen --install kokorotts       # kokoro-onnx + onnxruntime + ~340 MB ONNX/voices
 ```
 
 ### Install for development
@@ -87,9 +89,10 @@ pip uninstall piper-tts                       # if pipertts was installed
 pip uninstall torch torchaudio omegaconf      # if silerotts was installed
 pip uninstall coqui-tts torchcodec transformers # if coquitts was installed
 pip uninstall bark scipy numpy                # if barktts was installed
+pip uninstall kokoro-onnx soundfile onnxruntime # if kokorotts was installed
 
 # Remove downloaded model files (optional — these can be 10+ GB)
-rm -rf .pipertts/ .silerotts/ .coquitts/ .barktts/
+rm -rf cache/                                              # all per-engine model caches
 rm -rf ~/.cache/torch/hub/snakers4_silero-models_master   # silero (if stored in standard cache)
 rm -rf ~/.cache/suno/bark_v0/                              # bark
 ```
@@ -104,18 +107,19 @@ python ttsgen.py "Hello world"
 
 ### Optional engine model downloads
 
-Heavier engines need model files. The `ttsgen --install` command downloads them into per-engine dotfolders (`.pipertts/`, `.silerotts/`, `.coquitts/`, `.barktts/`):
+Heavier engines need model files. The `ttsgen --install` command downloads them into per-engine subdirs of `cache/` (`cache/pipertts/`, `cache/silerotts/`, `cache/coquitts/`, `cache/barktts/`, `cache/kokorotts/`):
 
 ```bash
 ttsgen --install pipertts        # interactive
 ttsgen --install silerotts
 ttsgen --install coquitts
 ttsgen --install barktts
+ttsgen --install kokorotts
 
 ttsgen --install pipertts --non-interactive   # accept defaults, no prompts
 ```
 
-Per-engine guides: [`docs/PIPERTTS.md`](docs/PIPERTTS.md), [`docs/SILEROTTS.md`](docs/SILEROTTS.md), [`docs/COQUITTS.md`](docs/COQUITTS.md), [`docs/BARKTTS.md`](docs/BARKTTS.md).
+Per-engine guides: [`docs/PIPERTTS.md`](docs/PIPERTTS.md), [`docs/SILEROTTS.md`](docs/SILEROTTS.md), [`docs/COQUITTS.md`](docs/COQUITTS.md), [`docs/BARKTTS.md`](docs/BARKTTS.md), [`docs/KOKOROTTS.md`](docs/KOKOROTTS.md).
 
 ## Usage
 
@@ -152,16 +156,16 @@ ttsgen --list
 # coqui-tts with explicit model + voice sample (no .env needed)
 ttsgen "Hello world" --engine coquitts \
   --coqui-model tts_models/en/ljspeech/tacotron2-DDC \
-  --coqui-sample samples/Maria.wav
+  --coqui-sample samples/default.wav
 
 # Same via env vars (handy in scripts and CI)
 COQUITTS_MODEL=tts_models/en/ljspeech/tacotron2-DDC \
-COQUITTS_SAMPLE=samples/Maria.wav \
+COQUITTS_SAMPLE=samples/default.wav \
 ttsgen "Hello world" --engine coquitts
 ```
 
 Without a local `.env` (e.g. after `pip install git+...`), pass engine config via flags:
-- `--engine NAME` — pick an engine (`gtts`, `pyttsx3`, `pipertts`, `silerotts`, `coquitts`, `barktts`).
+- `--engine NAME` — pick an engine (`gtts`, `pyttsx3`, `pipertts`, `silerotts`, `coquitts`, `barktts`, `kokorotts`).
 - `--language XX` — 2-letter language code.
 - `--coqui-model MODEL`, `--coqui-sample PATH` — override `COQUITTS_MODEL` / `COQUITTS_SAMPLE` for one run. Same flags work with `ttsgen --install coquitts`.
 
@@ -181,7 +185,7 @@ All config files use the same `KEY=VALUE` format. Available keys: `TTS_ENGINE`, 
 TTS_ENGINE=coquitts
 TTS_LANGUAGE=en
 COQUITTS_MODEL=tts_models/en/ljspeech/tacotron2-DDC
-COQUITTS_SAMPLE=samples/Maria.wav
+COQUITTS_SAMPLE=samples/default.wav
 ```
 
 ### Python API
@@ -205,10 +209,10 @@ The Flask server (`ttssrv`) preloads the engine once at startup, then serves syn
 
 ```bash
 # GPU (CUDA 12.1, requires nvidia-container-toolkit on host)
-docker compose up --build -d
+docker compose -f docker/gpu/docker-compose.yml up --build -d
 
-# CPU-only (no nvidia libs, smaller image)
-docker compose -f docker-compose-cpu.yml up --build -d
+# CPU-only
+docker compose -f docker/cpu/docker-compose.yml up --build -d
 ```
 
 Direct HTTP usage:
@@ -274,8 +278,10 @@ text-to-speech/
 ├── ttsplay.py                   # stdin player (`ttsplay` command)
 ├── ttsrec.py                    # microphone recorder (`ttsrec` command)
 ├── pyproject.toml            # Package config and dependencies
-├── docker-compose.yml        # ttssrv service (GPU)
-├── docker-compose-cpu.yml    # ttssrv service (CPU-only)
+├── docker/                   # Docker configs (split by accelerator)
+│   ├── gpu/                  #   GPU build: Dockerfile + docker-compose.yml + requirements.txt (cu121)
+│   └── cpu/                  #   CPU build: same files, cpu wheel index
+├── cache/                    # Per-engine model caches (cache/coquitts, cache/kokorotts, …)
 ├── engines/                  # Pluggable TTS engines
 │   ├── __init__.py           #   Dynamic loader
 │   ├── gtts.py
@@ -294,8 +300,8 @@ text-to-speech/
 │   ├── app1.py               #   Endpoints, pool, token auth
 │   ├── validators.py
 │   ├── gu.py
-│   ├── Dockerfile            #   GPU image (CUDA 12.1)
-│   └── Dockerfile-cpu        #   CPU-only image
+│   ├── entrypoint.sh         #   Container init: ensures TTS_ENGINE is installed
+│   └── requirements.txt      #   Light web stack (Flask, gtts, pyttsx3, …)
 ├── ttsapi.py                 # HTTP client (`ttsapi` console script — mirror of ttsgen)
 ├── install/                  # Engine installers (`ttsgen --install <engine>`)
 │   ├── __init__.py           #   Dispatcher

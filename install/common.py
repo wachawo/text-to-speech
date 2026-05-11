@@ -187,8 +187,21 @@ def install_torch_choice(non_interactive: bool = False, packages: list[str] | No
     Default index (https://download.pytorch.org/whl) ships cu13 which breaks
     against drivers older than ~580. cu121 wheels work with NVIDIA driver 525+,
     cpu wheels work everywhere.
+
+    Skips entirely when the requested packages are already importable — covers
+    the Docker case where torch is baked into the image via requirements-{gpu,cpu}.txt
+    and we don't want to overwrite the GPU build with CPU wheels.
     """
     pkgs = packages if packages is not None else ["torch", "torchaudio"]
+
+    try:
+        import importlib.util
+
+        if all(importlib.util.find_spec(p) is not None for p in pkgs):
+            info(f"{', '.join(pkgs)} already importable — skipping torch install")
+            return
+    except Exception:
+        pass
 
     if non_interactive:
         info("\nInstalling PyTorch (CPU)...")
@@ -319,11 +332,17 @@ def resolve_models_dir(
 
 
 def warn_no_venv(non_interactive: bool = False) -> bool:
-    """If not in venv, warn and ask to continue. Returns True to continue."""
+    """If not in venv, warn and ask to continue. Returns True to continue.
+
+    In non-interactive mode (CI, Docker entrypoint), skip the prompt entirely
+    and proceed — the caller has explicitly opted in by passing the flag.
+    """
     if in_virtualenv():
         return True
+    if non_interactive:
+        return True
     warn("Virtual environment not detected. It's recommended to activate venv first.")
-    return prompt_yes_no("Continue anyway?", default=False, non_interactive=non_interactive)
+    return prompt_yes_no("Continue anyway?", default=False)
 
 
 def main():

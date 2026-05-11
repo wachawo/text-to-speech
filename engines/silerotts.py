@@ -79,7 +79,7 @@ def get_models_directory() -> str:
 
     Priority:
     1. Environment variable SILEROTTS_MODELS (from .env or export)
-    2. .silerotts directory in project root (if exists)
+    2. cache/silerotts directory in project root (if exists)
     3. Default: ~/.cache/torch/hub/
 
     Returns:
@@ -97,8 +97,8 @@ def get_models_directory() -> str:
             models_path = os.path.join(project_root, models_path)
         return os.path.expanduser(models_path)
 
-    # Priority 2: Check .silerotts directory in project root
-    silerotts_dir = os.path.join(project_root, ".silerotts")
+    # Priority 2: Check cache/silerotts directory in project root
+    silerotts_dir = os.path.join(project_root, "cache", "silerotts")
     if os.path.exists(silerotts_dir) and os.path.isdir(silerotts_dir):
         return silerotts_dir
 
@@ -121,7 +121,7 @@ def generate(text: str, config: dict) -> bytes:
         First run will download the model from torch hub.
         Models are cached in:
         - SILERO_MODELS_DIR env variable (highest priority), or
-        - ~/.silerotts/ directory (if exists), or
+        - cache/silerotts/ directory (if exists), or
         - ~/.cache/torch/hub/ (default fallback)
     """
     if not AVAILABLE:
