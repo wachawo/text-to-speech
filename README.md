@@ -44,7 +44,7 @@ pip install git+https://github.com/wachawo/text-to-speech.git@v0.2.1
 pip install git+https://github.com/wachawo/text-to-speech.git@main
 ```
 
-That installs the CLI **with only lightweight deps** (~10 MB: gtts, pyttsx3, pygame, sounddevice, numpy). **`torch`, `coqui-tts`, `bark`, and CUDA wheels are NOT pulled** — they're only fetched by `ttsgen --install <engine>` for `silerotts`/`coquitts`/`barktts` (see [Optional engine model downloads](#optional-engine-model-downloads) below).
+That installs the CLI **with only lightweight deps** (~10 MB: gtts, pyttsx3, pygame, sounddevice, numpy). **`torch`, `coqui-tts`, `bark`, and CUDA wheels are NOT pulled** — they're only fetched by `ttsgen --install <engine>` for `silerotts`/`coquitts`/`barktts`/`kokorotts` (see [Adding optional engines](#adding-optional-engines) below).
 
 After install, four console scripts are on your `$PATH`:
 
@@ -59,7 +59,7 @@ The HTTP server `ttssrv` is **not** a console-script — it's deployed via Docke
 
 #### Adding optional engines
 
-There are no pip extras for `pipertts` / `silerotts` / `coquitts` / `barktts` / `kokorotts`. Use the dedicated installer instead — it picks the right PyTorch wheel index (cpu / cu121), respects driver constraints, persists the model directory to `~/.config/ttsgen.conf`, and verifies download checksums where supported:
+There are no pip extras for `pipertts` / `silerotts` / `coquitts` / `barktts` / `kokorotts`. Use the dedicated installer instead — it picks the right PyTorch wheel index (cpu / cu121), respects driver constraints, persists the model directory to `~/.config/ttsgen.conf`, verifies download checksums where supported, and stages models under `cache/<engine>/` in the project root:
 
 ```bash
 ttsgen --install pipertts        # piper-tts + voice models from HuggingFace
@@ -67,7 +67,11 @@ ttsgen --install silerotts       # torch + torchaudio + omegaconf + Silero model
 ttsgen --install coquitts        # coqui-tts (Idiap fork) + torch + transformers
 ttsgen --install barktts         # bark (git) + scipy + numpy (~10–15 GB models)
 ttsgen --install kokorotts       # kokoro-onnx + onnxruntime + ~340 MB ONNX/voices
+
+ttsgen --install pipertts --non-interactive   # accept defaults, no prompts
 ```
+
+Per-engine guides: [`docs/PIPERTTS.md`](docs/PIPERTTS.md), [`docs/SILEROTTS.md`](docs/SILEROTTS.md), [`docs/COQUITTS.md`](docs/COQUITTS.md), [`docs/BARKTTS.md`](docs/BARKTTS.md), [`docs/KOKOROTTS.md`](docs/KOKOROTTS.md).
 
 ### Install for development
 
@@ -104,22 +108,6 @@ sudo apt install espeak espeak-data libespeak1 python3-pip
 pip install -r requirements.txt
 python ttsgen.py "Hello world"
 ```
-
-### Optional engine model downloads
-
-Heavier engines need model files. The `ttsgen --install` command downloads them into per-engine subdirs of `cache/` (`cache/pipertts/`, `cache/silerotts/`, `cache/coquitts/`, `cache/barktts/`, `cache/kokorotts/`):
-
-```bash
-ttsgen --install pipertts        # interactive
-ttsgen --install silerotts
-ttsgen --install coquitts
-ttsgen --install barktts
-ttsgen --install kokorotts
-
-ttsgen --install pipertts --non-interactive   # accept defaults, no prompts
-```
-
-Per-engine guides: [`docs/PIPERTTS.md`](docs/PIPERTTS.md), [`docs/SILEROTTS.md`](docs/SILEROTTS.md), [`docs/COQUITTS.md`](docs/COQUITTS.md), [`docs/BARKTTS.md`](docs/BARKTTS.md), [`docs/KOKOROTTS.md`](docs/KOKOROTTS.md).
 
 ## Usage
 
