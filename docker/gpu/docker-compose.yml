@@ -30,14 +30,14 @@ services:
       TTS_ENGINE:                 ${TTS_ENGINE:-gtts}
       TTS_LANGUAGE:               ${TTS_LANGUAGE:-en}
       # Per-engine model cache directories — bind-mounted from host below.
-      # Engines read these via *_PATH env (see engines/<name>.py:get_models_directory()).
-      COQUITTS_PATH:              /opt/cache/coquitts
+      # Engines read these via *_MODELS env (see engines/<name>.py:get_models_directory()).
+      COQUITTS_MODELS:            /opt/cache/coquitts
       COQUITTS_MODEL:             ${COQUITTS_MODEL:-tts_models/multilingual/multi-dataset/xtts_v2}
       COQUITTS_SAMPLE:            ${COQUITTS_SAMPLE:-default.wav}
-      KOKOROTTS_PATH:             /opt/cache/kokorotts
-      PIPERTTS_PATH:              /opt/cache/pipertts
-      SILEROTTS_PATH:             /opt/cache/silerotts
-      BARKTTS_PATH:               /opt/cache/barktts
+      KOKOROTTS_MODELS:           /opt/cache/kokorotts
+      PIPERTTS_MODELS:            /opt/cache/pipertts
+      SILEROTTS_MODELS:           /opt/cache/silerotts
+      BARKTTS_MODELS:             /opt/cache/barktts
       # Lazy-install target for heavy engine deps (kokoro-onnx, piper-tts, bark, …).
       # Shared with host so packages survive container recreate. See entrypoint.sh.
       PYTHONUSERBASE:             /opt/userbase

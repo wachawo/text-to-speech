@@ -38,7 +38,7 @@ VOICES = {
 def models_dir(non_interactive: bool = False) -> Path:
     return resolve_models_dir(
         engine_label="Piper TTS",
-        env_key="PIPERTTS_PATH",
+        env_key="PIPERTTS_MODELS",
         default_dir=Path.home() / ".local" / "share" / "ttsgen" / "pipertts",
         project_dir=project_root() / "cache" / "pipertts",
         non_interactive=non_interactive,

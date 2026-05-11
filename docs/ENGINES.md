@@ -64,7 +64,7 @@ Each engine is an optional module that can be installed as needed.
 **coquitts**
 - Pros: Best quality, 100+ languages, voice cloning
 - Cons: Slow on CPU, Python 3.9-3.11 only
-- Install: `pip install TTS`
+- Install: `pip install coqui-tts[codec]` (Idiap community fork — upstream `TTS` package is abandoned and breaks under torch 2.9+)
 - Docs: docs/COQUITTS.md
 
 **barktts**
@@ -84,14 +84,16 @@ Each engine is an optional module that can be installed as needed.
 ```
 engines/
 ├── __init__.py       # Dynamic engine loader
-├── gtts.py      # Google TTS (online)
+├── gtts.py           # Google TTS (online)
 ├── pyttsx3.py        # espeak TTS (offline, basic)
 ├── pipertts.py       # Piper TTS (offline, high-quality)
 ├── silerotts.py      # Silero TTS (offline, Russian)
 ├── coquitts.py       # Coqui TTS (offline, best quality)
 ├── barktts.py        # Bark TTS (offline, emotions)
-└── custom.py         # Your custom engines
+└── kokorotts.py      # Kokoro TTS (offline, ONNX, multi-language)
 ```
+
+Drop a new `engines/<name>.py` to add an engine — see [Creating a Custom Engine](#creating-a-custom-engine) below.
 
 ## Engine Interface
 
@@ -110,19 +112,14 @@ def generate(text: str, config: dict) -> bytes:
     return audio_bytes
 ```
 
-### 2. Optional Functions
+### 2. Contract: engines return bytes only
 
-```python
-def to_file(text: str, filename: str, config: dict) -> str:
-    """Generate and save to file."""
-    # If not implemented, will be auto-generated from generate()
-    pass
-
-def to_bytes(text: str, config: dict) -> bytes:
-    """Generate and return bytes."""
-    # If not implemented, will use generate()
-    pass
-```
+Engines **must not** write files, play audio, or print to stdout. The
+return value of `generate()` is the only output. File I/O lives in
+`libs/api.py` (`text_to_speech_file`, `text_to_speech_bytesio`); playback
+lives in `libs/playback.py`. Adding `to_file()` / `to_bytes()` inside an
+engine is a layering violation and will not be picked up by the loader
+(`engines/__init__.py` calls `generate()` only).
 
 ### 3. Config Parameters
 
@@ -141,23 +138,16 @@ config = {
 ### Example: engines/custom.py
 
 ```python
-"""
-Custom TTS Engine
-
-Description of your custom engine.
-"""
+"""Custom TTS Engine — short description of what this engine does."""
 
 import logging
-import sys
-from pathlib import Path as PathLib
-sys.path.insert(0, str(PathLib(__file__).parent.parent / 'libs'))
-from exceptions import EngineNotAvailableError, TTSException
+
+from libs.exceptions import EngineNotAvailableError, TTSException
 
 logger = logging.getLogger(__name__)
 
-# Try to import your dependencies
 try:
-    import your_tts_library
+    import your_tts_library  # type: ignore
     AVAILABLE = True
 except ImportError:
     AVAILABLE = False
@@ -165,36 +155,30 @@ except ImportError:
 
 
 def is_available() -> bool:
-    """Check if engine is available."""
+    """True if all deps are importable."""
     return AVAILABLE
 
 
 def generate(text: str, config: dict) -> bytes:
-    """
-    Generate audio and return as bytes.
-    
+    """Synthesize and return audio bytes (WAV or MP3).
+
     Args:
-        text: Text to synthesize
-        config: Configuration dict with 'language', etc.
-    
-    Returns:
-        Audio bytes (WAV or MP3)
+        text: Text to synthesize.
+        config: {'language': 'en', 'rate': 150, 'volume': 0.9, ...}.
+
+    Raises:
+        EngineNotAvailableError: deps missing.
+        TTSException: synthesis failed.
     """
     if not AVAILABLE:
         raise EngineNotAvailableError("Custom TTS not available")
-    
+
     try:
-        # Your implementation
-        language = config.get('language', 'en')
-        
-        # Use your library
-        ttsgen = your_tts_library.TTS()
-        audio_bytes = tts.synthesize(text, lang=language)
-        
-        return audio_bytes
-        
-    except Exception as e:
-        raise TTSException(f"Custom TTS generation failed: {e}")
+        language = config.get("language", "en")
+        tts = your_tts_library.TTS()
+        return tts.synthesize(text, lang=language)
+    except Exception as exc:
+        raise TTSException(f"Custom TTS generation failed: {type(exc).__name__}: {exc}")
 ```
 
 ### Usage
@@ -228,14 +212,14 @@ python ttsgen.py "Hola" --engine custom --language es
 - **Quality**: 2/5
 - **Usage**: `--engine pyttsx3`
 
-### piper.py
+### pipertts.py
 - **Description**: High-quality offline TTS
-- **Dependencies**: `pip install piper-tts` + download models
+- **Dependencies**: `pip install piper-tts` + download models (`ttsgen --install pipertts`)
 - **Format**: WAV (22050 Hz)
 - **Languages**: 50+ languages
-- **Quality**: 5/5
-- **Usage**: `--engine piper`
-- **Documentation**: See docs/PIPER.md
+- **Quality**: 4/5
+- **Usage**: `--engine pipertts`
+- **Documentation**: See [docs/PIPERTTS.md](PIPERTTS.md)
 
 ## Benefits of Modular System
 

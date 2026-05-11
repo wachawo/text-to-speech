@@ -47,7 +47,7 @@ def check_python_version() -> bool:
 def models_dir(non_interactive: bool = False) -> Path:
     return resolve_models_dir(
         engine_label="Kokoro TTS",
-        env_key="KOKOROTTS_PATH",
+        env_key="KOKOROTTS_MODELS",
         default_dir=Path.home() / ".local" / "share" / "ttsgen" / "kokorotts",
         project_dir=project_root() / "cache" / "kokorotts",
         non_interactive=non_interactive,

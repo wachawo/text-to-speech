@@ -69,7 +69,7 @@ def install(non_interactive: bool = False) -> int:
 
     info(
         "Note: Bark caches models in ~/.cache/suno/bark_v0/ (hardcoded by upstream); "
-        "setting BARKTTS_PATH won't relocate the cache, only the engine config."
+        "setting BARKTTS_MODELS won't relocate the cache, only the engine config."
     )
 
     install_torch_choice(non_interactive=non_interactive)

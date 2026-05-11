@@ -4,7 +4,7 @@ Universal text-to-speech system with online and offline engines behind a single 
 
 ## Overview
 
-Switch transparently between cloud and local TTS engines via a single interface. Six engines are supported out of the box; adding a seventh is one file in `engines/`.
+Switch transparently between cloud and local TTS engines via a single interface. Seven engines are supported out of the box; adding an eighth is one file in `engines/`.
 
 | Engine | Quality | Speed (CPU) | Offline | Best for |
 |---|---|---|---|---|
@@ -40,7 +40,7 @@ sudo apt install espeak espeak-data libespeak1
 pip install git+https://github.com/wachawo/text-to-speech.git
 
 # Specific tag, branch, or commit
-pip install git+https://github.com/wachawo/text-to-speech.git@v0.2.1
+pip install git+https://github.com/wachawo/text-to-speech.git@v1.0.2
 pip install git+https://github.com/wachawo/text-to-speech.git@main
 ```
 
@@ -167,7 +167,7 @@ Without a local `.env` (e.g. after `pip install git+...`), pass engine config vi
 4. **`.env`** — legacy file in the current directory (kept for backward compatibility).
 5. **Built-in defaults** — `TTS_ENGINE=gtts`, `TTS_LANGUAGE=en`, etc.
 
-All config files use the same `KEY=VALUE` format. Available keys: `TTS_ENGINE`, `TTS_LANGUAGE`, `AUDIO_DIRECTORY`, `COQUITTS_PATH`, `COQUITTS_MODEL`, `COQUITTS_SAMPLE`, `PIPERTTS_PATH`, `SILEROTTS_PATH`, `BARKTTS_PATH`. Example:
+All config files use the same `KEY=VALUE` format. Available keys: `TTS_ENGINE`, `TTS_LANGUAGE`, `AUDIO_DIRECTORY`, `COQUITTS_MODELS`, `COQUITTS_MODEL`, `COQUITTS_SAMPLE`, `PIPERTTS_MODELS`, `SILEROTTS_MODELS`, `BARKTTS_MODELS`, `KOKOROTTS_MODELS`. Example:
 
 ```ini
 TTS_ENGINE=coquitts
@@ -229,10 +229,10 @@ ttsapi "Привет" --engine coquitts --language ru
 
 `ttsapi` reads `TTS_URL` and `TTS_TOKEN` from the same config chain as `ttsgen` (`./ttsgen.conf` > `~/.config/ttsgen.conf` > `.env`). Default URL is `http://localhost:5000`. Empty `TTS_TOKEN` disables auth.
 
-Run server without Docker (after `pip install -e .` or `pip install git+...`):
+Run server without Docker (from a clone — `ttssrv` is not a console-script):
 
 ```bash
-ttssrv
+python3 ttssrv/app1.py
 ```
 
 ## Adding a new engine
@@ -277,13 +277,14 @@ text-to-speech/
 │   ├── pipertts.py
 │   ├── silerotts.py
 │   ├── coquitts.py
-│   └── barktts.py
+│   ├── barktts.py
+│   └── kokorotts.py
 ├── libs/                     # Core library
 │   ├── api.py                #   text_to_speech_bytes / _file / _bytesio
 │   ├── tools.py              #   Validation, config, pipelines
 │   ├── playback.py           #   pygame wrapper
 │   └── exceptions.py
-├── ttssrv/                   # Flask HTTP server (`ttssrv` console script)
+├── ttssrv/                   # Flask HTTP server (NOT a console script — run via Docker or `python3 ttssrv/app1.py`)
 │   ├── __init__.py
 │   ├── app1.py               #   Endpoints, pool, token auth
 │   ├── validators.py
@@ -297,21 +298,23 @@ text-to-speech/
 │   ├── pipertts.py
 │   ├── silerotts.py
 │   ├── coquitts.py
-│   └── barktts.py
+│   ├── barktts.py
+│   └── kokorotts.py
 ├── docs/                     # Per-engine guides
 │   ├── ENGINES.md
 │   ├── PIPERTTS.md
 │   ├── SILEROTTS.md
 │   ├── COQUITTS.md
-│   └── BARKTTS.md
+│   ├── BARKTTS.md
+│   └── KOKOROTTS.md
+├── tests/                    # pytest suite (260 tests, all engines mocked)
 ├── samples/                  # Voice samples (used by coquitts)
-├── test_tts.py
 ├── env.example               # `.env` template
 ├── ttsgen.conf.example       # `./ttsgen.conf` / `~/.config/ttsgen.conf` template
 ├── requirements.txt          # Legacy
 ├── requirements-dev.txt      # Legacy
-├── REVIEW.md                 # Code review
-├── ROADMAP.md                # Improvement roadmap
+├── REVIEW.md                 # Code review (local-only, gitignored)
+├── ROADMAP.md                # Improvement roadmap (local-only, gitignored)
 └── CLAUDE.md                 # Notes for Claude Code
 ```
 
@@ -325,18 +328,18 @@ pytest                    # full suite, prints per-module coverage
 pytest --no-cov           # disable coverage for a faster local re-run
 pytest --cov
 
-# Test suite layout (162 tests in tests/test_<word>.py, ~1s on a laptop):
+# Test suite layout (260 tests in tests/test_<word>.py, ~1.5s on a laptop):
 #   srv-side    test_health, test_auth, test_endpoint, test_errors, test_smoke
 #   client-side test_apiauth, test_apihelpers, test_apimain
 #   ttsgen CLI  test_gencli
 #   library     test_cli, test_config, test_tools, test_tempfiles,
 #               test_resolver, test_engines, test_customerror
+#   engines     test_gtts, test_pyttsx3, test_pipertts, test_silerotts,
+#               test_coquitts, test_barktts, test_kokorotts
 #
-# Coverage today: ~56% project-wide, ~72% on the non-engine surface.
-# The five heavy engines (coquitts/barktts/pipertts/pyttsx3/silerotts)
-# need torch/coqui-tts/espeak and are excluded from unit tests by design —
-# `tests/conftest.py` stubs `libs.api.text_to_speech_bytes` so the HTTP
-# layer can be exercised without loading any model.
+# Coverage today: ~76% project-wide. Engines fake their heavy deps
+# (torch, coqui-tts, kokoro_onnx, etc.) in fixture-level stubs, so the
+# suite runs without any model files or GPU.
 
 # Lint / typecheck / format
 flake8 .
@@ -349,9 +352,9 @@ python -c "from engines import get_available_engines; print('\n'.join(get_availa
 ## Documentation
 
 - [`docs/ENGINES.md`](docs/ENGINES.md) — engine system, comparison, custom-engine guide
-- [`docs/PIPERTTS.md`](docs/PIPERTTS.md), [`docs/SILEROTTS.md`](docs/SILEROTTS.md), [`docs/COQUITTS.md`](docs/COQUITTS.md), [`docs/BARKTTS.md`](docs/BARKTTS.md) — per-engine setup
-- [`REVIEW.md`](REVIEW.md) — current code review
-- [`ROADMAP.md`](ROADMAP.md) — planned improvements
+- [`docs/PIPERTTS.md`](docs/PIPERTTS.md), [`docs/SILEROTTS.md`](docs/SILEROTTS.md), [`docs/COQUITTS.md`](docs/COQUITTS.md), [`docs/BARKTTS.md`](docs/BARKTTS.md), [`docs/KOKOROTTS.md`](docs/KOKOROTTS.md) — per-engine setup
+- `REVIEW.md` — code review (local-only, gitignored)
+- `ROADMAP.md` — improvement roadmap (local-only, gitignored)
 
 ## License
 

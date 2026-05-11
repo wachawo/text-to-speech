@@ -150,7 +150,7 @@ def generate(text: str, config: dict) -> bytes:
         # accept this exposure because: (1) the model itself is shipped from
         # the same repo, so refusing the prompt blocks all SileroTTS usage;
         # (2) the model directory is pinned via torch.hub.set_dir() to the
-        # configured SILEROTTS_PATH, so the fetched code only runs when the
+        # configured SILEROTTS_MODELS, so the fetched code only runs when the
         # user explicitly opts in by installing this engine.
         result = torch.hub.load(
             repo_or_dir="snakers4/silero-models",

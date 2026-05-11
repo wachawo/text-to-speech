@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 def get_silero_dir(non_interactive: bool) -> Path:
     return resolve_models_dir(
         engine_label="Silero TTS",
-        env_key="SILEROTTS_PATH",
+        env_key="SILEROTTS_MODELS",
         default_dir=Path.home() / ".cache" / "torch" / "hub",
         project_dir=project_root() / "cache" / "silerotts",
         non_interactive=non_interactive,
@@ -40,7 +40,7 @@ def predownload(models_dir: Path, languages: list) -> None:
     # executing hubconf.py from snakers4/silero-models. The user has already
     # opted into running that code by choosing to install this engine, so we
     # bypass the prompt rather than fail in non-interactive contexts (CI,
-    # docker build). Models land under the configured SILEROTTS_PATH.
+    # docker build). Models land under the configured SILEROTTS_MODELS.
     for lang, speaker in languages:
         info(f"\nDownloading {lang} model (speaker={speaker})...")
         torch.hub.load(

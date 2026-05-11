@@ -51,7 +51,7 @@ The system will ask you to accept the license on first use of these models.
 
 ```bash
 # Install Coqui TTS with compatible transformers version
-pip install TTS transformers==4.33.0
+pip install "coqui-tts[codec]" "transformers>=4.46,<5.0"
 
 # Test installation
 python -c "from TTS.api import TTS; print('Coqui TTS installed successfully')"
@@ -68,7 +68,7 @@ python -c "from TTS.api import TTS; print('Coqui TTS installed successfully')"
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 
 # Install Coqui TTS with compatible transformers version
-pip install TTS transformers==4.33.0
+pip install "coqui-tts[codec]" "transformers>=4.46,<5.0"
 
 # Verify GPU support
 python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
@@ -99,12 +99,15 @@ During installation, you can choose from:
 To change directory after installation:
 
 ```bash
-# Set environment variable
-export COQUI_TTS_CACHE_DIR="~/.local/share/tts"
+# Set environment variable (this project's canonical var — see CONTEXT.md)
+export COQUITTS_MODELS="$HOME/.local/share/tts"
 
-# Or add to .env file
-echo "COQUI_TTS_CACHE_DIR=~/.local/share/tts" >> .env
+# Or persist to ~/.config/ttsgen.conf
+echo "COQUITTS_MODELS=$HOME/.local/share/tts" >> ~/.config/ttsgen.conf
 ```
+
+`engines/coquitts.py` then tunnels this through to Coqui's own
+`TTS_HOME` at runtime — you don't set `TTS_HOME` directly.
 
 ## Available Models
 
@@ -266,22 +269,19 @@ pip uninstall transformers -y
 # Install compatible version
 pip install transformers==4.33.0
 
-# Reinstall Coqui TTS
-pip install TTS
+# Reinstall Coqui TTS (Idiap community fork — upstream `TTS` is abandoned)
+pip install "coqui-tts[codec]"
 ```
 
 ### Installation fails
 
 ```bash
-# Try with compatible transformers version
-pip install TTS transformers==4.33.0
+# Use the pinned versions from this project (works under torch 2.9+):
+pip install "coqui-tts[codec]" "transformers>=4.46,<5.0"
 
-# Or try specific TTS version
-pip install TTS==0.21.0 transformers==4.33.0
-
-# Or install dependencies separately
+# If you need dependencies separately:
 pip install numpy scipy librosa
-pip install TTS transformers==4.33.0
+pip install "coqui-tts[codec]" "transformers>=4.46,<5.0"
 ```
 
 ### Model download fails

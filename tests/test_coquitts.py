@@ -121,7 +121,7 @@ def engine(monkeypatch, tmp_path):
     sample = tmp_path / "voice.wav"
     sample.write_bytes(b"RIFF")
     monkeypatch.setenv("COQUITTS_SAMPLE", str(sample))
-    monkeypatch.setenv("COQUITTS_PATH", str(tmp_path / "cache" / "coquitts"))
+    monkeypatch.setenv("COQUITTS_MODELS", str(tmp_path / "cache" / "coquitts"))
     return eng
 
 
@@ -141,14 +141,14 @@ def test_is_available_reflects_module_flag(engine, monkeypatch):
 
 
 def test_get_models_directory_uses_env_var(engine, monkeypatch, tmp_path):
-    monkeypatch.setenv("COQUITTS_PATH", str(tmp_path / "models_here"))
+    monkeypatch.setenv("COQUITTS_MODELS", str(tmp_path / "models_here"))
     assert engine.get_models_directory() == str(tmp_path / "models_here")
 
 
 def test_get_models_directory_expanduser(engine, monkeypatch, tmp_path):
     """Tilde in env var must be expanded to $HOME-relative absolute path."""
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("COQUITTS_PATH", "~/coquitts_home")
+    monkeypatch.setenv("COQUITTS_MODELS", "~/coquitts_home")
     assert engine.get_models_directory() == str(tmp_path / "coquitts_home")
 
 

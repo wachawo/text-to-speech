@@ -1,6 +1,6 @@
 ## Changelog
 
-### [1.0.1] — 2026-05-11
+### [1.0.2] — 2026-05-11
 
 #### Added
 - Kokoro TTS engine (`engines/kokorotts.py`) — offline ONNX synthesis via
@@ -27,7 +27,17 @@
   single `cache/<engine>/` root. Existing installs must `mv .pipertts
   cache/pipertts` (and the same for the other three) or re-run
   `ttsgen --install <engine>`. Env-var overrides
-  (`PIPERTTS_PATH=` etc.) still work unchanged.
+  (`PIPERTTS_MODELS=` etc.) still work unchanged.
+- **BREAKING — env-var naming convention normalised to `<ENGINE>_MODELS`.**
+  Until now `engines/{pipertts,silerotts,barktts}.py` read
+  `<ENGINE>_MODELS` while `engines/{coquitts,kokorotts}.py` read
+  `<ENGINE>_PATH`, and config examples (`env.example`,
+  `ttsgen.conf.example`, `README.md:170`, `docker/{cpu,gpu}/docker-compose.yml`)
+  used `<ENGINE>_PATH` for all five. Result: pipertts/silerotts/barktts
+  silently ignored their config-file override and fell back to default.
+  Canonical name is now **`<ENGINE>_MODELS`** across the board. Users with
+  `KOKOROTTS_PATH=...` or `COQUITTS_PATH=...` in their `.env` /
+  `ttsgen.conf` must rename to `..._MODELS`. No alias support.
 - **BREAKING — Docker layout:** `docker-compose.yml` and
   `docker-compose-cpu.yml` at the repo root are removed in favour of
   `docker/{cpu,gpu}/docker-compose.yml` + Dockerfile + requirements.txt.
