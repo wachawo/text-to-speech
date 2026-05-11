@@ -2,6 +2,60 @@
 
 ### [1.0.2] — 2026-05-11
 
+#### Changed
+- **BREAKING — env-var naming convention normalised to `<ENGINE>_MODELS`.**
+  In 1.0.1 `engines/{pipertts,silerotts,barktts}.py` already read
+  `<ENGINE>_MODELS`, while `engines/{coquitts,kokorotts}.py` read
+  `<ENGINE>_PATH`, and config examples (`env.example`,
+  `ttsgen.conf.example`, `README.md`, `docker/{cpu,gpu}/docker-compose.yml`)
+  used `<ENGINE>_PATH` for all five. Result: pipertts/silerotts/barktts
+  silently ignored their config-file override and fell back to the
+  built-in default. Canonical name is now **`<ENGINE>_MODELS`** across
+  the board (engine code, installers, `ttsgen.py`, `libs/config.py`,
+  tests, docker compose, env templates, README, per-engine docs). Users
+  with `KOKOROTTS_PATH=...` or `COQUITTS_PATH=...` in `.env` /
+  `~/.config/ttsgen.conf` must rename to `..._MODELS`. **No alias
+  support.**
+
+#### Fixed (docs)
+- `docs/PIPERTTS.md` — translated from Russian to English; model paths
+  switched from upstream-style `~/.local/share/piper/voices` to this
+  project's canonical `cache/pipertts/` with priority resolution
+  documented; obsolete `piper --download-dir` invocation removed.
+- `docs/ENGINES.md` — `### piper.py` section renamed to `pipertts.py`,
+  `--engine piper` → `--engine pipertts`, dead link `docs/PIPER.md` →
+  `docs/PIPERTTS.md`; `pip install TTS` → `pip install "coqui-tts[codec]"`
+  (Idiap fork; upstream `TTS` package is abandoned); removed misleading
+  "Optional Functions" `to_file()`/`to_bytes()` block in favour of an
+  explicit "engines return bytes only" contract note; Custom-engine
+  example fixed to use `from libs.exceptions import ...` (was a broken
+  `sys.path.insert(...)` + `from exceptions import` that triggers
+  `ModuleNotFoundError`); folder listing updated to include
+  `kokorotts.py` and to drop the never-existed `custom.py` stub.
+- `docs/COQUITTS.md` — `COQUI_TTS_CACHE_DIR` (upstream Coqui var) renamed
+  to this project's canonical `COQUITTS_MODELS`; all `pip install TTS`
+  (abandoned upstream package) replaced with `pip install "coqui-tts[codec]"`
+  pinned alongside `transformers>=4.46,<5.0`.
+- `docs/BARKTTS.md` — engine name typos fixed across the file
+  (`engine="bark"` → `engine="barktts"`, `TTS_ENGINE=bark` →
+  `TTS_ENGINE=barktts`, `engines/bark.py` → `engines/barktts.py`, `piper`
+  → `pipertts` in alternative-engine suggestions); added explicit note
+  that `BARKTTS_MODELS=...` does **not** relocate Bark's hard-coded
+  `~/.cache/suno/bark_v0/` cache — symlink the directory instead.
+- `README.md` — engine-count update ("Six" → "Seven engines"); git-tag
+  example bumped (`v0.2.1` → `v1.0.2`); project-structure listing
+  reflects current files (added `kokorotts.py` to `engines/` and
+  `install/`, added `KOKOROTTS.md` to `docs/`, replaced non-existent
+  `test_tts.py` with `tests/` directory note); test count updated
+  (`162` → `260`) and coverage figure refreshed (`~56%` project / `~72%`
+  non-engine → `~76%` project-wide); removed self-contradicting claim
+  that `ttssrv` is a console-script (it is not registered in
+  `pyproject.toml:[project.scripts]`); Documentation section now
+  includes `docs/KOKOROTTS.md` and marks `REVIEW.md` / `ROADMAP.md` as
+  local-only (gitignored).
+
+### [1.0.1] — 2026-05-11
+
 #### Added
 - Kokoro TTS engine (`engines/kokorotts.py`) — offline ONNX synthesis via
   `kokoro-onnx`, multi-language (en/fr/it/ja/zh/es/hi/pt), per-language default
@@ -28,16 +82,6 @@
   cache/pipertts` (and the same for the other three) or re-run
   `ttsgen --install <engine>`. Env-var overrides
   (`PIPERTTS_MODELS=` etc.) still work unchanged.
-- **BREAKING — env-var naming convention normalised to `<ENGINE>_MODELS`.**
-  Until now `engines/{pipertts,silerotts,barktts}.py` read
-  `<ENGINE>_MODELS` while `engines/{coquitts,kokorotts}.py` read
-  `<ENGINE>_PATH`, and config examples (`env.example`,
-  `ttsgen.conf.example`, `README.md:170`, `docker/{cpu,gpu}/docker-compose.yml`)
-  used `<ENGINE>_PATH` for all five. Result: pipertts/silerotts/barktts
-  silently ignored their config-file override and fell back to default.
-  Canonical name is now **`<ENGINE>_MODELS`** across the board. Users with
-  `KOKOROTTS_PATH=...` or `COQUITTS_PATH=...` in their `.env` /
-  `ttsgen.conf` must rename to `..._MODELS`. No alias support.
 - **BREAKING — Docker layout:** `docker-compose.yml` and
   `docker-compose-cpu.yml` at the repo root are removed in favour of
   `docker/{cpu,gpu}/docker-compose.yml` + Dockerfile + requirements.txt.
