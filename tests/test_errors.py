@@ -26,12 +26,22 @@ def test_405_shape(client):
 
 
 def test_arbitrary_http_exception_preserved(client):
-    """abort(413) must reach the client as 413 with exc.name, not as 500."""
+    """An HTTP error with no dedicated handler reaches the client with exc.name, not as 500."""
+    resp = client.get("/__test_abort/451")
+    assert resp.status_code == 451
+    body = resp.get_json()
+    assert set(body.keys()) == {"error", "request_id"}
+    assert body["error"] == "Unavailable For Legal Reasons"
+
+
+def test_payload_too_large_shape(client):
+    """413 has a dedicated handler that also reports the configured byte limit."""
     resp = client.get("/__test_abort/413")
     assert resp.status_code == 413
     body = resp.get_json()
-    assert set(body.keys()) == {"error", "request_id"}
-    assert body["error"] == "Request Entity Too Large"
+    assert set(body.keys()) == {"error", "limit_mb", "request_id"}
+    assert body["error"] == "Payload Too Large"
+    assert isinstance(body["limit_mb"], int)
 
 
 def test_unauthorized_http_exception_preserved(client):
