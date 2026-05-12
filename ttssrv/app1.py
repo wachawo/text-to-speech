@@ -64,7 +64,7 @@ TTS_PORT = int(os.getenv("TTS_PORT", "5000"))
 TTS_DEBUG = os.getenv("TTS_DEBUG", "False").lower() in TRUE_VALUES
 TTS_TOKENS = {t.strip() for t in os.getenv("TTS_TOKENS", "").split(",") if t.strip()}
 TTS_POOL_SIZE = int(os.getenv("TTS_POOL_SIZE", "1"))
-FORWARDED_ALLOW_IPS = os.getenv("FORWARDED_ALLOW_IPS", "*")
+CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
 TTS_ENGINE_DEFAULT = os.getenv("TTS_ENGINE", "gtts")
 TTS_LANGUAGE_DEFAULT = os.getenv("TTS_LANGUAGE", "en")
 TIMEZONE = pytz.timezone(os.getenv("TZ", "America/New_York"))
@@ -124,7 +124,7 @@ app.config.update(
         JSON_SORT_KEYS=False,
     )
 )
-CORS(app, resources={r"/api/*": {"origins": "*"}})
+CORS(app, resources={r"/api/*": {"origins": CORS_ORIGINS}})
 
 
 def get_req_id() -> str:
@@ -312,7 +312,6 @@ def main() -> int:
             host=TTS_HOST,
             port=TTS_PORT,
             log_level="info",
-            forwarded_allow_ips=FORWARDED_ALLOW_IPS,
         )
     return 0
 
