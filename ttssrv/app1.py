@@ -64,6 +64,7 @@ TTS_PORT = int(os.getenv("TTS_PORT", "5000"))
 TTS_DEBUG = os.getenv("TTS_DEBUG", "False").lower() in TRUE_VALUES
 TTS_TOKENS = {t.strip() for t in os.getenv("TTS_TOKENS", "").split(",") if t.strip()}
 TTS_POOL_SIZE = int(os.getenv("TTS_POOL_SIZE", "1"))
+CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
 # Hard cap on request body size — Marshmallow validates `text` after parsing,
 # so without this Werkzeug would buffer arbitrarily large bodies into memory.
 TTS_MAX_BODY_BYTES = int(os.getenv("TTS_MAX_BODY_BYTES", str(2 * 1024 * 1024)))
@@ -127,7 +128,7 @@ app.config.update(
         MAX_CONTENT_LENGTH=TTS_MAX_BODY_BYTES,
     )
 )
-CORS(app, resources={r"/api/*": {"origins": "*"}})
+CORS(app, resources={r"/api/*": {"origins": CORS_ORIGINS}})
 
 
 def get_req_id() -> str:
@@ -310,7 +311,12 @@ def main() -> int:
         import uvicorn
         from asgiref.wsgi import WsgiToAsgi
 
-        uvicorn.run(WsgiToAsgi(app), host=TTS_HOST, port=TTS_PORT, log_level="info")
+        uvicorn.run(
+            WsgiToAsgi(app),
+            host=TTS_HOST,
+            port=TTS_PORT,
+            log_level="info",
+        )
     return 0
 
 
