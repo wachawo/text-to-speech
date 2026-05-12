@@ -26,6 +26,7 @@ services:
       # Server-side allow-list (comma-separated). Empty = auth OFF. NOT the same
       # var as TTS_TOKEN, which is the client-side token used by ttsapi.
       TTS_TOKENS:                 ${TTS_TOKENS:-}
+      FORWARDED_ALLOW_IPS:        ${FORWARDED_ALLOW_IPS:-*}
       TTS_POOL_SIZE:              ${TTS_POOL_SIZE:-1}
       TTS_ENGINE:                 ${TTS_ENGINE:-gtts}
       TTS_LANGUAGE:               ${TTS_LANGUAGE:-en}
