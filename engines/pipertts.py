@@ -10,6 +10,7 @@ from libs.exceptions import EngineNotAvailableError, TTSException, ValidationErr
 # Offline ONNX, ~300x realtime — large texts are fine but bound memory.
 MAX_TEXT_LENGTH = 50_000
 import io
+import threading
 import wave
 import logging
 import os
@@ -32,6 +33,30 @@ try:
 except ImportError:
     AVAILABLE = False
     logger.warning("Piper TTS not available. Install with: pip install piper-tts")
+
+# Process-wide PiperVoice cache keyed by absolute voice path. ONNX session
+# load is ~1.5s on CPU even for medium voices; reload on every request
+# dwarfs the synthesis itself (issue #11). Safe to share across requests.
+VOICE_CACHE: dict = {}
+VOICE_CACHE_LOCK = threading.Lock()
+
+
+def get_voice(voice_path: str):
+    """Return cached PiperVoice for `voice_path`, loading lazily.
+
+    Double-checked locking so two concurrent first-time requests don't both
+    pay the ONNX load cost.
+    """
+    cached = VOICE_CACHE.get(voice_path)
+    if cached is not None:
+        return cached
+    with VOICE_CACHE_LOCK:
+        cached = VOICE_CACHE.get(voice_path)
+        if cached is not None:
+            return cached
+        voice = PiperVoice.load(voice_path)
+        VOICE_CACHE[voice_path] = voice
+        return voice
 
 
 def is_available() -> bool:
@@ -167,8 +192,9 @@ def generate(text: str, config: dict) -> bytes:
         voice_path = get_voice_path(language)
         logger.info(voice_path)
 
-        # Load voice model
-        voice = PiperVoice.load(voice_path)
+        # Cached load: PiperVoice.load is the dominant cost (~1.5s); the
+        # cache turns subsequent calls into pure synthesis (~tens of ms).
+        voice = get_voice(voice_path)
 
         # Generate audio to BytesIO
         audio_buffer = io.BytesIO()

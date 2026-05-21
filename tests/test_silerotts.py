@@ -16,10 +16,10 @@ import pytest
 from libs.exceptions import EngineNotAvailableError, TTSException
 
 
-def _make_fake_torch():
+def make_fake_torch():
     """Minimal torch stand-in covering only what silerotts.py touches at runtime."""
 
-    class _FakeHub:
+    class FakeHub:
         def load(self, **kw):  # overridden per-test
             raise NotImplementedError
 
@@ -27,13 +27,13 @@ def _make_fake_torch():
             pass
 
     new_torch = types.ModuleType("torch")  # type: ignore[name-defined]
-    new_torch.hub = _FakeHub()
+    new_torch.hub = FakeHub()
     new_torch.device = lambda name: name  # 'cpu' string is fine for tests
     new_torch.__version__ = "2.6.0"
     return new_torch
 
 
-def _make_fake_torchaudio():
+def make_fake_torchaudio():
     fake = types.ModuleType("torchaudio")  # type: ignore[name-defined]
     fake.save = lambda buf, tensor, sr, format: buf.write(b"")
     return fake
@@ -45,8 +45,8 @@ def engine(monkeypatch):
 
     Without this the real torchaudio fails dlopen on libcudart.so.11.
     """
-    monkeypatch.setitem(sys.modules, "torch", _make_fake_torch())
-    monkeypatch.setitem(sys.modules, "torchaudio", _make_fake_torchaudio())
+    monkeypatch.setitem(sys.modules, "torch", make_fake_torch())
+    monkeypatch.setitem(sys.modules, "torchaudio", make_fake_torchaudio())
     monkeypatch.delitem(sys.modules, "engines.silerotts", raising=False)
     return importlib.import_module("engines.silerotts")
 
@@ -77,7 +77,7 @@ def test_is_available_reflects_module_flag(engine, monkeypatch):
     ],
 )
 def test_get_model_info_known_languages(engine, lang, expected_speaker):
-    _model_id, speaker, sample_rate = engine.get_model_info(lang)
+    model_id, speaker, sample_rate = engine.get_model_info(lang)
     assert speaker == expected_speaker
     assert sample_rate == 48000
 

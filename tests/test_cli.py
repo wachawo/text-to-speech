@@ -56,7 +56,7 @@ def test_chunk_text_no_punctuation():
 # concat_wav_files
 
 
-def _silent_wav(path: Path, ms: int = 50, rate: int = 22050) -> None:
+def silent_wav(path: Path, ms: int = 50, rate: int = 22050) -> None:
     nframes = int(rate * ms / 1000)
     with wave.open(str(path), "wb") as w:
         w.setnchannels(1)
@@ -73,7 +73,7 @@ def test_concat_wav_files_empty(tmp_path):
 
 def test_concat_wav_files_single(tmp_path):
     f = tmp_path / "a.wav"
-    _silent_wav(f, ms=100, rate=22050)
+    silent_wav(f, ms=100, rate=22050)
     out_path = tmp_path / "out.wav"
     with open(out_path, "wb") as out:
         concat_wav_files([str(f)], out)
@@ -83,8 +83,8 @@ def test_concat_wav_files_single(tmp_path):
 
 def test_concat_wav_files_two_same_params(tmp_path):
     a, b = tmp_path / "a.wav", tmp_path / "b.wav"
-    _silent_wav(a, ms=100, rate=22050)
-    _silent_wav(b, ms=200, rate=22050)
+    silent_wav(a, ms=100, rate=22050)
+    silent_wav(b, ms=200, rate=22050)
     out_path = tmp_path / "out.wav"
     with open(out_path, "wb") as out:
         concat_wav_files([str(a), str(b)], out)
@@ -95,8 +95,8 @@ def test_concat_wav_files_two_same_params(tmp_path):
 
 def test_concat_wav_files_param_mismatch_warns(tmp_path, caplog):
     a, b = tmp_path / "a.wav", tmp_path / "b.wav"
-    _silent_wav(a, ms=50, rate=22050)
-    _silent_wav(b, ms=50, rate=16000)  # different rate
+    silent_wav(a, ms=50, rate=22050)
+    silent_wav(b, ms=50, rate=16000)  # different rate
     out_path = tmp_path / "out.wav"
     with caplog.at_level("WARNING"):
         with open(out_path, "wb") as out:
@@ -107,7 +107,7 @@ def test_concat_wav_files_param_mismatch_warns(tmp_path, caplog):
 # rec_worker / play_worker
 
 
-def _silent_bytes() -> bytes:
+def silent_bytes() -> bytes:
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:
         w.setnchannels(1)
@@ -119,7 +119,7 @@ def _silent_bytes() -> bytes:
 
 def test_rec_play_worker_success_path(tmp_path):
     chunks = ["one", "two", "three"]
-    audio = _silent_bytes()
+    audio = silent_bytes()
     q: queue.Queue = queue.Queue(maxsize=2)
     collected: list[str] = []
     failures: list = []
@@ -150,7 +150,7 @@ def test_rec_worker_pushes_sentinel_on_partial_failure(tmp_path):
     def gen(text: str) -> bytes:
         if text == "boom":
             raise RuntimeError("synthetic engine error")
-        return _silent_bytes()
+        return silent_bytes()
 
     rec = threading.Thread(target=rec_worker, args=(chunks, gen, q, ".wav", str(tmp_path)), daemon=True)
     play = threading.Thread(target=play_worker, args=(q, [], collected, lambda b: None, failures), daemon=True)

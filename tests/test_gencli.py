@@ -18,7 +18,7 @@ TTSGEN = REPO_ROOT / "ttsgen.py"
 STUBS_DIR = Path(__file__).resolve().parent / "stubs"
 
 
-def _stubbed_env(extra: dict | None = None) -> dict:
+def stubbed_env(extra: dict | None = None) -> dict:
     """Return os.environ + PYTHONPATH prefix that resolves `import gtts` to our stub."""
     env = os.environ.copy()
     pp = str(STUBS_DIR)
@@ -33,7 +33,7 @@ def _stubbed_env(extra: dict | None = None) -> dict:
     return env
 
 
-def _run_ttsgen(args: list[str], env: dict, timeout: int = 30) -> subprocess.CompletedProcess:
+def run_ttsgen(args: list[str], env: dict, timeout: int = 30) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, str(TTSGEN), *args],
         env=env,
@@ -46,8 +46,8 @@ def _run_ttsgen(args: list[str], env: dict, timeout: int = 30) -> subprocess.Com
 
 def test_ttsgen_file_output_writes_audio(tmp_path):
     out = tmp_path / "out.mp3"
-    env = _stubbed_env({"AUDIO_DIRECTORY": str(tmp_path)})
-    result = _run_ttsgen(
+    env = stubbed_env({"AUDIO_DIRECTORY": str(tmp_path)})
+    result = run_ttsgen(
         ["Hello", "--engine", "gtts", "--output", "file", "--file", str(out)],
         env=env,
     )
@@ -81,7 +81,7 @@ def test_ttsgen_engine_failure_returns_nonzero(tmp_path):
     env["TTS_ENGINE"] = "gtts"
 
     try:
-        result = _run_ttsgen(
+        result = run_ttsgen(
             ["Hello world", "--engine", "gtts", "--output", "file", "--file", str(out)],
             env=env,
         )
@@ -102,7 +102,7 @@ def test_ttsgen_engine_failure_returns_nonzero(tmp_path):
 
 def test_ttsgen_help_runs(tmp_path):
     """Cheapest CLI smoke: --help should exit 0 and print usage."""
-    env = _stubbed_env()
-    result = _run_ttsgen(["--help"], env=env, timeout=10)
+    env = stubbed_env()
+    result = run_ttsgen(["--help"], env=env, timeout=10)
     assert result.returncode == 0
     assert "Usage" in result.stdout or "usage" in result.stdout

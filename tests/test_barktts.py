@@ -16,7 +16,7 @@ import pytest
 from libs.exceptions import EngineNotAvailableError, TTSException
 
 
-def _make_fake_bark():
+def make_fake_bark():
     fake = types.ModuleType("bark")
     fake.SAMPLE_RATE = 24000
     fake.preload_models = lambda: None
@@ -24,20 +24,20 @@ def _make_fake_bark():
     return fake
 
 
-def _make_fake_torch():
+def make_fake_torch():
     fake = types.ModuleType("torch")
     fake.__version__ = "2.6.0"
 
-    class _FakeSerialization:
+    class FakeSerialization:
         @staticmethod
         def add_safe_globals(items):
             pass
 
-    fake.serialization = _FakeSerialization()
+    fake.serialization = FakeSerialization()
     return fake
 
 
-def _make_fake_scipy_wavfile():
+def make_fake_scipy_wavfile():
     """`scipy.io.wavfile` exposes only `write(file, rate, data)` to barktts."""
     scipy = types.ModuleType("scipy")
     io_pkg = types.ModuleType("scipy.io")
@@ -55,9 +55,9 @@ def _make_fake_scipy_wavfile():
 
 @pytest.fixture
 def engine(monkeypatch):
-    monkeypatch.setitem(sys.modules, "bark", _make_fake_bark())
-    monkeypatch.setitem(sys.modules, "torch", _make_fake_torch())
-    scipy, io_pkg, wavfile = _make_fake_scipy_wavfile()
+    monkeypatch.setitem(sys.modules, "bark", make_fake_bark())
+    monkeypatch.setitem(sys.modules, "torch", make_fake_torch())
+    scipy, io_pkg, wavfile = make_fake_scipy_wavfile()
     monkeypatch.setitem(sys.modules, "scipy", scipy)
     monkeypatch.setitem(sys.modules, "scipy.io", io_pkg)
     monkeypatch.setitem(sys.modules, "scipy.io.wavfile", wavfile)

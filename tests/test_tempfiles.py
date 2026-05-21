@@ -71,7 +71,7 @@ def test_windows_permission_error_retries_until_success(tmp_path, monkeypatch):
     target = tmp_path / "winlocked.tmp"
     target.write_bytes(b"x")
     monkeypatch.setattr(tempfiles, "IS_WINDOWS", True)
-    monkeypatch.setattr(tempfiles.time, "sleep", lambda _s: None)  # no real waiting
+    monkeypatch.setattr(tempfiles.time, "sleep", lambda s: None)  # no real waiting
 
     state = {"calls": 0, "real_unlink": os.unlink}
 
@@ -90,7 +90,7 @@ def test_oserror_retried_then_gives_up(tmp_path, monkeypatch, caplog):
     """Persistent OSError exhausts retries → False with summary in log."""
     target = tmp_path / "stuck.tmp"
     target.write_bytes(b"x")
-    monkeypatch.setattr(tempfiles.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(tempfiles.time, "sleep", lambda s: None)
     state = {"calls": 0}
 
     def always_fail(path):

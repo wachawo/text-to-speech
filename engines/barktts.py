@@ -23,13 +23,13 @@ from libs.tempfiles import safe_unlink
 try:
     from dotenv import find_dotenv, load_dotenv
 
-    _found = find_dotenv(usecwd=True)
-    if _found:
-        load_dotenv(_found)
-    _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    _local_env_file = os.path.join(_project_root, ".env.local")
-    if os.path.exists(_local_env_file):
-        load_dotenv(_local_env_file, override=True)
+    found = find_dotenv(usecwd=True)
+    if found:
+        load_dotenv(found)
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    local_env_file = os.path.join(project_root, ".env.local")
+    if os.path.exists(local_env_file):
+        load_dotenv(local_env_file, override=True)
 except ImportError:
     pass  # dotenv not installed, skip
 

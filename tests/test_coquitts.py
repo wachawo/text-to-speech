@@ -17,7 +17,7 @@ import pytest
 from libs.exceptions import CustomError, EngineNotAvailableError, TTSException
 
 
-def _install_fake_torch(monkeypatch):
+def install_fake_torch(monkeypatch):
     """Stub `torch` and `torch.serialization` for engines/coquitts.py top-level imports.
 
     Only needed when the dev venv lacks real torch (CI without [coqui] extras).
@@ -27,31 +27,31 @@ def _install_fake_torch(monkeypatch):
     if "torch" in sys.modules and hasattr(sys.modules["torch"], "cuda"):
         return  # real torch already importable, leave it alone
 
-    class _SafeGlobalsCtx:
-        def __init__(self, *_a, **_kw):
+    class SafeGlobalsCtx:
+        def __init__(self, *args, **kwargs):
             pass
 
         def __enter__(self):
             return self
 
-        def __exit__(self, *_exc):
+        def __exit__(self, *exc):
             return False
 
     fake_torch = types.ModuleType("torch")
     fake_torch.cuda = types.SimpleNamespace(is_available=lambda: False)
     fake_serialization = types.ModuleType("torch.serialization")
     fake_serialization.add_safe_globals = lambda items: None
-    fake_serialization.safe_globals = _SafeGlobalsCtx
+    fake_serialization.safe_globals = SafeGlobalsCtx
     fake_torch.serialization = fake_serialization
 
     monkeypatch.setitem(sys.modules, "torch", fake_torch)
     monkeypatch.setitem(sys.modules, "torch.serialization", fake_serialization)
 
 
-def _install_fake_TTS(monkeypatch, tts_class):
+def install_fake_tts(monkeypatch, tts_class):
     """Install the minimum TTS.* sub-package tree the engine imports."""
 
-    def _mod(name, **attrs):
+    def make_module(name, **attrs):
         m = types.ModuleType(name)
         for k, v in attrs.items():
             setattr(m, k, v)
@@ -69,19 +69,19 @@ def _install_fake_TTS(monkeypatch, tts_class):
     class BaseDatasetConfig:
         ...
 
-    pkg = _mod("TTS")
-    api = _mod("TTS.api", TTS=tts_class)
-    tts_pkg = _mod("TTS.tts")
-    cfgs_pkg = _mod("TTS.tts.configs")
-    xtts_cfg = _mod("TTS.tts.configs.xtts_config", XttsConfig=XttsConfig)
-    models_pkg = _mod("TTS.tts.models")
-    xtts_models = _mod(
+    pkg = make_module("TTS")
+    api = make_module("TTS.api", TTS=tts_class)
+    tts_pkg = make_module("TTS.tts")
+    cfgs_pkg = make_module("TTS.tts.configs")
+    xtts_cfg = make_module("TTS.tts.configs.xtts_config", XttsConfig=XttsConfig)
+    models_pkg = make_module("TTS.tts.models")
+    xtts_models = make_module(
         "TTS.tts.models.xtts",
         XttsAudioConfig=XttsAudioConfig,
         XttsArgs=XttsArgs,
     )
-    cfg_pkg = _mod("TTS.config")
-    shared = _mod("TTS.config.shared_configs", BaseDatasetConfig=BaseDatasetConfig)
+    cfg_pkg = make_module("TTS.config")
+    shared = make_module("TTS.config.shared_configs", BaseDatasetConfig=BaseDatasetConfig)
 
     for module in (pkg, api, tts_pkg, cfgs_pkg, xtts_cfg, models_pkg, xtts_models, cfg_pkg, shared):
         monkeypatch.setitem(sys.modules, module.__name__, module)
@@ -111,12 +111,12 @@ class FakeTTS:
 @pytest.fixture
 def engine(monkeypatch, tmp_path):
     FakeTTS.instances = []
-    _install_fake_torch(monkeypatch)
-    _install_fake_TTS(monkeypatch, FakeTTS)
+    install_fake_torch(monkeypatch)
+    install_fake_tts(monkeypatch, FakeTTS)
     monkeypatch.delitem(sys.modules, "engines.coquitts", raising=False)
     eng = importlib.import_module("engines.coquitts")
     # Reset module-level cache so tests don't bleed.
-    eng._TTS_CACHE.clear()
+    eng.TTS_CACHE.clear()
     # Provide a real sample WAV so the missing-file branch is opt-in only.
     sample = tmp_path / "voice.wav"
     sample.write_bytes(b"RIFF")
@@ -228,7 +228,7 @@ def test_generate_translates_model_not_found_to_tts_exception(engine, monkeypatc
             return self
 
     monkeypatch.setattr(engine, "TTS", BoomTTS)
-    engine._TTS_CACHE.clear()
+    engine.TTS_CACHE.clear()
     with pytest.raises(TTSException, match="model not found"):
         engine.generate("hi", {"language": "en"})
 
@@ -242,7 +242,7 @@ def test_generate_other_failure_wrapped_as_tts_exception(engine, monkeypatch):
             return self
 
     monkeypatch.setattr(engine, "TTS", BoomTTS)
-    engine._TTS_CACHE.clear()
+    engine.TTS_CACHE.clear()
     with pytest.raises(TTSException, match="generation failed"):
         engine.generate("hi", {"language": "en"})
 
@@ -257,6 +257,6 @@ def test_generate_raises_tts_exception_when_output_file_empty(engine, monkeypatc
             open(file_path, "wb").close()
 
     monkeypatch.setattr(engine, "TTS", EmptyTTS)
-    engine._TTS_CACHE.clear()
+    engine.TTS_CACHE.clear()
     with pytest.raises(TTSException, match="generation failed|failed to generate"):
         engine.generate("hi", {"language": "en"})
