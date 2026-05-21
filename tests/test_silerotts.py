@@ -78,6 +78,7 @@ def test_is_available_reflects_module_flag(engine, monkeypatch):
 )
 def test_get_model_info_known_languages(engine, lang, expected_speaker):
     model_id, speaker, sample_rate = engine.get_model_info(lang)
+    assert isinstance(model_id, str) and model_id
     assert speaker == expected_speaker
     assert sample_rate == 48000
 

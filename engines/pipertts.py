@@ -44,18 +44,21 @@ VOICE_CACHE_LOCK = threading.Lock()
 def get_voice(voice_path: str):
     """Return cached PiperVoice for `voice_path`, loading lazily.
 
-    Double-checked locking so two concurrent first-time requests don't both
-    pay the ONNX load cost.
+    Cache key is the normalised absolute path so a relative fallback
+    (e.g. `./voices/en.onnx`) and an absolute path that resolve to the
+    same file don't load the same ONNX twice. Double-checked locking
+    so two concurrent first-time requests don't both pay the load cost.
     """
-    cached = VOICE_CACHE.get(voice_path)
+    key = os.path.abspath(os.path.expanduser(voice_path))
+    cached = VOICE_CACHE.get(key)
     if cached is not None:
         return cached
     with VOICE_CACHE_LOCK:
-        cached = VOICE_CACHE.get(voice_path)
+        cached = VOICE_CACHE.get(key)
         if cached is not None:
             return cached
-        voice = PiperVoice.load(voice_path)
-        VOICE_CACHE[voice_path] = voice
+        voice = PiperVoice.load(key)
+        VOICE_CACHE[key] = voice
         return voice
 
 
