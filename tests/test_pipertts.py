@@ -276,7 +276,8 @@ def test_every_voice_file_has_a_known_hash_key(manifest: dict) -> None:
     one of (sha256 | md5_digest | md5). If upstream renames the field this
     test fails — better than expected_hash silently returning None."""
     bad: list[str] = []
-    for code, (path, basename, label) in VOICES.items():
+    for code, voice_info in VOICES.items():
+        path, basename = voice_info[0], voice_info[1]
         entry = manifest.get(basename)
         files = entry.get("files") if isinstance(entry, dict) else None
         if not isinstance(files, dict):
@@ -294,12 +295,13 @@ def test_every_voice_file_has_a_known_hash_key(manifest: dict) -> None:
     assert not bad, "manifest schema drift detected:\n  " + "\n  ".join(bad)
 
 
-def testexpected_hash_extracts_a_value_for_every_voice(manifest: dict) -> None:
+def test_expected_hash_extracts_a_value_for_every_voice(manifest: dict) -> None:
     """Round-trip through the helper itself — any voice for which
     expected_hash returns None means verify_checksum will be skipped at
     install time, which is what we want to know about now (not later)."""
     skipped: list[str] = []
-    for code, (path, basename, label) in VOICES.items():
+    for code, voice_info in VOICES.items():
+        path, basename = voice_info[0], voice_info[1]
         for ext in (".onnx", ".onnx.json"):
             result = expected_hash(manifest, path, basename, ext)
             if result is None:
