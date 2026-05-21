@@ -55,7 +55,7 @@ DEFAULT_COQUITTS_SAMPLE = str(os.path.expanduser("~/.config/ttsgen.wav"))
 
 # Cache TTS instances by (model_name, device) to avoid 15s reload of xtts_v2
 # checkpoint on every synthesis call. Keyed by tuple → instance.
-_TTS_CACHE: dict = {}
+TTS_CACHE: dict = {}
 
 # Try to import Coqui TTS
 try:
@@ -136,12 +136,12 @@ def generate(text: str, config: dict) -> bytes:
             pass
         device = "cuda" if torch.cuda.is_available() else "cpu"
         cache_key = (model_name, device)
-        tts = _TTS_CACHE.get(cache_key)
+        tts = TTS_CACHE.get(cache_key)
         if tts is None:
             logger.info(f"Loading {model_name} on {device} (first call — ~15s for xtts_v2)...")
             with safe_globals([XttsConfig, XttsAudioConfig, BaseDatasetConfig, XttsArgs]):
                 tts = TTS(model_name=model_name, progress_bar=False).to(device)
-            _TTS_CACHE[cache_key] = tts
+            TTS_CACHE[cache_key] = tts
         # Generate to temporary file (Coqui TTS requires file output)
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
             temp_filename = temp_file.name

@@ -39,15 +39,15 @@ def build_silent_wav(duration_ms: int = 100, rate: int = 22050) -> bytes:
     return buf.getvalue()
 
 
-def _default_text_to_speech_bytes(text, engine=None, language=None):
+def default_text_to_speech_bytes(text, engine=None, language=None):
     return build_silent_wav()
 
 
 # Stub libs.api before ttssrv.app1 imports it.
 fake_libs_api = types.ModuleType("libs.api")
-fake_libs_api.text_to_speech_bytes = _default_text_to_speech_bytes
+fake_libs_api.text_to_speech_bytes = default_text_to_speech_bytes
 fake_libs_api.text_to_speech_file = lambda text, filename=None, engine=None, language=None: filename or "out.wav"
-fake_libs_api.text_to_speech_bytesio = lambda text, engine=None, language=None: io.BytesIO(_default_text_to_speech_bytes(text))
+fake_libs_api.text_to_speech_bytesio = lambda text, engine=None, language=None: io.BytesIO(default_text_to_speech_bytes(text))
 fake_libs_api.play_audio = lambda data: None
 fake_libs_api.play_audio_file = lambda filename: None
 fake_libs_api.play_audio_bytes = lambda data: None
@@ -62,20 +62,20 @@ import engines as engines_pkg  # noqa: E402
 engines_pkg.get_available_engines = lambda: {}
 
 # Now safe to import the Flask app.
-from werkzeug.exceptions import abort as _abort  # noqa: E402
+from werkzeug.exceptions import abort  # noqa: E402
 
 from ttssrv import app1 as app1_module  # noqa: E402
 
 
-def _abort_view(code: int):
-    _abort(code)
+def abort_view(code: int):
+    abort(code)
 
 
 # Register before first request so Flask accepts the rule.
 app1_module.app.add_url_rule(
     "/__test_abort/<int:code>",
-    "_abort_view",
-    _abort_view,
+    "abort_view",
+    abort_view,
 )
 
 
@@ -90,7 +90,7 @@ def client(monkeypatch):
     """Flask test client with auth disabled and stubbed synthesis."""
     monkeypatch.setattr(app1_module, "TTS_TOKENS", set(), raising=False)
     monkeypatch.setattr(app1_module, "TTS_POOL_SIZE", 0, raising=False)
-    monkeypatch.setattr(app1_module, "text_to_speech_bytes", _default_text_to_speech_bytes)
+    monkeypatch.setattr(app1_module, "text_to_speech_bytes", default_text_to_speech_bytes)
     app1_module.app.config.update(TESTING=True)
     return app1_module.app.test_client()
 

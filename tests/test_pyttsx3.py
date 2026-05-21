@@ -15,7 +15,7 @@ import pytest
 from libs.exceptions import EngineNotAvailableError, TTSException
 
 
-def _make_fake_pyttsx3(write_bytes: bytes = b"RIFFFAKE", voices: list | None = None):
+def make_fake_pyttsx3(write_bytes: bytes = b"RIFFFAKE", voices: list | None = None):
     """Return a fake pyttsx3 module whose engine writes `write_bytes` to file."""
     fake = types.ModuleType("pyttsx3")
     state: dict = {}
@@ -41,19 +41,19 @@ def _make_fake_pyttsx3(write_bytes: bytes = b"RIFFFAKE", voices: list | None = N
             state["stopped"] = True
 
     fake.init = lambda: FakeEngine()
-    fake._state = state  # expose for assertions
+    fake.state = state  # expose for assertions
     return fake
 
 
 @pytest.fixture
 def engine(monkeypatch):
     """Fresh-import engines.pyttsx3 with the fake pyttsx3 in sys.modules."""
-    monkeypatch.setitem(sys.modules, "pyttsx3", _make_fake_pyttsx3())
+    monkeypatch.setitem(sys.modules, "pyttsx3", make_fake_pyttsx3())
     monkeypatch.delitem(sys.modules, "engines.pyttsx3", raising=False)
     # Make sure time.sleep doesn't actually sleep 0.5s per test.
-    import time as _time
+    import time as time_mod
 
-    monkeypatch.setattr(_time, "sleep", lambda _s: None)
+    monkeypatch.setattr(time_mod, "sleep", lambda s: None)
     return importlib.import_module("engines.pyttsx3")
 
 
@@ -80,21 +80,21 @@ def test_generate_returns_file_bytes(engine):
 def test_generate_passes_text_to_engine(engine):
     fake = sys.modules["pyttsx3"]
     engine.generate("привет", {})
-    assert fake._state["last_text"] == "привет"
+    assert fake.state["last_text"] == "привет"
 
 
 def test_generate_applies_rate_and_volume_from_config(engine):
     fake = sys.modules["pyttsx3"]
     engine.generate("hi", {"rate": 220, "volume": 0.7})
-    assert fake._state["rate"] == 220
-    assert fake._state["volume"] == 0.7
+    assert fake.state["rate"] == 220
+    assert fake.state["volume"] == 0.7
 
 
 def test_generate_uses_defaults_when_config_lacks_keys(engine):
     fake = sys.modules["pyttsx3"]
     engine.generate("hi", {})
-    assert fake._state["rate"] == 150  # documented default
-    assert fake._state["volume"] == 0.9
+    assert fake.state["rate"] == 150  # documented default
+    assert fake.state["volume"] == 0.9
 
 
 # generate — error paths
@@ -109,11 +109,11 @@ def test_generate_raises_engine_not_available_when_flag_off(engine, monkeypatch)
 def test_generate_raises_tts_exception_when_file_is_empty(monkeypatch):
     """If save_to_file produces zero bytes, generate must raise TTSException —
     not silently return an unusable empty payload."""
-    monkeypatch.setitem(sys.modules, "pyttsx3", _make_fake_pyttsx3(write_bytes=b""))
+    monkeypatch.setitem(sys.modules, "pyttsx3", make_fake_pyttsx3(write_bytes=b""))
     monkeypatch.delitem(sys.modules, "engines.pyttsx3", raising=False)
-    import time as _time
+    import time as time_mod
 
-    monkeypatch.setattr(_time, "sleep", lambda _s: None)
+    monkeypatch.setattr(time_mod, "sleep", lambda s: None)
     eng = importlib.import_module("engines.pyttsx3")
 
     with pytest.raises(TTSException, match="failed to generate"):
@@ -122,11 +122,11 @@ def test_generate_raises_tts_exception_when_file_is_empty(monkeypatch):
 
 def test_generate_handles_no_voices(monkeypatch):
     """voices=None must not crash — engine just skips setProperty('voice')."""
-    monkeypatch.setitem(sys.modules, "pyttsx3", _make_fake_pyttsx3(voices=[]))
+    monkeypatch.setitem(sys.modules, "pyttsx3", make_fake_pyttsx3(voices=[]))
     monkeypatch.delitem(sys.modules, "engines.pyttsx3", raising=False)
-    import time as _time
+    import time as time_mod
 
-    monkeypatch.setattr(_time, "sleep", lambda _s: None)
+    monkeypatch.setattr(time_mod, "sleep", lambda s: None)
     eng = importlib.import_module("engines.pyttsx3")
     audio = eng.generate("hi", {})
     assert audio == b"RIFFFAKE"

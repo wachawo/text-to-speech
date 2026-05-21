@@ -312,7 +312,7 @@ ENGINE_NOTES = {
 }
 
 
-def _model_display_name(engine: str, rel: Path) -> str:
+def model_display_name(engine: str, rel: Path) -> str:
     """Render a glob match into a grep-friendly model identifier.
 
     coqui caches models as tts/tts_models--multilingual--multi-dataset--xtts_v2/.
@@ -366,7 +366,7 @@ def list_engines_and_models() -> None:
         else:
             for f in files:
                 rel = f.relative_to(d) if f.is_relative_to(d) else f
-                rows.append((name, status, _model_display_name(name, rel)))
+                rows.append((name, status, model_display_name(name, rel)))
 
     engines_logger.setLevel(prev_level)
 

@@ -5,7 +5,7 @@
 Architecture mirrors `speech-to-text/stt_server.py`:
 - `init_engine_pool()` warms up the default engine and seeds a `queue.Queue` with
   N tokens for concurrency control. Per-request: acquire token, synthesize via
-  `text_to_speech_bytes()` (engine-level `_TTS_CACHE` hits), release token.
+  `text_to_speech_bytes()` (engine-level `TTS_CACHE` hits), release token.
 - Heavy model load happens once at startup, not per-request.
 - The actual TTS is the same `libs.api.text_to_speech_bytes` ttsgen uses;
   this server is a thin HTTP veneer over the offline pipeline.
@@ -84,7 +84,7 @@ logging.basicConfig(**LOGGING)  # type: ignore[arg-type]
 logger = logging.getLogger(__name__)
 
 # Engine pool — semaphore tokens; the actual model is cached inside engine module
-# (see engines/coquitts.py:_TTS_CACHE). Pool limits concurrent synthesis calls.
+# (see engines/coquitts.py:TTS_CACHE). Pool limits concurrent synthesis calls.
 ENGINE_POOL: queue.Queue = queue.Queue()
 
 

@@ -14,15 +14,15 @@ if str(REPO_ROOT) not in sys.path:
 import ttsapi  # noqa: E402
 
 
-class _FakeResponse:
+class FakeResponse:
     def __init__(self, status: int = 200, content: bytes = b"abc", json_data: dict | None = None):
         self.status_code = status
         self.content = content
-        self._json = json_data or {}
+        self.json_payload = json_data or {}
         self.text = ""
 
     def json(self):
-        return self._json
+        return self.json_payload
 
     def raise_for_status(self):
         if self.status_code >= 400:
@@ -36,11 +36,11 @@ def captured_calls(monkeypatch):
 
     def fake_post(url, **kwargs):
         calls.append(("POST", url, kwargs))
-        return _FakeResponse(status=200, content=b"audio")
+        return FakeResponse(status=200, content=b"audio")
 
     def fake_get(url, **kwargs):
         calls.append(("GET", url, kwargs))
-        return _FakeResponse(status=200, json_data={"engines": ["gtts"], "default": "gtts"})
+        return FakeResponse(status=200, json_data={"engines": ["gtts"], "default": "gtts"})
 
     monkeypatch.setattr(ttsapi.requests, "post", fake_post)
     monkeypatch.setattr(ttsapi.requests, "get", fake_get)

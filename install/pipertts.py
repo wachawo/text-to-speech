@@ -77,7 +77,7 @@ def select_voices(non_interactive: bool) -> list[str]:
     return chosen or codes
 
 
-def _expected_hash(manifest: dict | None, voice_path: str, basename: str, ext: str) -> tuple[str, str] | None:
+def expected_hash(manifest: dict | None, voice_path: str, basename: str, ext: str) -> tuple[str, str] | None:
     """Look up the upstream-declared hash for a voice file.
 
     rhasspy/piper-voices `voices.json` keys voices by basename (e.g.
@@ -117,7 +117,7 @@ def download_voice(code: str, target_dir: Path, manifest: dict | None) -> bool:
         dest = target_dir / f"{basename}{ext}"
         download_file(url, dest, label=f"{basename}{ext}")
 
-        expected = _expected_hash(manifest, path, basename, ext)
+        expected = expected_hash(manifest, path, basename, ext)
         if expected is None:
             warn(f"  no upstream checksum for {basename}{ext} — skipping verification")
             continue

@@ -122,7 +122,7 @@ def download_file(url: str, dest: Path, *, label: str | None = None) -> None:
     sys.stdout.flush()
 
 
-_HASH_CHUNK = 1024 * 1024  # 1 MiB read buffer for hashing
+HASH_CHUNK = 1024 * 1024  # 1 MiB read buffer for hashing
 
 
 def hash_file(path: Path, algo: str = "sha256") -> str:
@@ -130,7 +130,7 @@ def hash_file(path: Path, algo: str = "sha256") -> str:
     h = hashlib.new(algo)
     with open(path, "rb") as f:
         while True:
-            block = f.read(_HASH_CHUNK)
+            block = f.read(HASH_CHUNK)
             if not block:
                 break
             h.update(block)

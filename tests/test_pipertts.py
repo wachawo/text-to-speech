@@ -19,11 +19,11 @@ import wave
 
 import pytest
 
-from install.pipertts import VOICES, VOICES_JSON_URL, _expected_hash
+from install.pipertts import VOICES, VOICES_JSON_URL, expected_hash
 from libs.exceptions import EngineNotAvailableError, TTSException
 
 
-def _make_fake_piper(synthesise_bytes: bytes = b""):
+def make_fake_piper(synthesise_bytes: bytes = b""):
     """Fake `piper` module with a PiperVoice that writes a valid WAV."""
     fake = types.ModuleType("piper")
 
@@ -47,7 +47,7 @@ def _make_fake_piper(synthesise_bytes: bytes = b""):
 
 @pytest.fixture
 def engine(monkeypatch):
-    monkeypatch.setitem(sys.modules, "piper", _make_fake_piper())
+    monkeypatch.setitem(sys.modules, "piper", make_fake_piper())
     monkeypatch.delitem(sys.modules, "engines.pipertts", raising=False)
     return importlib.import_module("engines.pipertts")
 
@@ -83,9 +83,9 @@ def test_models_dir_falls_back_to_cache_pipertts_in_project(engine, monkeypatch,
     pipertts_dir = fake_project / "cache" / "pipertts"
     pipertts_dir.mkdir(parents=True)
 
-    import os as _os
+    import os as os_mod
 
-    real_dirname = _os.path.dirname
+    real_dirname = os_mod.path.dirname
 
     def stubbed_dirname(p):
         # First call returns engines/, second engines/.. — i.e. project root.
@@ -93,7 +93,7 @@ def test_models_dir_falls_back_to_cache_pipertts_in_project(engine, monkeypatch,
             return str(fake_project)
         return real_dirname(p)
 
-    monkeypatch.setattr(_os.path, "dirname", stubbed_dirname)
+    monkeypatch.setattr(os_mod.path, "dirname", stubbed_dirname)
     assert engine.get_models_directory() == str(pipertts_dir)
 
 
@@ -197,12 +197,58 @@ def test_generate_returns_valid_wav_bytes(engine, monkeypatch, tmp_path):
         assert w.getframerate() == 22050
 
 
+# get_voice — module-level cache (issue #11)
+
+
+def test_generate_caches_voice_between_calls(engine, monkeypatch, tmp_path):
+    """PiperVoice.load is the dominant cost (~1.5s) — repeated calls for the
+    same voice MUST hit the cache instead of re-loading the ONNX session."""
+    engine.VOICE_CACHE.clear()
+    monkeypatch.setattr(engine, "get_voice_path", lambda lang: str(tmp_path / "v.onnx"))
+
+    calls = {"n": 0}
+    fake_voice_cls = engine.PiperVoice
+    original_load = fake_voice_cls.load
+
+    def counting_load(path):
+        calls["n"] += 1
+        return original_load(path)
+
+    monkeypatch.setattr(engine.PiperVoice, "load", staticmethod(counting_load))
+
+    engine.generate("first", {"language": "en"})
+    engine.generate("second", {"language": "en"})
+
+    assert calls["n"] == 1
+
+
+def test_generate_creates_separate_voice_per_path(engine, monkeypatch, tmp_path):
+    """Cache is keyed by voice_path — different paths must each load once."""
+    engine.VOICE_CACHE.clear()
+    paths = iter([str(tmp_path / "a.onnx"), str(tmp_path / "b.onnx")])
+    monkeypatch.setattr(engine, "get_voice_path", lambda lang: next(paths))
+
+    calls = {"n": 0}
+    original_load = engine.PiperVoice.load
+
+    def counting_load(path):
+        calls["n"] += 1
+        return original_load(path)
+
+    monkeypatch.setattr(engine.PiperVoice, "load", staticmethod(counting_load))
+
+    engine.generate("a", {"language": "en"})
+    engine.generate("b", {"language": "en"})
+
+    assert calls["n"] == 2
+
+
 # voices.json manifest — schema sanity check (network)
 
 EXPECTED_HASH_KEYS = {"sha256", "md5_digest", "md5"}
 
 
-def _try_fetch_manifest() -> dict | None:
+def try_fetch_manifest() -> dict | None:
     try:
         req = urllib.request.Request(VOICES_JSON_URL, headers={"User-Agent": "ttsgen-tests"})
         with urllib.request.urlopen(req, timeout=15) as resp:
@@ -213,7 +259,7 @@ def _try_fetch_manifest() -> dict | None:
 
 @pytest.fixture(scope="module")
 def manifest() -> dict:
-    data = _try_fetch_manifest()
+    data = try_fetch_manifest()
     if data is None:
         pytest.skip(f"manifest not reachable: {VOICES_JSON_URL}")
     assert data is not None
@@ -228,9 +274,10 @@ def test_manifest_has_entry_for_every_voice_we_install(manifest: dict) -> None:
 def test_every_voice_file_has_a_known_hash_key(manifest: dict) -> None:
     """For each voice we ship, both .onnx and .onnx.json must expose at least
     one of (sha256 | md5_digest | md5). If upstream renames the field this
-    test fails — better than _expected_hash silently returning None."""
+    test fails — better than expected_hash silently returning None."""
     bad: list[str] = []
-    for code, (path, basename, _label) in VOICES.items():
+    for code, voice_info in VOICES.items():
+        path, basename = voice_info[0], voice_info[1]
         entry = manifest.get(basename)
         files = entry.get("files") if isinstance(entry, dict) else None
         if not isinstance(files, dict):
@@ -250,16 +297,17 @@ def test_every_voice_file_has_a_known_hash_key(manifest: dict) -> None:
 
 def test_expected_hash_extracts_a_value_for_every_voice(manifest: dict) -> None:
     """Round-trip through the helper itself — any voice for which
-    _expected_hash returns None means verify_checksum will be skipped at
+    expected_hash returns None means verify_checksum will be skipped at
     install time, which is what we want to know about now (not later)."""
     skipped: list[str] = []
-    for code, (path, basename, _label) in VOICES.items():
+    for code, voice_info in VOICES.items():
+        path, basename = voice_info[0], voice_info[1]
         for ext in (".onnx", ".onnx.json"):
-            result = _expected_hash(manifest, path, basename, ext)
+            result = expected_hash(manifest, path, basename, ext)
             if result is None:
                 skipped.append(f"{code}{ext}")
             else:
                 digest, algo = result
                 assert isinstance(digest, str) and digest
                 assert algo in {"sha256", "md5"}
-    assert not skipped, "_expected_hash returned None for: " + ", ".join(skipped)
+    assert not skipped, "expected_hash returned None for: " + ", ".join(skipped)
