@@ -18,6 +18,33 @@ Switch transparently between cloud and local TTS engines via a single interface.
 
 See [`docs/ENGINES.md`](docs/ENGINES.md) for the full engine matrix and tuning.
 
+## Quick start
+
+```bash
+# Install the CLI (lightweight deps only — gtts, pyttsx3, pygame)
+pip install git+https://github.com/wachawo/text-to-speech.git
+
+# Synthesize and play (default engine: gtts, online)
+ttsgen "Hello world"
+
+# Save to a file instead of playing
+ttsgen "Hello world" --file output.mp3
+
+# Pick a different engine (pyttsx3 is fully offline)
+ttsgen "Hello world" -e pyttsx3
+
+# Install an offline neural engine, then use it
+ttsgen --install coquitts
+ttsgen "Hello world" -e coquitts -f out.wav
+```
+
+`gtts` (online) and `pyttsx3` (offline) work right after install. Offline neural
+engines — `pipertts`, `silerotts`, `coquitts`, `barktts`, `kokorotts` — pull
+heavier deps and models on demand via `ttsgen --install <engine>`; see
+[Adding optional engines](#adding-optional-engines). Most flags have short forms
+(`-e/--engine`, `-f/--file`, `-l/--language`, `-o/--output`, …); the full command
+reference is in [Usage](#usage).
+
 ## Features
 
 - One CLI, one API for all engines

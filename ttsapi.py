@@ -108,17 +108,17 @@ Configuration (read from process env, ./ttsgen.conf, ~/.config/ttsgen.conf, .env
     text_group = parser.add_mutually_exclusive_group(required=True)
     text_group.add_argument("text", nargs="?", help="Text to synthesize")
     text_group.add_argument("-i", "--input", metavar="FILE", dest="text_file", help="Path to text file")
-    text_group.add_argument("--list", action="store_true", help="List engines available on the remote server")
+    text_group.add_argument("-L", "--list", action="store_true", help="List engines available on the remote server")
 
     parser.add_argument(
         "-f", "--file", nargs="?", const="", metavar="PATH", help="Save server response to file (auto-name if no PATH)"
     )
     parser.add_argument("-p", "--play", action="store_true", help="Play audio (default)")
-    parser.add_argument("--stdout", action="store_true", help="Output audio bytes to stdout")
+    parser.add_argument("-s", "--stdout", action="store_true", help="Output audio bytes to stdout")
     parser.add_argument("-o", "--output", metavar="FORMATS", help="Comma-separated: play, file, stdout")
     parser.add_argument("-e", "--engine", help="Remote engine name (server's TTS_ENGINE if omitted)")
     parser.add_argument("-l", "--language", default="en", help="Language code (default: en)")
-    parser.add_argument("--audio-dir", metavar="DIR", help="Directory for saved files (default: audio/)")
+    parser.add_argument("-d", "--audio-dir", metavar="DIR", help="Directory for saved files (default: audio/)")
 
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("-q", "--quiet", action="store_true")
