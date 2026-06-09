@@ -176,11 +176,13 @@ Environment Configuration:
         help="Path to text file to read",
     )
     text_group.add_argument(
+        "-L",
         "--list",
         action="store_true",
         help="List engines and installed model files, then exit",
     )
     text_group.add_argument(
+        "-I",
         "--install",
         metavar="ENGINE",
         help="Install an engine (pipertts, silerotts, coquitts, barktts, kokorotts) and exit",
@@ -188,6 +190,7 @@ Environment Configuration:
 
     # Non-interactive flag — only meaningful with --install
     parser.add_argument(
+        "-n",
         "--non-interactive",
         action="store_true",
         help="Skip prompts in --install (accept defaults)",
@@ -211,6 +214,7 @@ Environment Configuration:
         help="Play audio (default if no other output specified)",
     )
     parser.add_argument(
+        "-s",
         "--stdout",
         action="store_true",
         help="Output audio bytes to stdout (disables --file)",
@@ -232,6 +236,7 @@ Environment Configuration:
 
     # Audio directory option
     parser.add_argument(
+        "-d",
         "--audio-dir",
         metavar="DIR",
         help="Directory to save audio files (default: audio/)",
@@ -239,12 +244,14 @@ Environment Configuration:
 
     # Engine-specific options (override .env values for one run)
     parser.add_argument(
+        "-m",
         "--coqui-model",
         metavar="MODEL",
         help='coqui-tts model identifier (e.g. "tts_models/multilingual/multi-dataset/xtts_v2"). '
         "Sets COQUITTS_MODEL for this run.",
     )
     parser.add_argument(
+        "-w",
         "--coqui-sample",
         metavar="PATH",
         help="Path to voice sample WAV used by xtts_v2 voice cloning. Sets COQUITTS_SAMPLE for this run.",
