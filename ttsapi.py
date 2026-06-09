@@ -108,9 +108,7 @@ Configuration (read from process env, ./ttsgen.conf, ~/.config/ttsgen.conf, .env
     text_group = parser.add_mutually_exclusive_group(required=True)
     text_group.add_argument("text", nargs="?", help="Text to synthesize")
     text_group.add_argument("-i", "--input", metavar="FILE", dest="text_file", help="Path to text file")
-    text_group.add_argument(
-        "-L", "--list", action="store_true", help="List engines available on the remote server"
-    )
+    text_group.add_argument("-L", "--list", action="store_true", help="List engines available on the remote server")
 
     parser.add_argument(
         "-f", "--file", nargs="?", const="", metavar="PATH", help="Save server response to file (auto-name if no PATH)"
