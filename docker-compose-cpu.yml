@@ -1,14 +1,13 @@
-# CPU-only variant. For GPU use docker/gpu/docker-compose.yml.
-# Run from the repo root and pass the root .env explicitly — compose looks for a
-# .env next to the compose file (docker/cpu/), NOT here, so ${VAR} interpolation
-# (e.g. the published port below) would otherwise fall back to defaults:
-#   docker compose --env-file .env -f docker/cpu/docker-compose.yml up -d
-# Volume / build paths use ../.. so they resolve to the repo root regardless.
+# CPU-only variant. For GPU use docker-compose.yml (the default).
+# Run from the repo root:
+#   docker compose -f docker-compose-cpu.yml up -d
+# This file lives at the repo root so compose auto-discovers the root .env for
+# ${VAR} interpolation (published port, engine, …) with no --env-file flag.
 
 services:
   ttssrv:
     build:
-      context: ../..
+      context: .
       dockerfile: docker/cpu/Dockerfile
     image: ttssrv_cpu
     pull_policy: build
@@ -18,14 +17,13 @@ services:
     networks:
       - tts_network
     env_file:
-      - ../../.env
+      - ./.env
     environment:
       TZ:                ${TZ:-America/New_York}
       TTS_HOST:          ${TTS_HOST:-0.0.0.0}
-      # Container always listens on 5000 (EXPOSE, ports target, and healthcheck
-      # below are all fixed to 5000). TTS_PORT from .env controls only the
-      # host-published port in the `ports:` mapping, not the in-container bind.
-      TTS_PORT:          "5000"
+      # TTS_PORT drives the bind end-to-end: the app listens on it, and the
+      # `ports:` mapping + healthcheck below publish/probe the same port.
+      TTS_PORT:          ${TTS_PORT:-5000}
       TTS_DEBUG:         ${TTS_DEBUG:-False}
       TTS_TOKENS:        ${TTS_TOKENS:-}
       CORS_ORIGINS:      ${CORS_ORIGINS:-*}
@@ -42,22 +40,22 @@ services:
       PYTHONUSERBASE:    /opt/userbase
       PIP_CACHE_DIR:     /opt/pip-cache
     ports:
-      - "${TTS_PORT:-5000}:5000"
+      - "${TTS_PORT:-5000}:${TTS_PORT:-5000}"
     volumes:
-      - ../../userbase:/opt/userbase
-      - ../../pip-cache:/opt/pip-cache
-      - ../../cache:/opt/cache
-      - ../../samples:/opt/samples:ro
-      - ../../.env:/opt/.env:ro
-      - ../../libs:/usr/local/lib/python3.12/site-packages/libs:ro
-      - ../../engines:/usr/local/lib/python3.12/site-packages/engines:ro
-      - ../../install:/usr/local/lib/python3.12/site-packages/install:ro
-      - ../../ttssrv:/opt/ttssrv:ro
+      - ./userbase:/opt/userbase
+      - ./pip-cache:/opt/pip-cache
+      - ./cache:/opt/cache
+      - ./samples:/opt/samples:ro
+      - ./.env:/opt/.env:ro
+      - ./libs:/usr/local/lib/python3.12/site-packages/libs:ro
+      - ./engines:/usr/local/lib/python3.12/site-packages/engines:ro
+      - ./install:/usr/local/lib/python3.12/site-packages/install:ro
+      - ./ttssrv:/opt/ttssrv:ro
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     healthcheck:
       test: ["CMD", "python3", "-c",
-             "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/health', timeout=5)"]
+             "import urllib.request; urllib.request.urlopen('http://localhost:${TTS_PORT:-5000}/api/health', timeout=5)"]
       interval: 30s
       timeout: 10s
       start_period: 600s

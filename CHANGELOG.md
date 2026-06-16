@@ -1,5 +1,25 @@
 ## Changelog
 
+### [Unreleased]
+
+#### Changed
+- **Docker layout — compose files moved back to the repo root**
+  (`docker-compose.yml` for GPU, `docker-compose-cpu.yml` for CPU);
+  Dockerfiles + requirements stay under `docker/{cpu,gpu}/`. Compose now
+  auto-discovers the root `.env` for `${VAR}` interpolation — no
+  `--env-file` flag needed. `TTS_PORT` drives the bind end-to-end
+  (`${TTS_PORT}:${TTS_PORT}` plus the healthcheck), so the container is
+  reachable on the exact port set in `.env`.
+
+#### Fixed
+- `ttssrv` logging: removed a stray `logging.basicConfig()` in `libs/api.py`
+  that grabbed the root logger and turned each entrypoint's own
+  `basicConfig(**LOGGING)` into a no-op — losing the unified format and all
+  INFO lines, including the uvicorn startup banner. Server logs (uvicorn
+  included) now share the standard `YYYY-MM-DD HH:MM:SS.mmm [LEVEL]` format.
+- Silenced the `pkg_resources` deprecation warning that pygame prints at
+  import time.
+
 ### [1.0.2] — 2026-05-11
 
 #### Changed

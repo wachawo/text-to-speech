@@ -1,13 +1,13 @@
-# Run from the repo root and pass the root .env explicitly — compose looks for a
-# .env next to the compose file (docker/gpu/), NOT here, so ${VAR} interpolation
-# (e.g. the published port below) would otherwise fall back to defaults:
-#   docker compose --env-file .env -f docker/gpu/docker-compose.yml up -d
-# Volume / build paths use ../.. so they resolve to the repo root regardless.
+# GPU variant (default). For CPU use docker-compose-cpu.yml.
+# Run from the repo root:
+#   docker compose up -d
+# This file lives at the repo root so compose auto-discovers the root .env for
+# ${VAR} interpolation (published port, engine, …) with no --env-file flag.
 
 services:
   ttssrv:
     build:
-      context: ../..
+      context: .
       dockerfile: docker/gpu/Dockerfile
     image: ttssrv_gpu
     pull_policy: build
@@ -17,14 +17,13 @@ services:
     networks:
       - tts_network
     env_file:
-      - ../../.env
+      - ./.env
     environment:
       TZ:                         ${TZ:-America/New_York}
       TTS_HOST:                   ${TTS_HOST:-0.0.0.0}
-      # Container always listens on 5000 (EXPOSE, ports target, and healthcheck
-      # below are all fixed to 5000). TTS_PORT from .env controls only the
-      # host-published port in the `ports:` mapping, not the in-container bind.
-      TTS_PORT:                   "5000"
+      # TTS_PORT drives the bind end-to-end: the app listens on it, and the
+      # `ports:` mapping + healthcheck below publish/probe the same port.
+      TTS_PORT:                   ${TTS_PORT:-5000}
       TTS_DEBUG:                  ${TTS_DEBUG:-False}
       # Server-side allow-list (comma-separated). Empty = auth OFF. NOT the same
       # var as TTS_TOKEN, which is the client-side token used by ttsapi.
@@ -49,29 +48,29 @@ services:
       NVIDIA_VISIBLE_DEVICES:     "all"
       NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
     ports:
-      - "${TTS_PORT:-5000}:5000"
+      - "${TTS_PORT:-5000}:${TTS_PORT:-5000}"
     volumes:
       # Engine packages installed at runtime via `pip install --user`.
       # First start of a new engine = pip download + install (slow); subsequent
       # starts hit the wheel cache below and finish in <1s.
-      - ../../userbase:/opt/userbase
-      - ../../pip-cache:/opt/pip-cache
+      - ./userbase:/opt/userbase
+      - ./pip-cache:/opt/pip-cache
       # All per-engine model caches (cache/coquitts, cache/kokorotts, …) under
       # one root — survive container recreate.
-      - ../../cache:/opt/cache
+      - ./cache:/opt/cache
       # Voice samples (xtts_v2 voice cloning) + .env passthrough.
-      - ../../samples:/opt/samples:ro
-      - ../../.env:/opt/.env:ro
+      - ./samples:/opt/samples:ro
+      - ./.env:/opt/.env:ro
       # Live source for dev — survive rebuilds without `docker cp`.
-      - ../../libs:/usr/local/lib/python3.12/site-packages/libs:ro
-      - ../../engines:/usr/local/lib/python3.12/site-packages/engines:ro
-      - ../../install:/usr/local/lib/python3.12/site-packages/install:ro
-      - ../../ttssrv:/opt/ttssrv:ro
+      - ./libs:/usr/local/lib/python3.12/site-packages/libs:ro
+      - ./engines:/usr/local/lib/python3.12/site-packages/engines:ro
+      - ./install:/usr/local/lib/python3.12/site-packages/install:ro
+      - ./ttssrv:/opt/ttssrv:ro
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     healthcheck:
       test: ["CMD", "python3", "-c",
-             "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/health', timeout=5)"]
+             "import urllib.request; urllib.request.urlopen('http://localhost:${TTS_PORT:-5000}/api/health', timeout=5)"]
       interval: 30s
       timeout: 10s
       # First start may download xtts_v2 (~1.8 GB) into the cache volume.

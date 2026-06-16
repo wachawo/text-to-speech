@@ -223,11 +223,11 @@ buf = text_to_speech_bytesio("Hello world!", engine="pipertts")
 The Flask server (`ttssrv`) preloads the engine once at startup, then serves synthesis requests with a `queue.Queue`-based pool (concurrency limit = `TTS_POOL_SIZE`). Two Docker variants:
 
 ```bash
-# GPU (CUDA 12.1, requires nvidia-container-toolkit on host)
-docker compose -f docker/gpu/docker-compose.yml up --build -d
+# GPU (CUDA 12.1, requires nvidia-container-toolkit on host) — the default
+docker compose up --build -d
 
 # CPU-only
-docker compose -f docker/cpu/docker-compose.yml up --build -d
+docker compose -f docker-compose-cpu.yml up --build -d
 ```
 
 Direct HTTP usage:
