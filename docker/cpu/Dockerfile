@@ -15,6 +15,7 @@ WORKDIR /opt
 RUN apt-get update && apt-get install -y --no-install-recommends \
         espeak espeak-data libespeak1 \
         ffmpeg \
+        build-essential \
         ca-certificates git curl \
     && rm -rf /var/lib/apt/lists/*
 
