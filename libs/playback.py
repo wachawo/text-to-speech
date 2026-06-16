@@ -7,6 +7,7 @@ Handles audio playback using pygame.
 import os
 import tempfile
 import logging
+import warnings
 from typing import Union
 
 from .exceptions import EngineNotAvailableError, TTSException, ValidationError
@@ -21,8 +22,12 @@ AudioSource = Union[str, bytes]
 # Try to import pygame
 try:
     os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
-    import pygame
-    from pygame import mixer
+    # pygame imports the deprecated pkg_resources at import time, which prints a
+    # UserWarning. Silence just that one message — keep all other warnings intact.
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="pkg_resources is deprecated", category=UserWarning)
+        import pygame
+        from pygame import mixer
 
     PYGAME_AVAILABLE = True
 except ImportError:

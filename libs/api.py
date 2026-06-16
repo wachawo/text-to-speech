@@ -34,8 +34,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import playback
 
-# Configure logging
-logging.basicConfig(level=logging.WARNING)
+# Module logger only — a library must not call logging.basicConfig(), which would
+# grab the root logger and turn the entrypoint's own basicConfig(**LOGGING) into a
+# no-op (Python's default root level is already WARNING).
 logger = logging.getLogger(__name__)
 
 # Type definitions

@@ -1,8 +1,9 @@
 # CPU-only variant. For GPU use docker/gpu/docker-compose.yml.
-# Run from anywhere:
-#   docker compose -f docker/cpu/docker-compose.yml up -d
-# Or from this directory:
-#   cd docker/cpu && docker compose up -d
+# Run from the repo root and pass the root .env explicitly — compose looks for a
+# .env next to the compose file (docker/cpu/), NOT here, so ${VAR} interpolation
+# (e.g. the published port below) would otherwise fall back to defaults:
+#   docker compose --env-file .env -f docker/cpu/docker-compose.yml up -d
+# Volume / build paths use ../.. so they resolve to the repo root regardless.
 
 services:
   ttssrv:
@@ -21,7 +22,10 @@ services:
     environment:
       TZ:                ${TZ:-America/New_York}
       TTS_HOST:          ${TTS_HOST:-0.0.0.0}
-      TTS_PORT:          ${TTS_PORT:-5000}
+      # Container always listens on 5000 (EXPOSE, ports target, and healthcheck
+      # below are all fixed to 5000). TTS_PORT from .env controls only the
+      # host-published port in the `ports:` mapping, not the in-container bind.
+      TTS_PORT:          "5000"
       TTS_DEBUG:         ${TTS_DEBUG:-False}
       TTS_TOKENS:        ${TTS_TOKENS:-}
       CORS_ORIGINS:      ${CORS_ORIGINS:-*}
