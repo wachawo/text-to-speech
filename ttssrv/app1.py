@@ -76,8 +76,8 @@ DATETIME_FMT = "%Y-%m-%d %H:%M:%S"
 # Logging
 LOGGING = {
     "handlers": [logging.StreamHandler()],
-    "format": "%(asctime)s.%(msecs)03d [%(levelname)s]: (%(name)s) %(message)s",
-    "level": logging.INFO,
+    "format": "%(asctime)s.%(msecs)03d [%(levelname)s]: (%(name)s.%(funcName)s) %(message)s",
+    "level": logging.DEBUG if TTS_DEBUG else logging.INFO,
     "datefmt": "%Y-%m-%d %H:%M:%S",
 }
 logging.basicConfig(**LOGGING)  # type: ignore[arg-type]
@@ -315,7 +315,8 @@ def main() -> int:
             WsgiToAsgi(app),
             host=TTS_HOST,
             port=TTS_PORT,
-            log_level="info",
+            log_config=None,  # always None: keep our LOGGING, never run uvicorn's own dictConfig
+            access_log=False,  # after_request logs every request line; only /api/health is demoted to debug
         )
     return 0
 
