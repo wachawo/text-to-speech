@@ -8,8 +8,11 @@ Supports: Russian, English, German, Spanish, French, Ukrainian, and more.
 """
 
 import io
-import os
 import logging
+import os
+import wave
+
+import numpy as np
 
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
 
@@ -39,8 +42,10 @@ TTS_CACHE: dict = {}
 
 # Try to import Silero dependencies
 try:
+    # torchaudio is no longer used for encoding (see generate()), but is kept as
+    # an availability probe: it is part of Silero's dependency footprint.
     import torch  # type: ignore
-    import torchaudio  # type: ignore
+    import torchaudio  # type: ignore  # noqa: F401
 
     AVAILABLE = True
 except ImportError:
@@ -185,20 +190,21 @@ def generate(text: str, config: dict) -> bytes:
             model.to(device)
             TTS_CACHE[cache_key] = model
 
-        # Generate audio
+        # Generate audio (float32 mono waveform in [-1, 1]).
         audio_tensor = model.apply_tts(text=text, speaker=speaker, sample_rate=sample_rate)
 
-        # Convert tensor to WAV bytes
+        # Encode WAV with the stdlib `wave` module instead of torchaudio.save():
+        # in torchaudio >= 2.9 save() routes through the torchcodec backend, whose
+        # encoder cannot write to a file-like object (it needs a real path +
+        # extension) and raises "Couldn't allocate AVFormatContext" on a BytesIO.
+        samples = audio_tensor.squeeze().detach().cpu().numpy()
+        pcm16 = (np.clip(samples, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
         audio_buffer = io.BytesIO()
-
-        # Ensure audio is 2D (channels, samples)
-        if audio_tensor.dim() == 1:
-            audio_tensor = audio_tensor.unsqueeze(0)
-
-        # Save to buffer as WAV
-        torchaudio.save(audio_buffer, audio_tensor, sample_rate, format="wav")
-
-        audio_buffer.seek(0)
+        with wave.open(audio_buffer, "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(sample_rate)
+            wav_file.writeframes(pcm16)
         return audio_buffer.getvalue()
 
     except Exception as e:

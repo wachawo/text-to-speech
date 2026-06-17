@@ -25,6 +25,12 @@
   `available` (deps installed), `preload` (startup set) and `default`.
 
 #### Fixed
+- **SileroTTS encodes WAV via the stdlib `wave` module** instead of
+  `torchaudio.save()`. Under torchaudio ≥ 2.9 `save()` routes through the
+  torchcodec backend, whose encoder cannot write to a file-like object (it needs
+  a real path + extension) and raised *"Couldn't allocate AVFormatContext"* on a
+  `BytesIO` — failing every SileroTTS synthesis (both batch and streaming) with a
+  500. The waveform is now converted to 16-bit PCM and written directly.
 - **SileroTTS now caches its loaded model** (`TTS_CACHE` keyed by
   `(model_id, device)`), mirroring CoquiTTS. Previously `generate()` re-ran
   `torch.hub.load` on every call, re-instantiating the model each time.
