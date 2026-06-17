@@ -8,3 +8,5 @@ torch
 torchaudio
 coqui-tts[codec]
 transformers>=4.46,<5.0
+# Silero (torch.hub) loads its model package via omegaconf.
+omegaconf

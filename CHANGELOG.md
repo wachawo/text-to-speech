@@ -2,7 +2,31 @@
 
 ### [Unreleased]
 
+### [1.0.3] — 2026-06-17
+
+#### Added
+- **`ttssrv` can preload several engines at once via `TTS_ENGINES`**
+  (comma-separated, e.g. `coquitts,silerotts`). Each engine is installed by
+  `entrypoint.sh` and warmed by `init_engine_pool()` at startup, so its model
+  stays resident and is selected per request through the `engine` field —
+  letting a fast engine (silerotts, ~0.1s) serve requests alongside a heavy
+  one (coquitts) without a reload. `TTS_ENGINE` remains the request default and
+  the fallback when `TTS_ENGINES` is unset. The pool stays a single shared
+  semaphore capping total concurrent synthesis across all engines.
+- `GET /api/engines` now reports `supported` (engine modules shipped),
+  `available` (deps installed), `preload` (startup set) and `default`.
+
+#### Fixed
+- **SileroTTS now caches its loaded model** (`TTS_CACHE` keyed by
+  `(model_id, device)`), mirroring CoquiTTS. Previously `generate()` re-ran
+  `torch.hub.load` on every call, re-instantiating the model each time.
+- SileroTTS dependency `omegaconf` is now declared in the GPU/CPU Docker
+  requirements (its torch.hub model package imports it), so the engine no
+  longer fails at synthesis time when only the default engine was installed.
+
 #### Changed
+- `ttssrv` request log now reports duration and drops the duplicate status
+  code: `POST /api/tts: 200 OK (0.123s)`.
 - **Docker layout — compose files moved back to the repo root**
   (`docker-compose.yml` for GPU, `docker-compose-cpu.yml` for CPU);
   Dockerfiles + requirements stay under `docker/{cpu,gpu}/`. Compose now

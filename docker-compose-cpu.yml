@@ -29,6 +29,9 @@ services:
       CORS_ORIGINS:      ${CORS_ORIGINS:-*}
       TTS_POOL_SIZE:     ${TTS_POOL_SIZE:-1}
       TTS_ENGINE:        ${TTS_ENGINE:-gtts}
+      # Comma-separated set installed + preloaded at startup (entrypoint.sh +
+      # init_engine_pool). Empty → just TTS_ENGINE. e.g. coquitts,silerotts
+      TTS_ENGINES:       ${TTS_ENGINES:-}
       TTS_LANGUAGE:      ${TTS_LANGUAGE:-en}
       COQUITTS_MODELS:   /opt/cache/coquitts
       COQUITTS_MODEL:    ${COQUITTS_MODEL:-tts_models/multilingual/multi-dataset/xtts_v2}
