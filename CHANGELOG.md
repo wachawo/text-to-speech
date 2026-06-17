@@ -2,6 +2,16 @@
 
 ### [Unreleased]
 
+#### Added
+- **Streaming synthesis — `/api/tts?stream=true`.** Synthesizes the text one
+  chunk at a time (via `libs.cli.chunk_text`) and streams audio with chunked
+  transfer encoding, so a client hears the first sentence without waiting for the
+  whole utterance. WAV engines emit a single streaming WAV (one header with
+  placeholder sizes + concatenated PCM); gtts (MP3) concatenates per-chunk bytes.
+  One engine-pool slot is held for the duration of the stream. New
+  `TTS_STREAM_MAX_CHARS` env (default 200) controls chunk size. Works for both
+  `GET` and `POST`. New module `ttssrv/streaming.py` + `tests/test_stream.py`.
+
 #### Changed
 - **Docker layout — compose files moved back to the repo root**
   (`docker-compose.yml` for GPU, `docker-compose-cpu.yml` for CPU);
