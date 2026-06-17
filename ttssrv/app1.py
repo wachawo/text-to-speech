@@ -184,12 +184,14 @@ def token_required(view):
 @app.before_request
 def assign_request_id():
     g.request_id = uuid.uuid4().hex[:12]
+    g.start_time = time.monotonic()
 
 
 @app.after_request
 def after_request(resp):
     log_fn = logger.debug if request.path == "/api/health" else logger.info
-    log_fn(f"[{get_req_id()}] {request.method} {request.path}: {resp.status_code} {resp.status}")
+    elapsed = time.monotonic() - getattr(g, "start_time", time.monotonic())
+    log_fn(f"[{get_req_id()}] {request.method} {request.path}: {resp.status} ({elapsed:.3f}s)")
     return resp
 
 
