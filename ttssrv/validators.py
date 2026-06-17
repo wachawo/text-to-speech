@@ -13,3 +13,5 @@ class TtsRequestSchema(Schema):
     text = fields.Str(required=True, validate=validate.Length(min=1, max=1_000_000))
     engine = fields.Str(load_default=None)
     language = fields.Str(load_default=None, validate=validate.Length(equal=2))
+    # When true, stream audio chunk-by-chunk (chunked transfer) for low latency.
+    stream = fields.Bool(load_default=False)

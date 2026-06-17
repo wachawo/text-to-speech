@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytz
 import werkzeug.exceptions
-from flask import Flask, g, jsonify, request, send_file
+from flask import Flask, Response, g, jsonify, request, send_file, stream_with_context
 from flask.json.provider import DefaultJSONProvider
 from flask_cors import CORS
 from marshmallow import ValidationError as MarshmallowValidationError
@@ -41,12 +41,14 @@ from dotenv import find_dotenv, load_dotenv  # noqa: E402
 
 from engines import get_available_engines, get_supported_engines  # noqa: E402
 from libs.api import text_to_speech_bytes  # noqa: E402
+from libs.cli import chunk_text  # noqa: E402
 from libs.exceptions import (  # noqa: E402
     CustomError,
     EngineNotAvailableError,
     TTSException,
     ValidationError,
 )
+from ttssrv.streaming import streaming_wav_header, wav_data, wav_params  # noqa: E402
 from ttssrv.validators import TtsRequestSchema  # noqa: E402
 
 # .env via find_dotenv (walks up from cwd) → then .env.local override.
@@ -77,6 +79,7 @@ TTS_ENGINE_DEFAULT = os.getenv("TTS_ENGINE") or (TTS_ENGINES[0] if TTS_ENGINES e
 if not TTS_ENGINES:
     TTS_ENGINES = [TTS_ENGINE_DEFAULT]
 TTS_LANGUAGE_DEFAULT = os.getenv("TTS_LANGUAGE", "en")
+TTS_STREAM_MAX_CHARS = int(os.getenv("TTS_STREAM_MAX_CHARS", "200"))
 TIMEZONE = pytz.timezone(os.getenv("TZ", "America/New_York"))
 DATETIME_FMT = "%Y-%m-%d %H:%M:%S"
 
@@ -243,6 +246,54 @@ def engines_list():
     )
 
 
+def stream_tts(text: str, engine: str, language: str):
+    """Synthesize per chunk and stream audio as it is ready (chunked transfer).
+
+    WAV engines emit one streaming WAV (single header + concatenated PCM); MP3
+    (gtts) concatenates per-chunk bytes. One pool slot is held for the whole
+    stream and released when the generator is exhausted or the client disconnects.
+    """
+    chunks = chunk_text(text, max_len=TTS_STREAM_MAX_CHARS) or [text]
+
+    slot = None
+    if TTS_POOL_SIZE > 0:
+        try:
+            slot = ENGINE_POOL.get(timeout=120)
+        except queue.Empty:
+            return jsonify({"error": "All engine slots busy (timeout)"}), 503
+
+    # Synthesize the first chunk up front so the audio format (and any engine
+    # error) is known before the streaming response headers are committed.
+    try:
+        first = text_to_speech_bytes(text=chunks[0], engine=engine, language=language)
+    except Exception:
+        if slot is not None:
+            ENGINE_POOL.put(slot)
+        raise
+
+    mimetype, unused_ext = detect_audio_mime(first)
+    is_wav = mimetype == "audio/wav"
+
+    def generate():
+        try:
+            if is_wav:
+                rate, channels, width = wav_params(first)
+                yield streaming_wav_header(rate, channels, width)
+                yield wav_data(first)
+            else:
+                yield first
+            for chunk in chunks[1:]:
+                blob = text_to_speech_bytes(text=chunk, engine=engine, language=language)
+                yield wav_data(blob) if is_wav else blob
+        except Exception as exc:
+            logger.error(f"[{get_req_id()}] stream aborted: {type(exc).__name__}: {exc}")
+        finally:
+            if slot is not None:
+                ENGINE_POOL.put(slot)
+
+    return Response(stream_with_context(generate()), mimetype=mimetype)
+
+
 @app.route("/api/tts", methods=["GET", "POST"])
 @token_required
 def tts_generate():
@@ -251,7 +302,10 @@ def tts_generate():
     engine = data.get("engine") or TTS_ENGINE_DEFAULT
     language = data.get("language") or TTS_LANGUAGE_DEFAULT
 
-    logger.info(f"[{get_req_id()}] TTS request: engine={engine} language={language} chars={len(text)}")
+    logger.info(f"[{get_req_id()}] TTS request: engine={engine} language={language} chars={len(text)} stream={data['stream']}")
+
+    if data["stream"]:
+        return stream_tts(text, engine, language)
 
     slot = None
     if TTS_POOL_SIZE > 0:

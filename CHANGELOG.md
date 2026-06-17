@@ -13,6 +13,14 @@
   one (coquitts) without a reload. `TTS_ENGINE` remains the request default and
   the fallback when `TTS_ENGINES` is unset. The pool stays a single shared
   semaphore capping total concurrent synthesis across all engines.
+- **Streaming synthesis — `/api/tts?stream=true`.** Synthesizes the text one
+  chunk at a time (via `libs.cli.chunk_text`) and streams audio with chunked
+  transfer encoding, so a client hears the first sentence without waiting for the
+  whole utterance. WAV engines emit a single streaming WAV (one header with
+  placeholder sizes + concatenated PCM); gtts (MP3) concatenates per-chunk bytes.
+  One engine-pool slot is held for the duration of the stream. New
+  `TTS_STREAM_MAX_CHARS` env (default 200) controls chunk size. Works for both
+  `GET` and `POST`. New module `ttssrv/streaming.py` + `tests/test_stream.py`.
 - `GET /api/engines` now reports `supported` (engine modules shipped),
   `available` (deps installed), `preload` (startup set) and `default`.
 
