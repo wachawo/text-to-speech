@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytz
 import werkzeug.exceptions
-from flask import Flask, g, jsonify, request, send_file
+from flask import Flask, Response, g, jsonify, request, send_file, stream_with_context
 from flask.json.provider import DefaultJSONProvider
 from flask_cors import CORS
 from marshmallow import ValidationError as MarshmallowValidationError
@@ -39,14 +39,16 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from dotenv import find_dotenv, load_dotenv  # noqa: E402
 
-from engines import get_available_engines  # noqa: E402
+from engines import get_available_engines, get_supported_engines  # noqa: E402
 from libs.api import text_to_speech_bytes  # noqa: E402
+from libs.cli import chunk_text  # noqa: E402
 from libs.exceptions import (  # noqa: E402
     CustomError,
     EngineNotAvailableError,
     TTSException,
     ValidationError,
 )
+from ttssrv.streaming import streaming_wav_header, wav_data, wav_params  # noqa: E402
 from ttssrv.validators import TtsRequestSchema  # noqa: E402
 
 # .env via find_dotenv (walks up from cwd) → then .env.local override.
@@ -68,8 +70,16 @@ CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if 
 # Hard cap on request body size — Marshmallow validates `text` after parsing,
 # so without this Werkzeug would buffer arbitrarily large bodies into memory.
 TTS_MAX_BODY_BYTES = int(os.getenv("TTS_MAX_BODY_BYTES", str(2 * 1024 * 1024)))
-TTS_ENGINE_DEFAULT = os.getenv("TTS_ENGINE", "gtts")
+# TTS_ENGINES is the set to install + preload at startup (comma-separated).
+# TTS_ENGINE stays the default for requests that omit `engine`. If TTS_ENGINE
+# is unset it falls back to the first preloaded engine; if TTS_ENGINES is unset
+# it falls back to the single default engine.
+TTS_ENGINES = [e.strip() for e in os.getenv("TTS_ENGINES", "").split(",") if e.strip()]
+TTS_ENGINE_DEFAULT = os.getenv("TTS_ENGINE") or (TTS_ENGINES[0] if TTS_ENGINES else "gtts")
+if not TTS_ENGINES:
+    TTS_ENGINES = [TTS_ENGINE_DEFAULT]
 TTS_LANGUAGE_DEFAULT = os.getenv("TTS_LANGUAGE", "en")
+TTS_STREAM_MAX_CHARS = int(os.getenv("TTS_STREAM_MAX_CHARS", "200"))
 TIMEZONE = pytz.timezone(os.getenv("TZ", "America/New_York"))
 DATETIME_FMT = "%Y-%m-%d %H:%M:%S"
 
@@ -89,23 +99,31 @@ ENGINE_POOL: queue.Queue = queue.Queue()
 
 
 def init_engine_pool(size: int = TTS_POOL_SIZE) -> None:
-    """Warm the default engine cache and seed pool with N tokens."""
+    """Warm each preloaded engine cache and seed pool with N tokens.
+
+    The pool is a single shared semaphore — it caps total concurrent synthesis
+    across all engines, not per engine. Heavy models stay resident in their
+    own module caches (e.g. engines/coquitts.py:TTS_CACHE), so a warmed engine
+    answers later requests without reloading.
+    """
     if size < 1:
         logger.info("TTS_POOL_SIZE=0 → unlimited concurrency, no warmup")
         return
 
-    if TTS_ENGINE_DEFAULT not in ("gtts", "pyttsx3"):
-        logger.info(f"Warming up {TTS_ENGINE_DEFAULT}...")
+    for engine in TTS_ENGINES:
+        if engine in ("gtts", "pyttsx3"):
+            continue
+        logger.info(f"Warming up {engine}...")
         t0 = time.monotonic()
         try:
-            text_to_speech_bytes(text=".", engine=TTS_ENGINE_DEFAULT, language=TTS_LANGUAGE_DEFAULT)
-            logger.info(f"Warmup OK ({time.monotonic() - t0:.2f}s)")
+            text_to_speech_bytes(text=".", engine=engine, language=TTS_LANGUAGE_DEFAULT)
+            logger.info(f"Warmup OK {engine} ({time.monotonic() - t0:.2f}s)")
         except Exception as exc:
-            logger.warning(f"Warmup failed: {type(exc).__name__}: {exc} — will retry on first request")
+            logger.warning(f"Warmup failed for {engine}: {type(exc).__name__}: {exc} — will retry on first request")
 
     for i in range(size):
         ENGINE_POOL.put(i)
-    logger.info(f"Pool ready: {size} slot(s) for {TTS_ENGINE_DEFAULT}")
+    logger.info(f"Pool ready: {size} slot(s) for engines {TTS_ENGINES}")
 
 
 class JSONProvider(DefaultJSONProvider):
@@ -202,6 +220,7 @@ def health():
             {
                 "status": "ok",
                 "engine": TTS_ENGINE_DEFAULT,
+                "engines": TTS_ENGINES,
                 "pool_size": TTS_POOL_SIZE,
                 "available": ENGINE_POOL.qsize(),
             }
@@ -213,16 +232,66 @@ def health():
 @app.route("/api/engines", methods=["GET"])
 @token_required
 def engines_list():
-    available = list(get_available_engines().keys())
+    available = sorted(get_available_engines().keys())
     return (
         jsonify(
             {
-                "engines": sorted(available),
+                "supported": get_supported_engines(),
+                "available": available,
+                "preload": TTS_ENGINES,
                 "default": TTS_ENGINE_DEFAULT,
             }
         ),
         200,
     )
+
+
+def stream_tts(text: str, engine: str, language: str):
+    """Synthesize per chunk and stream audio as it is ready (chunked transfer).
+
+    WAV engines emit one streaming WAV (single header + concatenated PCM); MP3
+    (gtts) concatenates per-chunk bytes. One pool slot is held for the whole
+    stream and released when the generator is exhausted or the client disconnects.
+    """
+    chunks = chunk_text(text, max_len=TTS_STREAM_MAX_CHARS) or [text]
+
+    slot = None
+    if TTS_POOL_SIZE > 0:
+        try:
+            slot = ENGINE_POOL.get(timeout=120)
+        except queue.Empty:
+            return jsonify({"error": "All engine slots busy (timeout)"}), 503
+
+    # Synthesize the first chunk up front so the audio format (and any engine
+    # error) is known before the streaming response headers are committed.
+    try:
+        first = text_to_speech_bytes(text=chunks[0], engine=engine, language=language)
+    except Exception:
+        if slot is not None:
+            ENGINE_POOL.put(slot)
+        raise
+
+    mimetype, unused_ext = detect_audio_mime(first)
+    is_wav = mimetype == "audio/wav"
+
+    def generate():
+        try:
+            if is_wav:
+                rate, channels, width = wav_params(first)
+                yield streaming_wav_header(rate, channels, width)
+                yield wav_data(first)
+            else:
+                yield first
+            for chunk in chunks[1:]:
+                blob = text_to_speech_bytes(text=chunk, engine=engine, language=language)
+                yield wav_data(blob) if is_wav else blob
+        except Exception as exc:
+            logger.error(f"[{get_req_id()}] stream aborted: {type(exc).__name__}: {exc}")
+        finally:
+            if slot is not None:
+                ENGINE_POOL.put(slot)
+
+    return Response(stream_with_context(generate()), mimetype=mimetype)
 
 
 @app.route("/api/tts", methods=["GET", "POST"])
@@ -233,7 +302,10 @@ def tts_generate():
     engine = data.get("engine") or TTS_ENGINE_DEFAULT
     language = data.get("language") or TTS_LANGUAGE_DEFAULT
 
-    logger.info(f"[{get_req_id()}] TTS request: engine={engine} language={language} chars={len(text)}")
+    logger.info(f"[{get_req_id()}] TTS request: engine={engine} language={language} chars={len(text)} stream={data['stream']}")
+
+    if data["stream"]:
+        return stream_tts(text, engine, language)
 
     slot = None
     if TTS_POOL_SIZE > 0:
@@ -303,7 +375,7 @@ def handle_exception(exc):
 def main() -> int:
     logger.info(
         f"Starting TTS server on {TTS_HOST}:{TTS_PORT} "
-        f"debug={TTS_DEBUG} engine={TTS_ENGINE_DEFAULT} pool={TTS_POOL_SIZE} "
+        f"debug={TTS_DEBUG} engines={TTS_ENGINES} default={TTS_ENGINE_DEFAULT} pool={TTS_POOL_SIZE} "
         f"auth={'on' if TTS_TOKENS else 'off'}"
     )
     init_engine_pool()

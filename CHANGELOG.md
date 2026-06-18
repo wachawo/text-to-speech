@@ -2,7 +2,45 @@
 
 ### [Unreleased]
 
+### [1.0.3] — 2026-06-17
+
+#### Added
+- **`ttssrv` can preload several engines at once via `TTS_ENGINES`**
+  (comma-separated, e.g. `coquitts,silerotts`). Each engine is installed by
+  `entrypoint.sh` and warmed by `init_engine_pool()` at startup, so its model
+  stays resident and is selected per request through the `engine` field —
+  letting a fast engine (silerotts, ~0.1s) serve requests alongside a heavy
+  one (coquitts) without a reload. `TTS_ENGINE` remains the request default and
+  the fallback when `TTS_ENGINES` is unset. The pool stays a single shared
+  semaphore capping total concurrent synthesis across all engines.
+- **Streaming synthesis — `/api/tts?stream=true`.** Synthesizes the text one
+  chunk at a time (via `libs.cli.chunk_text`) and streams audio with chunked
+  transfer encoding, so a client hears the first sentence without waiting for the
+  whole utterance. WAV engines emit a single streaming WAV (one header with
+  placeholder sizes + concatenated PCM); gtts (MP3) concatenates per-chunk bytes.
+  One engine-pool slot is held for the duration of the stream. New
+  `TTS_STREAM_MAX_CHARS` env (default 200) controls chunk size. Works for both
+  `GET` and `POST`. New module `ttssrv/streaming.py` + `tests/test_stream.py`.
+- `GET /api/engines` now reports `supported` (engine modules shipped),
+  `available` (deps installed), `preload` (startup set) and `default`.
+
+#### Fixed
+- **SileroTTS encodes WAV via the stdlib `wave` module** instead of
+  `torchaudio.save()`. Under torchaudio ≥ 2.9 `save()` routes through the
+  torchcodec backend, whose encoder cannot write to a file-like object (it needs
+  a real path + extension) and raised *"Couldn't allocate AVFormatContext"* on a
+  `BytesIO` — failing every SileroTTS synthesis (both batch and streaming) with a
+  500. The waveform is now converted to 16-bit PCM and written directly.
+- **SileroTTS now caches its loaded model** (`TTS_CACHE` keyed by
+  `(model_id, device)`), mirroring CoquiTTS. Previously `generate()` re-ran
+  `torch.hub.load` on every call, re-instantiating the model each time.
+- SileroTTS dependency `omegaconf` is now declared in the GPU/CPU Docker
+  requirements (its torch.hub model package imports it), so the engine no
+  longer fails at synthesis time when only the default engine was installed.
+
 #### Changed
+- `ttssrv` request log now reports duration and drops the duplicate status
+  code: `POST /api/tts: 200 OK (0.123s)`.
 - **Docker layout — compose files moved back to the repo root**
   (`docker-compose.yml` for GPU, `docker-compose-cpu.yml` for CPU);
   Dockerfiles + requirements stay under `docker/{cpu,gpu}/`. Compose now

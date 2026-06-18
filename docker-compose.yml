@@ -31,6 +31,10 @@ services:
       CORS_ORIGINS:               ${CORS_ORIGINS:-*}
       TTS_POOL_SIZE:              ${TTS_POOL_SIZE:-1}
       TTS_ENGINE:                 ${TTS_ENGINE:-gtts}
+      # Comma-separated set installed + preloaded at startup (entrypoint.sh +
+      # init_engine_pool). Empty → just TTS_ENGINE. First entry is the request
+      # default when TTS_ENGINE is unset. e.g. TTS_ENGINES=coquitts,silerotts
+      TTS_ENGINES:                ${TTS_ENGINES:-}
       TTS_LANGUAGE:               ${TTS_LANGUAGE:-en}
       # Per-engine model cache directories — bind-mounted from host below.
       # Engines read these via *_MODELS env (see engines/<name>.py:get_models_directory()).

@@ -3,8 +3,8 @@
 """Unit tests for engines/silerotts.py — Silero TTS via torch.hub.
 
 Real `torch` is in the dev venv (CUDA initialisation may warn but import
-succeeds), so the engine module loads. Tests stub torch.hub.load and
-torchaudio.save so no model is fetched and no network is touched.
+succeeds), so the engine module loads. Tests stub torch.hub.load (and inject a
+fake torchaudio) so no model is fetched and no network is touched.
 """
 
 import importlib
@@ -168,17 +168,33 @@ def test_generate_model_without_apply_tts_raises(engine, monkeypatch):
 # generate — happy path
 
 
-def test_generate_returns_bytes_from_torchaudio_save(engine, monkeypatch):
+def test_generate_returns_wav_bytes(engine, monkeypatch):
     """End-to-end stubbed pipeline: torch.hub.load → model.apply_tts →
-    torchaudio.save into BytesIO → returned as bytes."""
+    stdlib `wave` encoding of the waveform → valid WAV bytes returned."""
+    import io
+    import wave
+
+    import numpy as np
+
     captured = {}
 
     class StubTensor:
-        def dim(self):
-            return 1
+        """Stand-in for a Silero waveform; supports the chain generate() calls."""
 
-        def unsqueeze(self, dim):
-            return self  # no-op
+        def __init__(self, arr):
+            self.arr = arr
+
+        def squeeze(self):
+            return StubTensor(np.squeeze(self.arr))
+
+        def detach(self):
+            return self
+
+        def cpu(self):
+            return self
+
+        def numpy(self):
+            return self.arr
 
     class StubModel:
         def to(self, device):
@@ -186,49 +202,22 @@ def test_generate_returns_bytes_from_torchaudio_save(engine, monkeypatch):
 
         def apply_tts(self, text, speaker, sample_rate):
             captured.update(text=text, speaker=speaker, sample_rate=sample_rate)
-            return StubTensor()
+            return StubTensor(np.linspace(-0.5, 0.5, 480, dtype="float32"))
 
     monkeypatch.setattr(engine, "AVAILABLE", True)
     monkeypatch.setattr(engine.torch.hub, "load", lambda **kw: (StubModel(), "example"))
 
-    def fake_save(buf, tensor, sr, format):
-        buf.write(b"RIFFFAKEWAV")
-
-    monkeypatch.setattr(engine.torchaudio, "save", fake_save)
-
     audio = engine.generate("hello", {"language": "ru"})
-    assert audio == b"RIFFFAKEWAV"
+
+    # Result is a well-formed WAV at the language's sample rate (ru → 48 kHz).
+    assert audio[:4] == b"RIFF"
+    assert audio[8:12] == b"WAVE"
+    with wave.open(io.BytesIO(audio), "rb") as w:
+        assert w.getframerate() == 48000
+        assert w.getnchannels() == 1
+        assert w.getsampwidth() == 2
+        assert w.getnframes() == 480
     # Russian must use 'aidar' speaker at 48kHz (per the language map).
     assert captured["speaker"] == "aidar"
     assert captured["sample_rate"] == 48000
     assert captured["text"] == "hello"
-
-
-def test_generate_unsqueezes_1d_tensor_into_2d(engine, monkeypatch):
-    """If apply_tts returns a 1D tensor, generate must call unsqueeze(0)
-    before handing it to torchaudio.save (which expects [channels, samples])."""
-    unsqueezed = {"called": False}
-
-    class Tensor1D:
-        def dim(self):
-            return 1
-
-        def unsqueeze(self, dim):
-            unsqueezed["called"] = True
-            unsqueezed["dim_arg"] = dim
-            return self
-
-    class StubModel:
-        def to(self, device):
-            return None
-
-        def apply_tts(self, **kw):
-            return Tensor1D()
-
-    monkeypatch.setattr(engine, "AVAILABLE", True)
-    monkeypatch.setattr(engine.torch.hub, "load", lambda **kw: (StubModel(), "ex"))
-    monkeypatch.setattr(engine.torchaudio, "save", lambda buf, t, sr, format: buf.write(b"x"))
-
-    engine.generate("hi", {"language": "en"})
-    assert unsqueezed["called"] is True
-    assert unsqueezed["dim_arg"] == 0

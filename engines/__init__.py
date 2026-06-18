@@ -98,6 +98,18 @@ def get_available_engines() -> Dict[str, object]:
     return available
 
 
+def get_supported_engines() -> list:
+    """
+    List all engine names shipped as modules, regardless of installed deps.
+
+    Returns:
+        Sorted list of engine names (module stems) found in engines/.
+    """
+    engines_dir = Path(__file__).parent
+    names = [py_file.stem for py_file in engines_dir.glob("*.py") if py_file.name != "__init__.py"]
+    return sorted(names)
+
+
 def is_engine_available(engine_name: str) -> bool:
     """
     Check if an engine is available.
