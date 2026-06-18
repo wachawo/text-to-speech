@@ -207,6 +207,22 @@ def generate(text: str, config: dict) -> bytes:
             wav_file.writeframes(pcm16)
         return audio_buffer.getvalue()
 
+    except ValueError as e:
+        # Silero's process_simple_text raises a bare ValueError (no message) when
+        # the text has no pronounceable content left after its internal cleaning:
+        # digits/punctuation/whitespace only, or characters outside the model's
+        # alphabet (e.g. Latin text routed to the Russian v3_1_ru model). This is
+        # bad input, not an engine failure — raise ValidationError so the HTTP API
+        # returns 400 instead of a 500 with a traceback.
+        if str(e):
+            raise TTSException(f"Silero TTS generation failed: {e}")
+        raise ValidationError(
+            f"Silero TTS could not process the text for language '{language}': "
+            "it contains no pronounceable characters for this model (e.g. only "
+            "digits, punctuation, or characters from a different alphabet). "
+            f"Text: {text!r}"
+        )
+
     except Exception as e:
         error_msg = str(e)
 
