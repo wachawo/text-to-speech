@@ -141,3 +141,27 @@ def get_engine_function(engine_name: str) -> Optional[EngineFunction]:
         return generate_func
 
     return None
+
+
+def get_engine_voices(engine_name: str, language: str = "en") -> Dict[str, object]:
+    """
+    Get the selectable voices for an engine and language.
+
+    Engines that support multiple voices implement `list_voices(language) -> dict`
+    with keys 'voices' (list) and 'default' (str|None). Engines without voice
+    selection return an empty list.
+
+    Args:
+        engine_name: Name of the engine
+        language: Language code
+
+    Returns:
+        Dict {'voices': [...], 'default': str|None}
+    """
+    module = load_engine(engine_name)
+
+    if module and hasattr(module, "list_voices"):
+        voices: Dict[str, object] = module.list_voices(language)
+        return voices
+
+    return {"voices": [], "default": None}

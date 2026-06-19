@@ -239,10 +239,21 @@ curl http://localhost:5000/api/health
 curl http://localhost:5000/api/engines \
   -H "Authorization: Bearer $TTS_TOKEN"
 
+# List selectable voices for an engine + language (e.g. Silero Russian speakers)
+curl "http://localhost:5000/api/voices?engine=silerotts&language=ru" \
+  -H "Authorization: Bearer $TTS_TOKEN"
+# {"engine":"silerotts","language":"ru","voices":["aidar","baya","kseniya","xenia","eugene","random"],"default":"aidar"}
+
 curl -X POST http://localhost:5000/api/tts \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"text":"Hello world","engine":"gtts"}' -o out.mp3
+
+# Pick a specific voice (optional; omit for the language default)
+curl -X POST http://localhost:5000/api/tts \
+  -H "Authorization: Bearer $TTS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Здравствуйте","engine":"silerotts","language":"ru","voice":"baya"}' -o out.wav
 ```
 
 Or via the matching client `ttsapi` — mirror of `ttsgen` with the same flags, but synthesis runs on the server:

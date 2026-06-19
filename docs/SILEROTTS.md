@@ -100,6 +100,36 @@ All models use:
 - Bit depth: 16-bit
 - Format: WAV
 
+## Voices
+
+Each Silero language model ships several speakers (voices). The first speaker of
+each language is the default; pass `voice` (HTTP `/api/tts`) or `config["voice"]`
+to pick another. Russian (`v3_1_ru`) includes both male and female voices:
+
+| Language | Default | Speakers |
+|----------|---------|----------|
+| `ru` | `aidar` (male) | `aidar`, `baya` (female), `kseniya` (female), `xenia` (female), `eugene` (male), `random` |
+| `en` | `en_0` | `en_0` … `en_117`, `random` |
+| `de` | `bernd_ungerer` | model speakers |
+| `es` | `es_0` | `es_0` … |
+| `fr` | `fr_0` | `fr_0` … |
+| `ua` | `mykyta` | model speakers |
+
+The authoritative list comes from the loaded model's `speakers` attribute and is
+exposed at runtime:
+
+- `engines.silerotts.list_voices(language)` → `{"voices": [...], "default": "aidar"}`
+- HTTP: `GET /api/voices?engine=silerotts&language=ru`
+
+An unknown voice for the language raises `ValidationError` (HTTP `400`).
+
+```python
+from engines.silerotts import generate, list_voices
+
+list_voices("ru")  # {'voices': ['aidar', 'baya', ...], 'default': 'aidar'}
+audio = generate("Здравствуйте", {"language": "ru", "voice": "baya"})  # female
+```
+
 ## Usage
 
 ### Basic Usage

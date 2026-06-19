@@ -2,6 +2,18 @@
 
 ### [Unreleased]
 
+#### Added
+- **Voice/speaker selection.** `/api/tts` accepts an optional `voice` field that
+  selects the engine speaker (e.g. Silero `baya`/`kseniya` for a female Russian
+  voice); omitted keeps the per-language default. For SileroTTS the value is
+  validated against the model's `speakers` — an unknown voice returns `400`.
+  Threaded through `libs.api.text_to_speech_bytes(..., voice=...)`, the streaming
+  path, and `engines/silerotts.py` (model load refactored into `load_model()`).
+- **`GET /api/voices`** lists the selectable voices for an `engine` + `language`,
+  returning `{engine, language, voices, default}`. Engines without voice selection
+  return an empty list; SileroTTS exposes its model's speakers via `list_voices()`
+  and a generic `engines.get_engine_voices()` dispatcher.
+
 ### [1.0.3] — 2026-06-17
 
 #### Added
