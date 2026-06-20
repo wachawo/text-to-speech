@@ -39,7 +39,7 @@ def build_silent_wav(duration_ms: int = 100, rate: int = 22050) -> bytes:
     return buf.getvalue()
 
 
-def default_text_to_speech_bytes(text, engine=None, language=None):
+def default_text_to_speech_bytes(text, engine=None, language=None, voice=None):
     return build_silent_wav()
 
 

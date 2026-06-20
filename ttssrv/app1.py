@@ -39,7 +39,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from dotenv import find_dotenv, load_dotenv  # noqa: E402
 
-from engines import get_available_engines, get_supported_engines  # noqa: E402
+from engines import get_available_engines, get_engine_voices, get_supported_engines  # noqa: E402
 from libs.api import text_to_speech_bytes  # noqa: E402
 from libs.cli import chunk_text  # noqa: E402
 from libs.exceptions import (  # noqa: E402
@@ -246,7 +246,27 @@ def engines_list():
     )
 
 
-def stream_tts(text: str, engine: str, language: str):
+@app.route("/api/voices", methods=["GET"])
+@token_required
+def voices_list():
+    """List selectable voices for an engine + language (e.g. Silero ru speakers)."""
+    engine = request.args.get("engine") or TTS_ENGINE_DEFAULT
+    language = request.args.get("language") or TTS_LANGUAGE_DEFAULT
+    info = get_engine_voices(engine, language)
+    return (
+        jsonify(
+            {
+                "engine": engine,
+                "language": language,
+                "voices": info.get("voices", []),
+                "default": info.get("default"),
+            }
+        ),
+        200,
+    )
+
+
+def stream_tts(text: str, engine: str, language: str, voice: "str | None" = None):
     """Synthesize per chunk and stream audio as it is ready (chunked transfer).
 
     WAV engines emit one streaming WAV (single header + concatenated PCM); MP3
@@ -265,7 +285,7 @@ def stream_tts(text: str, engine: str, language: str):
     # Synthesize the first chunk up front so the audio format (and any engine
     # error) is known before the streaming response headers are committed.
     try:
-        first = text_to_speech_bytes(text=chunks[0], engine=engine, language=language)
+        first = text_to_speech_bytes(text=chunks[0], engine=engine, language=language, voice=voice)
     except Exception:
         if slot is not None:
             ENGINE_POOL.put(slot)
@@ -283,7 +303,7 @@ def stream_tts(text: str, engine: str, language: str):
             else:
                 yield first
             for chunk in chunks[1:]:
-                blob = text_to_speech_bytes(text=chunk, engine=engine, language=language)
+                blob = text_to_speech_bytes(text=chunk, engine=engine, language=language, voice=voice)
                 yield wav_data(blob) if is_wav else blob
         except Exception as exc:
             logger.error(f"[{get_req_id()}] stream aborted: {type(exc).__name__}: {exc}")
@@ -301,11 +321,15 @@ def tts_generate():
     text = data["text"]
     engine = data.get("engine") or TTS_ENGINE_DEFAULT
     language = data.get("language") or TTS_LANGUAGE_DEFAULT
+    voice = data.get("voice")
 
-    logger.info(f"[{get_req_id()}] TTS request: engine={engine} language={language} chars={len(text)} stream={data['stream']}")
+    logger.info(
+        f"[{get_req_id()}] TTS request: engine={engine} language={language} "
+        f"voice={voice} chars={len(text)} stream={data['stream']}"
+    )
 
     if data["stream"]:
-        return stream_tts(text, engine, language)
+        return stream_tts(text, engine, language, voice)
 
     slot = None
     if TTS_POOL_SIZE > 0:
@@ -314,7 +338,7 @@ def tts_generate():
         except queue.Empty:
             return jsonify({"error": "All engine slots busy (timeout)"}), 503
     try:
-        audio_bytes = text_to_speech_bytes(text=text, engine=engine, language=language)
+        audio_bytes = text_to_speech_bytes(text=text, engine=engine, language=language, voice=voice)
     finally:
         if slot is not None:
             ENGINE_POOL.put(slot)

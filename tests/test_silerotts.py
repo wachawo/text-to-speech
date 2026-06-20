@@ -13,7 +13,7 @@ import types
 
 import pytest
 
-from libs.exceptions import EngineNotAvailableError, TTSException
+from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
 
 
 def make_fake_torch():
@@ -221,3 +221,83 @@ def test_generate_returns_wav_bytes(engine, monkeypatch):
     assert captured["speaker"] == "aidar"
     assert captured["sample_rate"] == 48000
     assert captured["text"] == "hello"
+
+
+# Voice selection — config['voice'] + list_voices
+
+
+class VoiceStubTensor:
+    """Minimal waveform stand-in supporting the chain generate() calls."""
+
+    def __init__(self, arr):
+        self.arr = arr
+
+    def squeeze(self):
+        import numpy as np
+
+        return VoiceStubTensor(np.squeeze(self.arr))
+
+    def detach(self):
+        return self
+
+    def cpu(self):
+        return self
+
+    def numpy(self):
+        return self.arr
+
+
+class VoiceStubModel:
+    """Silero model stand-in that exposes `speakers` and records the speaker used."""
+
+    def __init__(self, speakers):
+        self.speakers = list(speakers)
+        self.captured = {}
+
+    def to(self, device):
+        return None
+
+    def apply_tts(self, text, speaker, sample_rate):
+        import numpy as np
+
+        self.captured.update(text=text, speaker=speaker, sample_rate=sample_rate)
+        return VoiceStubTensor(np.linspace(-0.5, 0.5, 480, dtype="float32"))
+
+
+def install_voice_model(engine, monkeypatch, speakers):
+    model = VoiceStubModel(speakers)
+    monkeypatch.setattr(engine, "AVAILABLE", True)
+    monkeypatch.setattr(engine.torch.hub, "load", lambda **kw: (model, "example"))
+    return model
+
+
+def test_list_voices_returns_speakers_and_default(engine, monkeypatch):
+    install_voice_model(engine, monkeypatch, ["aidar", "baya", "kseniya", "xenia"])
+    info = engine.list_voices("ru")
+    assert info["voices"] == ["aidar", "baya", "kseniya", "xenia"]
+    assert info["default"] == "aidar"  # ru language default from get_model_info
+
+
+def test_list_voices_engine_unavailable_raises(engine, monkeypatch):
+    monkeypatch.setattr(engine, "AVAILABLE", False)
+    with pytest.raises(EngineNotAvailableError):
+        engine.list_voices("ru")
+
+
+def test_generate_uses_requested_voice(engine, monkeypatch):
+    model = install_voice_model(engine, monkeypatch, ["aidar", "baya", "kseniya"])
+    audio = engine.generate("привет", {"language": "ru", "voice": "baya"})
+    assert audio[:4] == b"RIFF"
+    assert model.captured["speaker"] == "baya"  # requested voice, not the 'aidar' default
+
+
+def test_generate_without_voice_uses_language_default(engine, monkeypatch):
+    model = install_voice_model(engine, monkeypatch, ["aidar", "baya"])
+    engine.generate("привет", {"language": "ru"})
+    assert model.captured["speaker"] == "aidar"
+
+
+def test_generate_unknown_voice_raises_validation_error(engine, monkeypatch):
+    install_voice_model(engine, monkeypatch, ["aidar", "baya", "kseniya"])
+    with pytest.raises(ValidationError, match="Unknown voice"):
+        engine.generate("привет", {"language": "ru", "voice": "nonexistent"})

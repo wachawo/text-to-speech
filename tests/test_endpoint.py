@@ -55,7 +55,7 @@ def test_tts_invalid_language_400(client):
 
 
 def test_tts_engine_not_available_503(client, monkeypatch, app_module):
-    def boom(text, engine=None, language=None):
+    def boom(text, engine=None, language=None, voice=None):
         raise EngineNotAvailableError("Engine xyz not installed")
 
     monkeypatch.setattr(app_module, "text_to_speech_bytes", boom)
@@ -69,7 +69,7 @@ def test_tts_engine_not_available_503(client, monkeypatch, app_module):
 def test_tts_internal_failure_no_leak(client, monkeypatch, app_module):
     """Critical regression guard: internals must not appear in the body."""
 
-    def boom(text, engine=None, language=None):
+    def boom(text, engine=None, language=None, voice=None):
         raise TTSException(INTERNAL_MARKER)
 
     monkeypatch.setattr(app_module, "text_to_speech_bytes", boom)
@@ -85,7 +85,7 @@ def test_tts_internal_failure_no_leak(client, monkeypatch, app_module):
 
 
 def test_tts_unexpected_exception_no_leak(client, monkeypatch, app_module):
-    def boom(text, engine=None, language=None):
+    def boom(text, engine=None, language=None, voice=None):
         raise RuntimeError(INTERNAL_MARKER)
 
     monkeypatch.setattr(app_module, "text_to_speech_bytes", boom)
@@ -97,3 +97,35 @@ def test_tts_unexpected_exception_no_leak(client, monkeypatch, app_module):
     body = resp.get_json()
     assert set(body.keys()) == {"error", "request_id"}
     assert body["error"] == "Internal Server Error"
+
+
+def test_tts_voice_accepted_and_passed_through(client, monkeypatch, app_module):
+    """The optional `voice` field is accepted and forwarded to the engine."""
+    captured = {}
+
+    def capture(text, engine=None, language=None, voice=None):
+        captured["voice"] = voice
+        return b"RIFF" + b"\x00" * 40
+
+    monkeypatch.setattr(app_module, "text_to_speech_bytes", capture)
+    resp = client.post(
+        "/api/tts",
+        json={"text": "hi", "engine": "silerotts", "language": "ru", "voice": "baya"},
+    )
+    assert resp.status_code == 200
+    assert captured["voice"] == "baya"
+
+
+def test_voices_endpoint_lists_voices(client, monkeypatch, app_module):
+    monkeypatch.setattr(
+        app_module,
+        "get_engine_voices",
+        lambda engine, language: {"voices": ["aidar", "baya", "kseniya"], "default": "aidar"},
+    )
+    resp = client.get("/api/voices?engine=silerotts&language=ru")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["engine"] == "silerotts"
+    assert body["language"] == "ru"
+    assert body["voices"] == ["aidar", "baya", "kseniya"]
+    assert body["default"] == "aidar"

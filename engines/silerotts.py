@@ -116,6 +116,80 @@ def get_models_directory() -> str:
     return os.path.expanduser("~/.cache/torch/hub")
 
 
+def load_model(language: str) -> tuple:
+    """Load (and cache) the Silero model for a language.
+
+    Returns:
+        Tuple of (model, default_speaker, sample_rate). The model is cached in
+        TTS_CACHE by (model_id, device) so repeated calls are cheap.
+    """
+    model_id, default_speaker, sample_rate = get_model_info(language)
+    device = torch.device("cpu")  # Use CPU
+    cache_key = (model_id, str(device))
+    model = TTS_CACHE.get(cache_key)
+    if model is None:
+        # Set custom models directory if configured
+        models_dir = get_models_directory()
+        if models_dir != os.path.expanduser("~/.cache/torch/hub"):
+            torch.hub.set_dir(models_dir)
+            logger.info(f"Using custom Silero models directory: {models_dir}")
+
+        logger.info(f"Loading Silero {model_id} on {device} (first call)...")
+        # torch.hub.load returns (model, example_text).
+        # trust_repo=True suppresses the interactive y/n prompt that torch.hub
+        # raises before executing hubconf.py from snakers4/silero-models. We
+        # accept this exposure because: (1) the model itself is shipped from
+        # the same repo, so refusing the prompt blocks all SileroTTS usage;
+        # (2) the model directory is pinned via torch.hub.set_dir() to the
+        # configured SILEROTTS_MODELS, so the fetched code only runs when the
+        # user explicitly opts in by installing this engine.
+        result = torch.hub.load(
+            repo_or_dir="snakers4/silero-models",
+            model="silero_tts",
+            language=(language if language in ["ru", "en", "de", "es", "fr", "ua"] else "en"),
+            speaker=model_id,
+            verbose=False,
+            trust_repo=True,
+        )
+
+        # Unpack result
+        if isinstance(result, tuple) and len(result) >= 2:
+            model = result[0]
+            # example_text = result[1]
+        else:
+            raise TTSException(f"Unexpected torch.hub.load result: {type(result)}")
+
+        # Check model
+        if model is None:
+            raise TTSException("Silero model failed to load")
+
+        if not hasattr(model, "apply_tts"):
+            raise TTSException(f"Model has no apply_tts method. Model type: {type(model)}")
+
+        # Note: model.to() returns None for some Silero models, use in-place
+        model.to(device)
+        TTS_CACHE[cache_key] = model
+
+    return model, default_speaker, sample_rate
+
+
+def list_voices(language: str = "en") -> dict:
+    """List the speaker voices available for a language's Silero model.
+
+    Returns:
+        Dict with 'voices' (list of speaker ids, e.g. baya/kseniya for ru) and
+        'default' (the speaker used when no voice is requested).
+    """
+    if not AVAILABLE:
+        raise EngineNotAvailableError(
+            "Silero TTS not available. Install with: pip install torch torchaudio\n"
+            "See docs/SILEROTTS.md for setup instructions."
+        )
+    model, default_speaker, unused_rate = load_model(language)
+    speakers = list(getattr(model, "speakers", []) or [])
+    return {"voices": speakers, "default": default_speaker}
+
+
 def generate(text: str, config: dict) -> bytes:
     """
     Generate TTS and return audio as bytes.
@@ -143,52 +217,18 @@ def generate(text: str, config: dict) -> bytes:
         raise ValidationError(f"Text too long for silerotts: {len(text)} > {MAX_TEXT_LENGTH}")
     language = config.get("language", "en")
     try:
-        model_id, speaker, sample_rate = get_model_info(language)
-        device = torch.device("cpu")  # Use CPU
-        cache_key = (model_id, str(device))
-        model = TTS_CACHE.get(cache_key)
-        if model is None:
-            # Set custom models directory if configured
-            models_dir = get_models_directory()
-            if models_dir != os.path.expanduser("~/.cache/torch/hub"):
-                torch.hub.set_dir(models_dir)
-                logger.info(f"Using custom Silero models directory: {models_dir}")
+        model, default_speaker, sample_rate = load_model(language)
 
-            logger.info(f"Loading Silero {model_id} on {device} (first call)...")
-            # torch.hub.load returns (model, example_text).
-            # trust_repo=True suppresses the interactive y/n prompt that torch.hub
-            # raises before executing hubconf.py from snakers4/silero-models. We
-            # accept this exposure because: (1) the model itself is shipped from
-            # the same repo, so refusing the prompt blocks all SileroTTS usage;
-            # (2) the model directory is pinned via torch.hub.set_dir() to the
-            # configured SILEROTTS_MODELS, so the fetched code only runs when the
-            # user explicitly opts in by installing this engine.
-            result = torch.hub.load(
-                repo_or_dir="snakers4/silero-models",
-                model="silero_tts",
-                language=(language if language in ["ru", "en", "de", "es", "fr", "ua"] else "en"),
-                speaker=model_id,
-                verbose=False,
-                trust_repo=True,
+        # Pick the speaker: requested voice or the language default. Validate
+        # against the model's speaker list (when exposed) so an unknown voice is
+        # a 400, not a confusing engine error.
+        speaker = config.get("voice") or default_speaker
+        speakers = getattr(model, "speakers", None)
+        if speakers and speaker not in speakers:
+            raise ValidationError(
+                f"Unknown voice '{speaker}' for language '{language}'. "
+                f"Available: {', '.join(sorted(speakers))}"
             )
-
-            # Unpack result
-            if isinstance(result, tuple) and len(result) >= 2:
-                model = result[0]
-                # example_text = result[1]
-            else:
-                raise TTSException(f"Unexpected torch.hub.load result: {type(result)}")
-
-            # Check model
-            if model is None:
-                raise TTSException("Silero model failed to load")
-
-            if not hasattr(model, "apply_tts"):
-                raise TTSException(f"Model has no apply_tts method. Model type: {type(model)}")
-
-            # Note: model.to() returns None for some Silero models, use in-place
-            model.to(device)
-            TTS_CACHE[cache_key] = model
 
         # Generate audio (float32 mono waveform in [-1, 1]).
         audio_tensor = model.apply_tts(text=text, speaker=speaker, sample_rate=sample_rate)
@@ -222,6 +262,11 @@ def generate(text: str, config: dict) -> bytes:
             "digits, punctuation, or characters from a different alphabet). "
             f"Text: {text!r}"
         )
+
+    except ValidationError:
+        # Unknown-voice (and text) validation errors are already actionable 400s —
+        # do not wrap them as generic engine failures below.
+        raise
 
     except Exception as e:
         error_msg = str(e)

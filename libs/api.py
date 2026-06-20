@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 AudioSource = Union[str, bytes]
 
 
-def text_to_speech_bytes(text: str, engine: str = "gtts", language: str = "en") -> bytes:
+def text_to_speech_bytes(text: str, engine: str = "gtts", language: str = "en", voice: "str | None" = None) -> bytes:
     """
     Convert text to speech and return as bytes.
 
@@ -51,6 +51,7 @@ def text_to_speech_bytes(text: str, engine: str = "gtts", language: str = "en") 
         text: Text to synthesize
         engine: Engine name (gtts, pyttsx3, piper, etc.)
         language: Language code
+        voice: Optional engine-specific voice/speaker id (None = engine default)
 
     Returns:
         Audio bytes
@@ -63,7 +64,7 @@ def text_to_speech_bytes(text: str, engine: str = "gtts", language: str = "en") 
     validated_language = validate_language(language)
 
     config = get_default_config()
-    config.update({"engine": validated_engine, "language": validated_language})
+    config.update({"engine": validated_engine, "language": validated_language, "voice": voice})
 
     # Get engine generate function
     generate_func = get_engine_function(validated_engine)
