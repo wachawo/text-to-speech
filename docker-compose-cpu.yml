@@ -1,9 +1,3 @@
-# CPU-only variant. For GPU use docker-compose.yml (the default).
-# Run from the repo root:
-#   docker compose -f docker-compose-cpu.yml up -d
-# This file lives at the repo root so compose auto-discovers the root .env for
-# ${VAR} interpolation (published port, engine, …) with no --env-file flag.
-
 services:
   ttssrv:
     build:
@@ -21,16 +15,12 @@ services:
     environment:
       TZ:                ${TZ:-America/New_York}
       TTS_HOST:          ${TTS_HOST:-0.0.0.0}
-      # TTS_PORT drives the bind end-to-end: the app listens on it, and the
-      # `ports:` mapping + healthcheck below publish/probe the same port.
       TTS_PORT:          ${TTS_PORT:-5000}
       TTS_DEBUG:         ${TTS_DEBUG:-False}
       TTS_TOKENS:        ${TTS_TOKENS:-}
       CORS_ORIGINS:      ${CORS_ORIGINS:-*}
       TTS_POOL_SIZE:     ${TTS_POOL_SIZE:-1}
       TTS_ENGINE:        ${TTS_ENGINE:-gtts}
-      # Comma-separated set installed + preloaded at startup (entrypoint.sh +
-      # init_engine_pool). Empty → just TTS_ENGINE. e.g. coquitts,silerotts
       TTS_ENGINES:       ${TTS_ENGINES:-}
       TTS_LANGUAGE:      ${TTS_LANGUAGE:-en}
       COQUITTS_MODELS:   /opt/cache/coquitts
@@ -40,19 +30,18 @@ services:
       PIPERTTS_MODELS:   /opt/cache/pipertts
       SILEROTTS_MODELS:  /opt/cache/silerotts
       BARKTTS_MODELS:    /opt/cache/barktts
-      PYTHONUSERBASE:    /opt/userbase
-      PIP_CACHE_DIR:     /opt/pip-cache
+      PYTHONUSERBASE:    /opt/data/userbase
+      PIP_CACHE_DIR:     /opt/data/pip-cache
     ports:
       - "${TTS_PORT:-5000}:${TTS_PORT:-5000}"
     volumes:
-      - ./userbase:/opt/userbase
-      - ./pip-cache:/opt/pip-cache
+      - ./data:/opt/data
       - ./cache:/opt/cache
       - ./samples:/opt/samples:ro
       - ./.env:/opt/.env:ro
-      - ./libs:/usr/local/lib/python3.12/site-packages/libs:ro
-      - ./engines:/usr/local/lib/python3.12/site-packages/engines:ro
-      - ./install:/usr/local/lib/python3.12/site-packages/install:ro
+      - ./libs:/opt/libs:ro
+      - ./engines:/opt/engines:ro
+      - ./install:/opt/install:ro
       - ./ttssrv:/opt/ttssrv:ro
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
