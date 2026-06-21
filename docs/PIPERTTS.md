@@ -60,8 +60,8 @@ ttsgen --list                          # → pipertts | installed | <models>
 # English (default voice resolved by --language en)
 ttsgen "Hello, how are you?" --engine pipertts
 
-# Russian
-ttsgen "Привет, как дела?" --engine pipertts --language ru
+# Spanish
+ttsgen "Hola mundo" --engine pipertts --language es
 
 # Save to file
 ttsgen "Hello world" --engine pipertts --file output.wav

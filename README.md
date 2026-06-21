@@ -147,7 +147,7 @@ ttsgen "Hello world"
 # Pick an engine / language
 ttsgen "Hello world"   --engine pyttsx3
 ttsgen "Hola amigo!"   --language es
-ttsgen "Привет"        --engine silerotts --language ru
+ttsgen "Hello world"   --engine silerotts --language en
 
 # Save to file (auto-named timestamp or explicit)
 ttsgen "Hello world" --file
@@ -253,7 +253,7 @@ curl -X POST http://localhost:5000/api/tts \
 curl -X POST http://localhost:5000/api/tts \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"text":"Здравствуйте","engine":"silerotts","language":"ru","voice":"baya"}' -o out.wav
+  -d '{"text":"Hello world","engine":"silerotts","language":"en","voice":"en_5"}' -o out.wav
 ```
 
 Or via the matching client `ttsapi` — mirror of `ttsgen` with the same flags, but synthesis runs on the server:
@@ -262,7 +262,7 @@ Or via the matching client `ttsapi` — mirror of `ttsgen` with the same flags, 
 ttsapi --list                                          # GET /api/engines
 ttsapi "Hello world"                                   # POST /api/tts → play
 ttsapi -i long.txt --output play,file --file out.mp3   # chunked, multi-output
-ttsapi "Привет" --engine coquitts --language ru
+ttsapi "Hello world" --engine coquitts --language en
 ```
 
 `ttsapi` reads `TTS_URL` and `TTS_TOKEN` from the same config chain as `ttsgen` (`./ttsgen.conf` > `~/.config/ttsgen.conf` > `.env`). Default URL is `http://localhost:5000`. Empty `TTS_TOKEN` disables auth.

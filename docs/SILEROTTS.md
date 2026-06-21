@@ -126,7 +126,7 @@ An unknown voice for the language raises `ValidationError` (HTTP `400`).
 ```python
 from engines.silerotts import generate, list_voices
 
-list_voices("ru")  # {'voices': ['aidar', 'baya', ...], 'default': 'aidar'}
+list_voices("ru")  # {'voices': ['aidar', 'baya', 'kseniya', 'xenia', 'eugene', 'random'], 'default': 'aidar'}
 audio = generate("Здравствуйте", {"language": "ru", "voice": "baya"})  # female
 ```
 

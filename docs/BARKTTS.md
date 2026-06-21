@@ -90,8 +90,8 @@ python ttsgen.py "Hola mundo" --engine barktts --language es
 # Save to file
 python ttsgen.py "Hello" --engine barktts --file output.wav
 
-# Russian
-python ttsgen.py "Привет мир" --engine barktts --language ru
+# German
+python ttsgen.py "Hallo Welt" --engine barktts --language de
 ```
 
 ### Special Syntax
@@ -352,7 +352,7 @@ python ttsgen.py "This is VERY IMPORTANT!" --engine barktts
 
 ### Different Languages
 ```bash
-python ttsgen.py "Привет мир" --engine barktts --language ru
+python ttsgen.py "Hola mundo" --engine barktts --language es
 python ttsgen.py "Bonjour le monde" --engine barktts --language fr
 ```
 

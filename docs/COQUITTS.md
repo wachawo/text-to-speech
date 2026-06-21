@@ -155,8 +155,8 @@ tts_models/multilingual/multi-dataset/xtts_v2
 # English (will download model on first use)
 python ttsgen.py "Hello world" --engine coquitts
 
-# Russian
-python ttsgen.py "Привет мир" --engine coquitts --language ru
+# Spanish
+python ttsgen.py "Hola mundo" --engine coquitts --language es
 
 # Save to file
 python ttsgen.py "Hello" --engine coquitts --file output.wav
