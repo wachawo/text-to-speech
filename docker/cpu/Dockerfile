@@ -1,9 +1,3 @@
-# CPU image — same architecture as docker/gpu/Dockerfile (heavy ML stack baked
-# in at build time, uv for fast install). Only difference is the torch wheel
-# index (cpu vs cu121). See docker/gpu/Dockerfile for the full architectural
-# notes.
-#
-# Build context is the repo root — see compose `build.context: ../..`.
 ARG BASE_IMAGE=python
 ARG BASE_IMAGE_TAG=3.12-slim
 FROM ${BASE_IMAGE}:${BASE_IMAGE_TAG} AS base
@@ -30,8 +24,9 @@ COPY ttssrv/__init__.py ttssrv/app1.py ttssrv/validators.py ttssrv/gu.py ttssrv/
      /opt/ttssrv/
 RUN chmod +x /opt/ttssrv/entrypoint.sh
 
-ENV PYTHONUSERBASE=/opt/userbase \
-    PIP_CACHE_DIR=/opt/pip-cache
+ENV PYTHONUSERBASE=/opt/data/userbase \
+    PIP_CACHE_DIR=/opt/data/pip-cache \
+    PYTHONPATH=/opt
 
 EXPOSE 5000
 ENTRYPOINT ["sh", "/opt/ttssrv/entrypoint.sh"]

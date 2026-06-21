@@ -18,13 +18,13 @@ set -eu
 
 ENGINES="${TTS_ENGINES:-${TTS_ENGINE:-gtts}}"
 
-mkdir -p "${PYTHONUSERBASE:-/opt/userbase}" "${PIP_CACHE_DIR:-/opt/pip-cache}"
+mkdir -p "${PYTHONUSERBASE:-/opt/data/userbase}" "${PIP_CACHE_DIR:-/opt/data/pip-cache}"
 PY_VER="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
-mkdir -p "${PYTHONUSERBASE:-/opt/userbase}/lib/python${PY_VER}/site-packages"
-export PATH="${PYTHONUSERBASE:-/opt/userbase}/bin:$PATH"
+mkdir -p "${PYTHONUSERBASE:-/opt/data/userbase}/lib/python${PY_VER}/site-packages"
+export PATH="${PYTHONUSERBASE:-/opt/data/userbase}/bin:$PATH"
 export PIP_USER=1
 
-echo "[entrypoint] TTS_ENGINES=$ENGINES  PYTHONUSERBASE=${PYTHONUSERBASE:-/opt/userbase}"
+echo "[entrypoint] TTS_ENGINES=$ENGINES  PYTHONUSERBASE=${PYTHONUSERBASE:-/opt/data/userbase}"
 
 # Best-effort engine install, one engine at a time. A failure here (no network
 # on first boot, upstream release moved, etc.) must NOT kill the container — the
@@ -36,8 +36,8 @@ IFS=','
 for ENGINE in $ENGINES; do
     ENGINE=$(echo "$ENGINE" | tr -d ' ')
     [ -z "$ENGINE" ] && continue
-    # install/, libs/, engines/ are bind-mounted by compose into site-packages,
-    # so they're already on sys.path — no path tweak needed here.
+    # install/, libs/, engines/ are bind-mounted by compose under /opt, which is
+    # on sys.path via PYTHONPATH=/opt — no path tweak needed here.
     if python3 - "$ENGINE" <<'PY'
 import sys
 from install import run

@@ -33,9 +33,8 @@ texts/
 # Engine model caches (per-engine subdirs: cache/coquitts, cache/kokorotts, …)
 cache/
 
-# Docker shared volumes — engine pip --user installs + wheel cache
-userbase/
-pip-cache/
+# Project-local persistent data (engine pip --user installs + wheel cache)
+data/
 
 # Temp
 *.tmp

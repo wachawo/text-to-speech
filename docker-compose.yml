@@ -1,9 +1,3 @@
-# GPU variant (default). For CPU use docker-compose-cpu.yml.
-# Run from the repo root:
-#   docker compose up -d
-# This file lives at the repo root so compose auto-discovers the root .env for
-# ${VAR} interpolation (published port, engine, …) with no --env-file flag.
-
 services:
   ttssrv:
     build:
@@ -21,23 +15,14 @@ services:
     environment:
       TZ:                         ${TZ:-America/New_York}
       TTS_HOST:                   ${TTS_HOST:-0.0.0.0}
-      # TTS_PORT drives the bind end-to-end: the app listens on it, and the
-      # `ports:` mapping + healthcheck below publish/probe the same port.
       TTS_PORT:                   ${TTS_PORT:-5000}
       TTS_DEBUG:                  ${TTS_DEBUG:-False}
-      # Server-side allow-list (comma-separated). Empty = auth OFF. NOT the same
-      # var as TTS_TOKEN, which is the client-side token used by ttsapi.
       TTS_TOKENS:                 ${TTS_TOKENS:-}
       CORS_ORIGINS:               ${CORS_ORIGINS:-*}
       TTS_POOL_SIZE:              ${TTS_POOL_SIZE:-1}
       TTS_ENGINE:                 ${TTS_ENGINE:-gtts}
-      # Comma-separated set installed + preloaded at startup (entrypoint.sh +
-      # init_engine_pool). Empty → just TTS_ENGINE. First entry is the request
-      # default when TTS_ENGINE is unset. e.g. TTS_ENGINES=coquitts,silerotts
       TTS_ENGINES:                ${TTS_ENGINES:-}
       TTS_LANGUAGE:               ${TTS_LANGUAGE:-en}
-      # Per-engine model cache directories — bind-mounted from host below.
-      # Engines read these via *_MODELS env (see engines/<name>.py:get_models_directory()).
       COQUITTS_MODELS:            /opt/cache/coquitts
       COQUITTS_MODEL:             ${COQUITTS_MODEL:-tts_models/multilingual/multi-dataset/xtts_v2}
       COQUITTS_SAMPLE:            ${COQUITTS_SAMPLE:-default.wav}
@@ -45,30 +30,20 @@ services:
       PIPERTTS_MODELS:            /opt/cache/pipertts
       SILEROTTS_MODELS:           /opt/cache/silerotts
       BARKTTS_MODELS:             /opt/cache/barktts
-      # Lazy-install target for heavy engine deps (kokoro-onnx, piper-tts, bark, …).
-      # Shared with host so packages survive container recreate. See entrypoint.sh.
-      PYTHONUSERBASE:             /opt/userbase
-      PIP_CACHE_DIR:              /opt/pip-cache
+      PYTHONUSERBASE:             /opt/data/userbase
+      PIP_CACHE_DIR:              /opt/data/pip-cache
       NVIDIA_VISIBLE_DEVICES:     "all"
       NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
     ports:
       - "${TTS_PORT:-5000}:${TTS_PORT:-5000}"
     volumes:
-      # Engine packages installed at runtime via `pip install --user`.
-      # First start of a new engine = pip download + install (slow); subsequent
-      # starts hit the wheel cache below and finish in <1s.
-      - ./userbase:/opt/userbase
-      - ./pip-cache:/opt/pip-cache
-      # All per-engine model caches (cache/coquitts, cache/kokorotts, …) under
-      # one root — survive container recreate.
+      - ./data:/opt/data
       - ./cache:/opt/cache
-      # Voice samples (xtts_v2 voice cloning) + .env passthrough.
       - ./samples:/opt/samples:ro
       - ./.env:/opt/.env:ro
-      # Live source for dev — survive rebuilds without `docker cp`.
-      - ./libs:/usr/local/lib/python3.12/site-packages/libs:ro
-      - ./engines:/usr/local/lib/python3.12/site-packages/engines:ro
-      - ./install:/usr/local/lib/python3.12/site-packages/install:ro
+      - ./libs:/opt/libs:ro
+      - ./engines:/opt/engines:ro
+      - ./install:/opt/install:ro
       - ./ttssrv:/opt/ttssrv:ro
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
@@ -77,7 +52,6 @@ services:
              "import urllib.request; urllib.request.urlopen('http://localhost:${TTS_PORT:-5000}/api/health', timeout=5)"]
       interval: 30s
       timeout: 10s
-      # First start may download xtts_v2 (~1.8 GB) into the cache volume.
       start_period: 600s
       retries: 3
     logging:
@@ -91,7 +65,6 @@ services:
       nofile:
         soft: 65535
         hard: 65535
-    # GPU passthrough — requires nvidia-container-toolkit on host.
     deploy:
       resources:
         reservations:
