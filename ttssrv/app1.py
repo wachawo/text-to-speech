@@ -70,6 +70,7 @@ CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if 
 # Hard cap on request body size — Marshmallow validates `text` after parsing,
 # so without this Werkzeug would buffer arbitrarily large bodies into memory.
 TTS_MAX_BODY_BYTES = int(os.getenv("TTS_MAX_BODY_BYTES", str(2 * 1024 * 1024)))
+TTS_MAX_BODY_MB = TTS_MAX_BODY_BYTES // (1024 * 1024)
 # TTS_ENGINES is the set to install + preload at startup (comma-separated).
 # TTS_ENGINE stays the default for requests that omit `engine`. If TTS_ENGINE
 # is unset it falls back to the first preloaded engine; if TTS_ENGINES is unset
@@ -385,6 +386,21 @@ def handle_custom_error(error):
 def handle_tts_exception(error):
     logger.error(f"[{get_req_id()}] {type(error).__name__}: {str(error)}\n{traceback.format_exc()}")
     return jsonify({"error": "TTS failed", "request_id": get_req_id()}), 500
+
+
+@app.errorhandler(413)
+def payload_too_large(error):
+    logger.warning(f"[{get_req_id()}] Payload too large (limit={TTS_MAX_BODY_MB}MB)")
+    return (
+        jsonify(
+            {
+                "error": "Payload Too Large",
+                "limit_mb": TTS_MAX_BODY_MB,
+                "request_id": get_req_id(),
+            }
+        ),
+        413,
+    )
 
 
 @app.errorhandler(Exception)
