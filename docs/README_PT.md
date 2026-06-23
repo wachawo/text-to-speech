@@ -1,80 +1,110 @@
-## text-to-speech — motores de TTS populares por trás de uma única API
+## text-to-speech — uma única interface para motores de TTS
 
 [![CI](https://github.com/wachawo/text-to-speech/actions/workflows/ci.yml/badge.svg)](https://github.com/wachawo/text-to-speech/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/wachawo/text-to-speech/blob/main/LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
 
-Instale motores de TTS online/offline populares (gTTS, espeak, Piper, Silero, Coqui, Bark, Kokoro) e use-os através de uma única CLI, API Python e servidor HTTP.
+`text-to-speech` permite trabalhar com vários motores de síntese de fala através de uma única interface. Você pode começar com o gTTS online e depois mudar para Piper, Silero, Coqui, Bark ou Kokoro locais — sem reescrever seus comandos de CLI, seu código Python ou sua integração HTTP.
+
+O projeto serve para uso local, automação e para executar seu próprio servidor de TTS na rede.
 
 [English](https://github.com/wachawo/text-to-speech/blob/main/README.md) | [Español](https://github.com/wachawo/text-to-speech/blob/main/docs/README_ES.md) | **[Português](https://github.com/wachawo/text-to-speech/blob/main/docs/README_PT.md)** | [Français](https://github.com/wachawo/text-to-speech/blob/main/docs/README_FR.md) | [Deutsch](https://github.com/wachawo/text-to-speech/blob/main/docs/README_DE.md) | [Italiano](https://github.com/wachawo/text-to-speech/blob/main/docs/README_IT.md) | [Русский](https://github.com/wachawo/text-to-speech/blob/main/docs/README_RU.md) | [中文](https://github.com/wachawo/text-to-speech/blob/main/docs/README_ZH.md) | [日本語](https://github.com/wachawo/text-to-speech/blob/main/docs/README_JA.md) | [हिन्दी](https://github.com/wachawo/text-to-speech/blob/main/docs/README_HI.md) | [한국어](https://github.com/wachawo/text-to-speech/blob/main/docs/README_KR.md)
 
-- **Uma interface, vários motores.** Escolha um motor e chame-o da mesma forma a partir da CLI (`ttsgen`), do Python (`libs.api`) ou via HTTP — alterne entre nuvem e local sem mudar o código.
-- **Servidor de API para a sua LAN.** Execute `ttssrv` para que outras máquinas sintetizem por HTTP (`POST /api/tts`); o modelo é carregado uma vez na inicialização e as requisições compartilham um pool.
+* **Uma única forma de trabalhar com diferentes motores.** Escolha o motor de que precisa e use-o através da CLI (`ttsgen`), da API Python (`libs.api`) ou da API HTTP.
+* **Você pode trabalhar totalmente de forma local.** Piper, Silero, Coqui, Bark, Kokoro e `pyttsx3` rodam todos na sua própria máquina.
+* **Está incluído um servidor HTTP pronto para usar.** O `ttssrv` carrega o modelo na inicialização e atende às solicitações de outras máquinas na sua rede local.
 
 ### Motores
 
-| Motor | Offline | Hardware | Qualidade | Melhor para |
-|---|---|---|---|---|
-| `gtts` | ❌ online | CPU | ★★★★ | 100+ idiomas, sem configuração |
-| `pyttsx3` | ✅ | CPU | ★★ | instalação mínima (espeak / SAPI) |
-| `pipertts` | ✅ | CPU | ★★★★ | rápido offline, 50+ idiomas |
-| `silerotts` | ✅ | CPU | ★★★★ | rápido offline, russo |
-| `kokorotts` | ✅ | CPU | ★★★★ | rápido offline, multilíngue |
-| `coquitts` | ✅ | CPU / **GPU** | ★★★★★ | melhor qualidade, clonagem de voz |
-| `barktts` | ✅ | CPU / **GPU** | ★★★★★ | emoções, música, canto |
+| Motor       | Offline | Hardware      | Qualidade | Bom para                                        |
+| ----------- | ------- | ------------- | --------- | ----------------------------------------------- |
+| `gtts`      | ❌      | CPU           | ★★★★    | um início rápido e um grande número de idiomas  |
+| `pyttsx3`   | ✅      | CPU           | ★★      | fala local simples via espeak ou SAPI           |
+| `pipertts`  | ✅      | CPU           | ★★★★    | síntese offline rápida em muitos idiomas        |
+| `silerotts` | ✅      | CPU           | ★★★★    | fala em russo e uma configuração local leve     |
+| `kokorotts` | ✅      | CPU           | ★★★★    | síntese offline multilíngue                     |
+| `coquitts`  | ✅      | CPU / **GPU** | ★★★★★   | vozes de alta qualidade e clonagem de voz       |
+| `barktts`   | ✅      | CPU / **GPU** | ★★★★★   | fala expressiva, emoções, música e canto        |
 
-`gtts`, `pyttsx3`, `pipertts`, `silerotts`, `kokorotts` funcionam bem em CPU. `coquitts` e `barktts` também funcionam em CPU, mas são lentos — recomenda-se uma GPU CUDA.
+`gtts`, `pyttsx3`, `pipertts`, `silerotts` e `kokorotts` funcionam bem em CPU. `coquitts` e `barktts` também podem rodar sem GPU, mas a síntese é notavelmente mais lenta — para eles é recomendada uma placa de vídeo compatível com CUDA.
 
-### Instalação (pip)
+### Instalação
+
+A instalação base configura a CLI e suas dependências leves:
 
 ```bash
 pip install git+https://github.com/wachawo/text-to-speech.git
 ```
 
-Isso instala a CLI apenas com dependências leves. Os motores neurais (`pipertts`, `silerotts`, `coquitts`, `barktts`, `kokorotts`) baixam `torch`/modelos sob demanda via `ttsgen --install <engine>`.
+Motores extras e seus modelos são instalados separadamente, quando você realmente precisa deles:
 
 ```bash
-ttsgen "Hello world"                  # reproduzir (motor padrão: gtts, online)
-ttsgen "Hello world" -f out.mp3       # salvar em um arquivo
-ttsgen "Hello world" -e pyttsx3       # totalmente offline
-ttsgen "Hola amigo!"  -l es           # escolher o idioma
-ttsgen --install coquitts             # adicionar um motor neural offline + modelos
+ttsgen --install coquitts
+```
+
+Exemplos de uso da CLI:
+
+```bash
+ttsgen "Hello world"                  # fala o texto com o gTTS
+ttsgen "Hello world" -f out.mp3       # salva o resultado em um arquivo
+ttsgen "Hello world" -e pyttsx3       # usa um motor local
+ttsgen "Hola amigo!" -l es            # escolhe um idioma
+ttsgen --install coquitts             # instala o Coqui TTS e seus modelos
 ttsgen "Hello world" -e coquitts -f out.wav
-ttsgen --list                         # motores + modelos instalados
+ttsgen --list                         # mostra os motores e modelos disponíveis
 ttsgen "Hello world" --stdout | ttsplay
 ```
 
-Python:
+`gtts` é o padrão, então um único comando é suficiente para a primeira execução. Para um trabalho totalmente local, escolha outro motor como `pyttsx3`, `pipertts` ou `silerotts`.
+Minha escolha: `coquitts` pela qualidade e pela fala com som natural, `silerotts` pela geração rápida.
+
+### API Python
+
+Em Python, há funções para salvar o resultado em um arquivo ou obter o áudio como bytes:
 
 ```python
 from libs.api import text_to_speech_file, text_to_speech_bytes
 
 text_to_speech_file("Hello world", engine="gtts")
-audio = text_to_speech_bytes("Hello world", engine="pipertts", language="en")
+
+audio = text_to_speech_bytes(
+    "Hello world",
+    engine="pipertts",
+    language="en",
+)
 ```
 
-### Servidor (clone)
+### Servidor HTTP
+
+É mais fácil executar o servidor com o Docker:
 
 ```bash
 git clone https://github.com/wachawo/text-to-speech.git
 cd text-to-speech
-docker compose up --build -d                          # GPU (CUDA 12.1)
+
+docker compose up --build -d                          # GPU / CUDA 12.1
 docker compose -f docker-compose-cpu.yml up --build -d # apenas CPU
 ```
 
-Solicite a síntese por HTTP:
+Uma vez em execução, você pode verificar o status do servidor e enviar uma solicitação de síntese:
 
 ```bash
 curl localhost:5000/api/health
-curl localhost:5000/api/engines -H "Authorization: Bearer $TTS_TOKEN"
-curl "localhost:5000/api/voices?engine=silerotts&language=ru" -H "Authorization: Bearer $TTS_TOKEN"
+
+curl localhost:5000/api/engines \
+  -H "Authorization: Bearer $TTS_TOKEN"
+
+curl "localhost:5000/api/voices?engine=silerotts&language=ru" \
+  -H "Authorization: Bearer $TTS_TOKEN"
 
 curl -X POST localhost:5000/api/tts \
-  -H "Authorization: Bearer $TTS_TOKEN" -H "Content-Type: application/json" \
-  -d '{"text":"Hello world","engine":"gtts"}' -o out.mp3
+  -H "Authorization: Bearer $TTS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Hello world","engine":"gtts"}' \
+  -o out.mp3
 ```
 
-Ou use `ttsapi` — os mesmos parâmetros que `ttsgen`, mas a síntese roda no servidor (`TTS_URL` / `TTS_TOKEN` da configuração):
+Para trabalhar com o servidor e testá-lo, há um cliente de CLI separado, o `ttsapi`. Ele tem as mesmas flags principais que o `ttsgen`, mas a síntese é executada no servidor. O endereço do servidor e o token são obtidos de `TTS_URL` e `TTS_TOKEN`.
 
 ```bash
 ttsapi "Hello world"
@@ -83,35 +113,47 @@ ttsapi -i long.txt --output play,file --file out.mp3
 
 ### Estrutura do projeto
 
-```
+```text
 text-to-speech/
-├── ttsgen.py / ttsplay.py / ttsrec.py / ttsapi.py   # pontos de entrada da CLI
-├── engines/        # motores plugáveis (gtts, piper, silero, coqui, bark, kokoro, …)
-├── libs/           # núcleo: api.py, tools.py, playback.py, exceptions.py
-├── install/        # instaladores `ttsgen --install <engine>`
-├── ttssrv/         # servidor HTTP Flask (Docker / python3 ttssrv/app1.py)
-├── docker/         # builds gpu/ e cpu/ (Dockerfile + requirements)
-├── docs/           # guias por motor + traduções
-└── tests/          # suíte pytest (motores mockados, sem necessidade de modelos/GPU)
+├── ttsgen.py / ttsplay.py / ttsrec.py / ttsapi.py   # comandos da CLI
+├── engines/        # motores: gTTS, Piper, Silero, Coqui, Bark, Kokoro e outros
+├── libs/           # núcleo compartilhado: API, ferramentas, reprodução, exceções
+├── install/        # instaladores para ttsgen --install <engine>
+├── ttssrv/         # servidor HTTP Flask
+├── docker/         # builds do Docker para GPU e CPU
+├── docs/           # documentação por motor e traduções do README
+└── tests/          # testes pytest, sem downloads de modelos e sem GPU
 ```
 
-### Notas para desenvolvedores
+### Desenvolvimento
+
+Para instalar as dependências de desenvolvimento:
 
 ```bash
 pip install -e ".[dev]"
-pytest                 # testes + cobertura
-ruff check . && black .
 ```
 
-Adicione um motor colocando `engines/<name>.py` com duas funções — ele aparece na CLI e na API automaticamente:
+Verificações antes de fazer commit:
+
+```bash
+pytest
+ruff check .
+black .
+```
+
+Um novo motor é conectado através de um arquivo `engines/<name>.py`. Você só precisa implementar duas funções:
 
 ```python
-def is_available() -> bool: ...                  # dependências importáveis?
-def generate(text: str, config: dict) -> bytes:  # retorna bytes MP3/WAV
+def is_available() -> bool:
+    ...
+
+def generate(text: str, config: dict) -> bytes:
     ...
 ```
 
-A configuração por motor e o guia completo dos motores ficam em [`docs/`](docs/ENGINES.md).
+`is_available()` verifica se as dependências podem ser importadas, e `generate()` recebe o texto e a configuração e retorna o áudio como bytes MP3 ou WAV. Depois disso, o motor fica disponível na CLI e na API automaticamente.
+
+Parâmetros detalhados e particularidades de cada motor estão descritos em [`docs/`](docs/ENGINES.md).
 
 ### Licença
 
