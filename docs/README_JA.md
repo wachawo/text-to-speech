@@ -6,8 +6,6 @@
 
 [English](https://github.com/wachawo/text-to-speech/blob/main/README.md) | [Español](https://github.com/wachawo/text-to-speech/blob/main/docs/README_ES.md) | [Português](https://github.com/wachawo/text-to-speech/blob/main/docs/README_PT.md) | [Français](https://github.com/wachawo/text-to-speech/blob/main/docs/README_FR.md) | [Deutsch](https://github.com/wachawo/text-to-speech/blob/main/docs/README_DE.md) | [Italiano](https://github.com/wachawo/text-to-speech/blob/main/docs/README_IT.md) | [Русский](https://github.com/wachawo/text-to-speech/blob/main/docs/README_RU.md) | [中文](https://github.com/wachawo/text-to-speech/blob/main/docs/README_ZH.md) | **[日本語](https://github.com/wachawo/text-to-speech/blob/main/docs/README_JA.md)** | [हिन्दी](https://github.com/wachawo/text-to-speech/blob/main/docs/README_HI.md) | [한국어](https://github.com/wachawo/text-to-speech/blob/main/docs/README_KR.md)
 
-> _先にお詫びします。この翻訳はClaude Codeを使って作成しました。ネイティブスピーカーの方で誤りにお気づきの際は、ぜひお知らせください。_
-
 `text-to-speech` を使えば、複数の音声合成エンジンを1つのインターフェースで扱えます。オンラインのgTTSから始めて、後からローカルのPiper、Silero、Coqui、Bark、Kokoroに切り替えることもできます。しかもCLIコマンド、Pythonコード、HTTP連携を書き直す必要はありません。
 
 このプロジェクトは、ローカルでの利用、自動化、そしてネットワーク上で自前のTTSサーバーを運用する用途に適しています。

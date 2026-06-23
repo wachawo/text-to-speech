@@ -186,7 +186,7 @@ def generate(text: str, config: dict) -> bytes:
     """
     if not AVAILABLE:
         raise EngineNotAvailableError(
-            "Piper TTS not available. Install with: pip install piper-tts\n" "See docs/PIPER.md for setup instructions."
+            "Piper TTS not available. Install with: pip install piper-tts\n" "See docs/PIPERTTS.md for setup instructions."
         )
     if len(text) > MAX_TEXT_LENGTH:
         raise ValidationError(f"Text too long for pipertts: {len(text)} > {MAX_TEXT_LENGTH}")

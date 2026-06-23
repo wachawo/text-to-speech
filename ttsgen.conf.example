@@ -72,7 +72,7 @@ KOKOROTTS_MODELS=cache/kokorotts
 # KOKOROTTS_SPEED=1.0
 
 
-# HTTP API server (used by `ttssrv` and docker/{cpu,gpu}/docker-compose.yml).
+# HTTP API server (used by `ttssrv` and docker-compose*.yml).
 TTS_HOST=0.0.0.0
 TTS_PORT=5000
 TTS_DEBUG=False

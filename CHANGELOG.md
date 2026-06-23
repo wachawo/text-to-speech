@@ -2,6 +2,8 @@
 
 ### [Unreleased]
 
+### [1.0.4] — 2026-06-23
+
 #### Added
 - **Voice/speaker selection.** `/api/tts` accepts an optional `voice` field that
   selects the engine speaker (e.g. Silero `baya`/`kseniya` for a female Russian
@@ -13,6 +15,20 @@
   returning `{engine, language, voices, default}`. Engines without voice selection
   return an empty list; SileroTTS exposes its model's speakers via `list_voices()`
   and a generic `engines.get_engine_voices()` dispatcher.
+
+#### Fixed
+- Engine error messages now point to the correct per-engine docs
+  (`docs/PIPERTTS.md`, `docs/BARKTTS.md`) instead of non-existent
+  `docs/PIPER.md` / `docs/BARK.md`.
+- Corrected the COQUITTS docs: the Idiap fork (`coqui-tts`) supports Python
+  3.11+ (including 3.12) and pins `transformers>=4.46,<5.0`; removed the
+  outdated "Python 3.9–3.11 only / `transformers==4.33.0`" instructions.
+- Removed an invalid voice-samples URL from `docs/SILEROTTS.md`.
+- Corrected stale `docker-compose` path references — the compose files live at
+  the repo root, not under `docker/{cpu,gpu}/`.
+
+#### Removed
+- Dead commented-out code and a stray developer note from `ttsgen.py`.
 
 ### [1.0.3] — 2026-06-17
 

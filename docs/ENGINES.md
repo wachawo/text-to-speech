@@ -63,7 +63,7 @@ Each engine is an optional module that can be installed as needed.
 
 **coquitts**
 - Pros: Best quality, 100+ languages, voice cloning
-- Cons: Slow on CPU, Python 3.9-3.11 only
+- Cons: Slow on CPU (GPU recommended)
 - Install: `pip install coqui-tts[codec]` (Idiap community fork — upstream `TTS` package is abandoned and breaks under torch 2.9+)
 - Docs: docs/COQUITTS.md
 

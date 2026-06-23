@@ -4,7 +4,7 @@ Coqui TTS Engine
 High-quality text-to-speech using Coqui TTS (formerly Mozilla TTS).
 Supports voice cloning, multi-speaker models, and emotion control.
 
-IMPORTANT: Requires Python 3.9-3.11 (NOT compatible with Python 3.12+)
+Requires Python 3.11+ (Idiap community fork `coqui-tts`, transformers>=4.46,<5.0).
 
 Note: Works best with GPU. CPU mode is very slow.
 """

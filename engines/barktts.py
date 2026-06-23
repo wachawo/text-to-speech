@@ -143,7 +143,7 @@ def generate(text: str, config: dict) -> bytes:
         raise EngineNotAvailableError(
             "Bark TTS not available. Install with:\n"
             "   pip install git+https://github.com/suno-ai/bark.git\n"
-            "See docs/BARK.md for setup instructions."
+            "See docs/BARKTTS.md for setup instructions."
         )
 
     if len(text) > MAX_TEXT_LENGTH:
@@ -210,7 +210,7 @@ def generate(text: str, config: dict) -> bytes:
                 "Bark TTS dependencies missing. Install with:\n"
                 "   pip install git+https://github.com/suno-ai/bark.git\n"
                 "   pip install scipy\n"
-                "See docs/BARK.md for details."
+                "See docs/BARKTTS.md for details."
             )
 
         if "CUDA" in error_msg or "GPU" in error_msg or "memory" in error_msg.lower():
