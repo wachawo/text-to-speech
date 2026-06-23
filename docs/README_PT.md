@@ -38,6 +38,12 @@ A instalação base configura a CLI e suas dependências leves:
 pip install git+https://github.com/wachawo/text-to-speech.git
 ```
 
+No Linux, o motor offline `pyttsx3` também precisa do pacote de sistema `espeak`:
+
+```bash
+sudo apt install espeak espeak-data libespeak1
+```
+
 Motores extras e seus modelos são instalados separadamente, quando você realmente precisa deles:
 
 ```bash
@@ -155,8 +161,8 @@ def generate(text: str, config: dict) -> bytes:
 
 `is_available()` verifica se as dependências podem ser importadas, e `generate()` recebe o texto e a configuração e retorna o áudio como bytes MP3 ou WAV. Depois disso, o motor fica disponível na CLI e na API automaticamente.
 
-Parâmetros detalhados e particularidades de cada motor estão descritos em [`docs/`](docs/ENGINES.md).
+Parâmetros detalhados e particularidades de cada motor estão descritos em [`docs/`](ENGINES.md).
 
 ### Licença
 
-[MIT](LICENSE)
+[MIT](../LICENSE)

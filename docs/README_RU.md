@@ -36,6 +36,12 @@
 pip install git+https://github.com/wachawo/text-to-speech.git
 ```
 
+В Linux офлайн-движку `pyttsx3` дополнительно нужен системный пакет `espeak`:
+
+```bash
+sudo apt install espeak espeak-data libespeak1
+```
+
 Дополнительные движки и их модели устанавливаются отдельно, когда они действительно нужны:
 
 ```bash
@@ -153,8 +159,8 @@ def generate(text: str, config: dict) -> bytes:
 
 `is_available()` проверяет доступность зависимостей, а `generate()` получает текст и настройки, после чего возвращает аудиофайл в виде байтов MP3 или WAV. После этого движок автоматически становится доступен в CLI и API.
 
-Подробные параметры и особенности каждого движка описаны в [`docs/`](docs/ENGINES.md).
+Подробные параметры и особенности каждого движка описаны в [`docs/`](ENGINES.md).
 
 ### Лицензия
 
-[MIT](LICENSE)
+[MIT](../LICENSE)

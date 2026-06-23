@@ -39,6 +39,12 @@
 pip install git+https://github.com/wachawo/text-to-speech.git
 ```
 
+Linuxでは、オフラインの `pyttsx3` エンジンを使うには、システムの `espeak` パッケージも必要です。
+
+```bash
+sudo apt install espeak espeak-data libespeak1
+```
+
 追加のエンジンとそのモデルは、実際に必要になったときに別途インストールします。
 
 ```bash
@@ -156,8 +162,8 @@ def generate(text: str, config: dict) -> bytes:
 
 `is_available()` は依存関係がインポート可能かを確認し、`generate()` はテキストと設定を受け取り、音声をMP3またはWAVのバイト列として返します。その後、エンジンはCLIとAPIで自動的に利用可能になります。
 
-各エンジンの詳細なパラメータと特性は [`docs/`](docs/ENGINES.md) に記載されています。
+各エンジンの詳細なパラメータと特性は [`docs/`](ENGINES.md) に記載されています。
 
 ### ライセンス
 
-[MIT](LICENSE)
+[MIT](../LICENSE)

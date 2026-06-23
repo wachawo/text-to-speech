@@ -36,6 +36,12 @@ The base install sets up the CLI and its lightweight dependencies:
 pip install git+https://github.com/wachawo/text-to-speech.git
 ```
 
+On Linux, the offline `pyttsx3` engine also needs the system `espeak` package:
+
+```bash
+sudo apt install espeak espeak-data libespeak1
+```
+
 Extra engines and their models are installed separately, when you actually need them:
 
 ```bash

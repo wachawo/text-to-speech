@@ -38,6 +38,12 @@ L'installation de base met en place la CLI et ses dépendances légères :
 pip install git+https://github.com/wachawo/text-to-speech.git
 ```
 
+Sous Linux, le moteur hors ligne `pyttsx3` nécessite également le paquet système `espeak` :
+
+```bash
+sudo apt install espeak espeak-data libespeak1
+```
+
 Les moteurs supplémentaires et leurs modèles s'installent séparément, lorsque vous en avez réellement besoin :
 
 ```bash
@@ -155,8 +161,8 @@ def generate(text: str, config: dict) -> bytes:
 
 `is_available()` vérifie que les dépendances sont importables, et `generate()` prend le texte et la configuration et renvoie l'audio sous forme d'octets MP3 ou WAV. Après cela, le moteur devient automatiquement disponible dans la CLI et l'API.
 
-Les paramètres détaillés et les spécificités de chaque moteur sont décrits dans [`docs/`](docs/ENGINES.md).
+Les paramètres détaillés et les spécificités de chaque moteur sont décrits dans [`docs/`](ENGINES.md).
 
 ### Licence
 
-[MIT](LICENSE)
+[MIT](../LICENSE)
