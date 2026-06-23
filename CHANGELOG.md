@@ -26,6 +26,9 @@
 - Removed an invalid voice-samples URL from `docs/SILEROTTS.md`.
 - Corrected stale `docker-compose` path references — the compose files live at
   the repo root, not under `docker/{cpu,gpu}/`.
+- `engines/coquitts.py` now imports its heavy deps (`torch`, the `coqui-tts`
+  fork) inside the `try/except` that sets `AVAILABLE`, so the module follows the
+  engine-plugin contract and imports cleanly when those deps are absent.
 
 #### Removed
 - Dead commented-out code and a stray developer note from `ttsgen.py`.
