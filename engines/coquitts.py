@@ -4,7 +4,7 @@ Coqui TTS Engine
 High-quality text-to-speech using Coqui TTS (formerly Mozilla TTS).
 Supports voice cloning, multi-speaker models, and emotion control.
 
-IMPORTANT: Requires Python 3.9-3.11 (NOT compatible with Python 3.12+)
+Requires Python 3.11+ (Idiap community fork `coqui-tts`, transformers>=4.46,<5.0).
 
 Note: Works best with GPU. CPU mode is very slow.
 """
@@ -12,11 +12,6 @@ Note: Works best with GPU. CPU mode is very slow.
 import tempfile
 import os
 import logging
-import torch
-from torch.serialization import add_safe_globals, safe_globals
-from TTS.tts.configs.xtts_config import XttsConfig
-from TTS.tts.models.xtts import XttsAudioConfig, XttsArgs
-from TTS.config.shared_configs import BaseDatasetConfig
 from libs.exceptions import CustomError, EngineNotAvailableError, TTSException, ValidationError
 
 # Coqui xtts_v2 is the slowest engine but voice-cloning works on book-length text.
@@ -57,14 +52,21 @@ DEFAULT_COQUITTS_SAMPLE = str(os.path.expanduser("~/.config/ttsgen.wav"))
 # checkpoint on every synthesis call. Keyed by tuple → instance.
 TTS_CACHE: dict = {}
 
-# Try to import Coqui TTS
+# Heavy/optional deps (torch + the Idiap `coqui-tts` fork) live inside the
+# try/except so the module still imports with AVAILABLE=False when they're
+# absent — the engine-plugin contract. generate() uses these as module globals.
 try:
+    import torch
+    from torch.serialization import add_safe_globals, safe_globals
     from TTS.api import TTS
+    from TTS.config.shared_configs import BaseDatasetConfig
+    from TTS.tts.configs.xtts_config import XttsConfig
+    from TTS.tts.models.xtts import XttsArgs, XttsAudioConfig
 
     AVAILABLE = True
 except ImportError:
     AVAILABLE = False
-    logger.warning("Coqui TTS not available. Install with: pip install TTS")
+    logger.warning("Coqui TTS not available. Install with: pip install coqui-tts[codec]")
 
 
 def is_available() -> bool:

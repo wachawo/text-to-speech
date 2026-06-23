@@ -13,24 +13,20 @@ Coqui TTS (formerly Mozilla TTS) is a state-of-the-art text-to-speech library wi
 
 ### Python Version Compatibility
 
-**IMPORTANT:** Coqui TTS requires Python 3.9 - 3.11
+This project uses the **Idiap community fork** (`coqui-tts`), which supports
+modern Python and PyTorch — unlike the abandoned upstream `TTS` package.
 
-- Python 3.12+ is NOT supported
-- Python 3.8 and below not recommended
-- **Requires transformers==4.33.0** (newer versions incompatible)
-
-If you have Python 3.12:
-- Use other engines (piper, silerotts, gtts)
-- Or install Python 3.11 in separate venv
+- Python 3.11+ (including 3.12)
+- Pinned `transformers>=4.46,<5.0` (the version the fork needs under torch 2.9+)
 
 ### Minimum Requirements
-- Python 3.9-3.11
+- Python 3.11+
 - 4GB RAM
 - 2GB disk space for models
 - CPU: Works but very slow
 
 ### Recommended Requirements
-- Python 3.9-3.11
+- Python 3.11+
 - 8GB+ RAM
 - NVIDIA GPU with 4GB+ VRAM
 - 5GB disk space
@@ -57,7 +53,7 @@ pip install "coqui-tts[codec]" "transformers>=4.46,<5.0"
 python -c "from TTS.api import TTS; print('Coqui TTS installed successfully')"
 ```
 
-**Important:** Coqui TTS requires `transformers==4.33.0`. Newer versions cause import errors (`cannot import name 'BeamSearchScorer'`).
+**Note:** This project pins `transformers>=4.46,<5.0` — the version the Idiap fork needs under torch 2.9+.
 
 **Note:** First run with certain models will prompt for license acceptance.
 
@@ -258,19 +254,14 @@ Some models support multiple speakers/voices. Check model documentation.
 
 ## Troubleshooting
 
-### ImportError: cannot import name 'BeamSearchScorer'
+### transformers import errors
 
-This error occurs with newer versions of `transformers`. Fix:
+This project pins `transformers>=4.46,<5.0`. The 5.x line removes symbols the
+fork still imports, and very old releases lack others. If you hit a
+`cannot import name ...` error from `transformers`, install the pinned range:
 
 ```bash
-# Uninstall incompatible version
-pip uninstall transformers -y
-
-# Install compatible version
-pip install transformers==4.33.0
-
-# Reinstall Coqui TTS (Idiap community fork — upstream `TTS` is abandoned)
-pip install "coqui-tts[codec]"
+pip install "coqui-tts[codec]" "transformers>=4.46,<5.0"
 ```
 
 ### Installation fails

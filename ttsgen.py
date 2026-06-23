@@ -26,7 +26,7 @@ Usage:
     python ttsgen.py --install coquitts               # Install an engine and download models
 
 Author: TTS Library Team
-Version: 1.0.3
+Version: 1.0.4
 License: MIT
 """
 
@@ -64,12 +64,6 @@ try:
         ValidationError,
         play_audio,
     )
-
-    """ By Silletr -
-     This functions is unavailable,
-     write it and u can remove Except block
-     Cause it local modules that not need installigng
-    """
     from libs.tempfiles import safe_unlink
     from libs.tools import ensure_audio_directory, generate_timestamp_filename
 except ImportError as e:
@@ -460,33 +454,6 @@ def main() -> int:
             logger.info(f"Formats: {', '.join(output_formats)}")
             if output_filename:
                 logger.info(f"Output file: {output_filename}")
-
-        """
-         SINGLE-CHUNK MODE
-         Generate TTS audio (engines return bytes)
-        from libs.api import text_to_speech_bytes
-        audio_bytes = text_to_speech_bytes(text=text, engine=engine, language=language)
-
-        # Process based on output formats (file first, then play, then stdout)
-        for output_format in [f for f in ['file', 'play', 'stdout'] if f in output_formats]:
-            if output_format == 'file' and output_filename:
-                with open(output_filename, 'wb') as f:
-                    f.write(audio_bytes)
-                if 'stdout' not in output_formats:
-                    print(output_filename, file=sys.stdout)
-                else:
-                    logger.info(output_filename)
-            elif output_format == 'play':
-                if not args.quiet and 'stdout' not in output_formats:
-                    logger.info("Playing audio...")
-                play_audio(audio_bytes)
-                if not args.quiet and 'stdout' not in output_formats:
-                    logger.info("Playback completed")
-            elif output_format == 'stdout':
-                sys.stdout.buffer.write(audio_bytes)
-                sys.stdout.buffer.flush()
-        return 0
-        """
 
         # CHUNKED MODE
         MAX_LEN = 200

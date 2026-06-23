@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "text-to-speech"
-version = "1.0.3"
+version = "1.0.4"
 description = "Universal TTS CLI and library — gTTS, espeak/pyttsx3, Piper, Silero, Coqui, Bark behind a single interface."
 readme = "README.md"
 license = { text = "MIT" }
@@ -60,7 +60,7 @@ dev = [
     "types-PyYAML==6.0.12.0",
     # Web stack — needed by tests/ to exercise ttssrv handlers locally.
     # In production ttssrv runs only inside Docker (see docker/{cpu,gpu}/Dockerfile
-    # and docker/{cpu,gpu}/docker-compose.yml); these wheels exist in [dev] solely so that
+    # and docker-compose*.yml); these wheels exist in [dev] solely so that
     # `pytest` and ad-hoc `python3 ttssrv/app1.py` work in the dev venv.
     "Flask==2.3.3",
     "flask-cors==4.0.0",

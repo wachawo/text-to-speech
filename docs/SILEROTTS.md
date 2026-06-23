@@ -339,7 +339,6 @@ pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
 ## Resources
 
 - GitHub: https://github.com/snakers4/silero-models
-- Voice samples: https://oidmtts.site/
 - PyTorch Hub: https://pytorch.org/hub/snakers4_silero-models_tts/
 - Colab demo: Available on GitHub
 

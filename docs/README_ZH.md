@@ -6,8 +6,6 @@
 
 [English](https://github.com/wachawo/text-to-speech/blob/main/README.md) | [Español](https://github.com/wachawo/text-to-speech/blob/main/docs/README_ES.md) | [Português](https://github.com/wachawo/text-to-speech/blob/main/docs/README_PT.md) | [Français](https://github.com/wachawo/text-to-speech/blob/main/docs/README_FR.md) | [Deutsch](https://github.com/wachawo/text-to-speech/blob/main/docs/README_DE.md) | [Italiano](https://github.com/wachawo/text-to-speech/blob/main/docs/README_IT.md) | [Русский](https://github.com/wachawo/text-to-speech/blob/main/docs/README_RU.md) | **[中文](https://github.com/wachawo/text-to-speech/blob/main/docs/README_ZH.md)** | [日本語](https://github.com/wachawo/text-to-speech/blob/main/docs/README_JA.md) | [हिन्दी](https://github.com/wachawo/text-to-speech/blob/main/docs/README_HI.md) | [한국어](https://github.com/wachawo/text-to-speech/blob/main/docs/README_KR.md)
 
-> _提前致歉：本翻译是借助 Claude Code 完成的。如果你是母语者并发现任何错误，请告诉我。_
-
 `text-to-speech` 让你通过一个统一的接口使用多种语音合成引擎。你可以先从在线的 gTTS 开始，之后再切换到本地的 Piper、Silero、Coqui、Bark 或 Kokoro —— 无需重写你的 CLI 命令、Python 代码或 HTTP 集成。
 
 本项目适合本地使用、自动化以及在网络上运行你自己的 TTS 服务器。
