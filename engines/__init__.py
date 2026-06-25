@@ -63,7 +63,7 @@ def load_engine(engine_name: str) -> Optional[object]:
         if hasattr(module, "is_available") and module.is_available():
             return module
         else:
-            logger.warning(f"Engine {engine_name} module found but dependencies not available")
+            logger.debug(f"Engine {engine_name} module found but dependencies not available")
             return None
 
     except ImportError as e:
