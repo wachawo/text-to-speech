@@ -1,19 +1,19 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Offline TTS engine backed by Piper ONNX voice models.
+
+Fast, natural-sounding synthesis with voices for 50+ languages. Returns
+WAV bytes; file I/O and playback belong to the API layer.
 """
-Piper TTS Engine
 
-High-quality offline text-to-speech using Piper.
-Fast, natural-sounding voices with support for 50+ languages.
-"""
-
-from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
-
-# Offline ONNX, ~300x realtime — large texts are fine but bound memory.
-MAX_TEXT_LENGTH = 50_000
 import io
-import threading
-import wave
 import logging
 import os
+import threading
+import wave
+
+# Local imports
+from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
 
 # Centralised config loader handles ./ttsgen.conf > ~/.config/ttsgen.conf > .env > defaults
 try:
@@ -24,6 +24,9 @@ except ImportError:
     pass  # libs.config or dotenv not available — engine will fall back to env / defaults.
 
 logger = logging.getLogger(__name__)
+
+# Offline ONNX, ~300x realtime — large texts are fine but bound memory.
+MAX_TEXT_LENGTH = 50_000
 
 # Try to import Piper
 try:
@@ -79,29 +82,35 @@ def get_models_directory() -> str:
     Returns:
         Path to models directory
     """
-    # Get project root (parent of engines/ directory)
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-    # Priority 1: Check environment variable (from .env or export)
     env_var = os.environ.get("PIPERTTS_MODELS")
     if env_var:
         models_path = env_var.strip()
-        # If relative path, resolve from project root
+        # A relative override is anchored to the project root, not the cwd,
+        # so `ttsgen` finds the same voices from any working directory.
         if not os.path.isabs(models_path):
             models_path = os.path.join(project_root, models_path)
         return os.path.expanduser(models_path)
 
-    # Priority 2: Check cache/pipertts directory in project root
     pipertts_dir = os.path.join(project_root, "cache", "pipertts")
     if os.path.exists(pipertts_dir) and os.path.isdir(pipertts_dir):
         return pipertts_dir
 
-    # Priority 3: Default - use .piper/voices in project
     return os.path.join(project_root, ".piper", "voices")
 
 
 def get_voice_path(language: str = "en") -> str:
-    """Get path to voice model for specified language."""
+    """Resolve the .onnx voice file to use for a language.
+
+    Args:
+        language: Two-character language code; unknown codes fall back to English.
+
+    Returns:
+        Path to the voice model. The path of the configured models directory is
+        returned even when no file exists there, so callers can report a precise
+        FileNotFoundError with download instructions.
+    """
     voice_models = {
         "en": "en_US-lessac-medium",
         "ru": "ru_RU-ruslan-medium",
@@ -115,10 +124,9 @@ def get_voice_path(language: str = "en") -> str:
 
     voice_name = voice_models.get(language, voice_models["en"])
 
-    # Get models directory
     models_dir = get_models_directory()
 
-    # Check in models directory first
+    # The configured models directory wins when it holds the voice.
     voice_path = os.path.join(models_dir, f"{voice_name}.onnx")
     if os.path.exists(voice_path):
         return voice_path
@@ -137,12 +145,20 @@ def get_voice_path(language: str = "en") -> str:
         if os.path.exists(voice_path):
             return voice_path
 
-    # Default to models directory if not found
+    # Nothing on disk — point at the configured directory so the error message
+    # names the place the installer would populate.
     return os.path.join(models_dir, f"{voice_name}.onnx")
 
 
 def get_download_instructions(language: str) -> str:
-    """Generate download instructions for voice model."""
+    """Build the multi-option help text shown when a voice model is missing.
+
+    Args:
+        language: Two-character language code; unknown codes describe the English voice.
+
+    Returns:
+        Human-readable instructions covering the installer, wget and curl.
+    """
     voice_models = {
         "en": ("en_US-lessac-medium", "en/en_US/lessac/medium"),
         "ru": ("ru_RU-ruslan-medium", "ru/ru_RU/ruslan/medium"),
@@ -154,7 +170,6 @@ def get_download_instructions(language: str) -> str:
 
     base_url = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0"
 
-    # Get models directory
     voice_dir = get_models_directory()
 
     return (
@@ -183,6 +198,11 @@ def generate(text: str, config: dict) -> bytes:
 
     Returns:
         Audio bytes in WAV format (22050 Hz, mono, 16-bit)
+
+    Raises:
+        EngineNotAvailableError: piper-tts is not installed.
+        ValidationError: Text exceeds MAX_TEXT_LENGTH.
+        TTSException: Voice model missing, or synthesis failed.
     """
     if not AVAILABLE:
         raise EngineNotAvailableError(
@@ -193,7 +213,7 @@ def generate(text: str, config: dict) -> bytes:
     language = config.get("language", "en")
     try:
         voice_path = get_voice_path(language)
-        logger.info(voice_path)
+        logger.info(f"Piper voice: {voice_path}")
 
         # Cached load: PiperVoice.load is the dominant cost (~1.5s); the
         # cache turns subsequent calls into pure synthesis (~tens of ms).
@@ -207,8 +227,17 @@ def generate(text: str, config: dict) -> bytes:
         audio_buffer.seek(0)
         return audio_buffer.getvalue()
 
-    except FileNotFoundError as e:
+    except FileNotFoundError as exc:
         instructions = get_download_instructions(language)
-        raise TTSException(f"{instructions}\n\nError: {e}")
-    except Exception as e:
-        raise TTSException(f"Piper TTS generation failed: {e}")
+        raise TTSException(f"{instructions}\n\nError: {exc}") from exc
+    except Exception as exc:
+        raise TTSException(f"Piper TTS generation failed: {exc}") from exc
+
+
+def main():
+    """Module entrypoint placeholder — this file is import-only."""
+    pass
+
+
+if __name__ == "__main__":
+    main()

@@ -1,25 +1,34 @@
-"""
-Audio Playback Module
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Audio playback backed by pygame — the only module in the project that touches it."""
 
-Handles audio playback using pygame.
-"""
-
+import logging
 import os
 import tempfile
-import logging
 import warnings
-from typing import Union
+import wave
 
+# Local imports
 from .exceptions import EngineNotAvailableError, TTSException, ValidationError
 from .tempfiles import safe_unlink
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
-# Type definitions
-AudioSource = Union[str, bytes]
+# Either a path to an audio file or the raw audio bytes themselves.
+AudioSource = str | bytes
 
-# Try to import pygame
+# Mixer settings used when the source carries no header we can inspect (MP3).
+DEFAULT_SAMPLE_RATE = 44100
+DEFAULT_CHANNELS = 2
+
+# Mixer settings used when a WAV header is present but unreadable; most engines
+# in this project emit 22050 Hz mono, so it is the least surprising guess.
+FALLBACK_SAMPLE_RATE = 22050
+FALLBACK_CHANNELS = 1
+
+# Small buffer keeps per-chunk playback latency low in the streaming CLI pipeline.
+MIXER_BUFFER = 2048
+
 try:
     os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
     # pygame imports the deprecated pkg_resources at import time, which prints a
@@ -36,12 +45,21 @@ except ImportError:
 
 
 def is_available() -> bool:
-    """Check if pygame is available for playback."""
+    """Report whether pygame could be imported and playback is possible."""
     return PYGAME_AVAILABLE
 
 
 def play_file(filename: str) -> None:
-    """Play audio from file."""
+    """Play an audio file, reinitializing the mixer to match the file's sample rate.
+
+    Args:
+        filename: Path to a WAV or MP3 file.
+
+    Raises:
+        EngineNotAvailableError: If pygame is not installed.
+        ValidationError: If the file does not exist.
+        TTSException: If the mixer or the decoder rejects the file.
+    """
     if not PYGAME_AVAILABLE:
         raise EngineNotAvailableError("pygame not available for audio playback")
 
@@ -49,29 +67,29 @@ def play_file(filename: str) -> None:
         raise ValidationError(f"Audio file not found: {filename}")
 
     try:
-        # Detect sample rate from WAV header for proper playback
-        sample_rate = 44100  # Default
-        channels = 2
+        sample_rate = DEFAULT_SAMPLE_RATE
+        channels = DEFAULT_CHANNELS
 
         if filename.endswith(".wav"):
             try:
-                import wave
-
                 with wave.open(filename, "rb") as wf:
                     sample_rate = wf.getframerate()
                     channels = wf.getnchannels()
-            except Exception:
-                # If can't read, use defaults
-                sample_rate = 22050
-                channels = 1
+            except Exception as exc:
+                logger.warning(
+                    f"Could not read WAV header from {filename}, assuming "
+                    f"{FALLBACK_SAMPLE_RATE}Hz/{FALLBACK_CHANNELS}ch: {type(exc).__name__}: {exc}"
+                )
+                sample_rate = FALLBACK_SAMPLE_RATE
+                channels = FALLBACK_CHANNELS
 
-        # Quit and reinitialize mixer with correct settings
+        # A mixer left over from a previous file may run at another sample rate.
         try:
             mixer.quit()
         except pygame.error:
             pass
 
-        mixer.init(frequency=sample_rate, size=-16, channels=channels, buffer=2048)
+        mixer.init(frequency=sample_rate, size=-16, channels=channels, buffer=MIXER_BUFFER)
         mixer.music.load(filename)
         mixer.music.play()
 
@@ -79,16 +97,16 @@ def play_file(filename: str) -> None:
             pygame.time.wait(100)
         mixer.music.unload()
         mixer.quit()
-    except Exception as e:
-        raise TTSException(f"Audio playback failed: {e}")
+    except Exception as exc:
+        raise TTSException(f"Audio playback failed: {exc}") from exc
 
 
 def play_bytes(audio_bytes: bytes) -> None:
-    """Play audio from bytes."""
+    """Play in-memory audio by spooling it to a temp file with the right extension."""
     if not PYGAME_AVAILABLE:
         raise EngineNotAvailableError("pygame not available for audio playback")
 
-    # Detect file format from bytes header
+    # pygame picks its decoder from the extension, so sniff the container header.
     suffix = ".mp3"
     if audio_bytes.startswith(b"RIFF"):
         suffix = ".wav"
@@ -99,18 +117,19 @@ def play_bytes(audio_bytes: bytes) -> None:
         temp_file.flush()
 
     try:
-        # Use the improved play_file function
         play_file(temp_filename)
     finally:
         safe_unlink(temp_filename)
 
 
 def play(audio_source: AudioSource) -> None:
-    """
-    Play audio from file path or bytes.
+    """Play audio given either as a file path or as raw bytes.
 
     Args:
-        audio_source: Either a file path (str) or audio bytes (bytes)
+        audio_source: Either a file path (str) or audio bytes (bytes).
+
+    Raises:
+        ValidationError: If the argument is neither str nor bytes.
     """
     if isinstance(audio_source, str):
         play_file(audio_source)

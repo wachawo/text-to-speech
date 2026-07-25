@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Generic error response shape: {error, request_id} and nothing else."""
+"""Tests for the generic error response shape: {error, request_id} and nothing else."""
 
 import re
 
@@ -8,6 +8,7 @@ HEX12 = re.compile(r"^[0-9a-f]{12}$")
 
 
 def test_404_shape(client):
+    """An unknown route answers 404 with only an error string and a request id."""
     resp = client.get("/api/nonexistent")
     assert resp.status_code == 404
     body = resp.get_json()
@@ -16,6 +17,7 @@ def test_404_shape(client):
 
 
 def test_405_shape(client):
+    """A wrong HTTP verb answers 405 and names the actual werkzeug error."""
     resp = client.post("/api/health")
     assert resp.status_code == 405
     body = resp.get_json()
@@ -54,6 +56,7 @@ def test_unauthorized_http_exception_preserved(client):
 
 
 def test_request_id_changes_per_request(client):
+    """Every request gets its own freshly generated 12-hex request id."""
     a = client.get("/api/nonexistent").get_json()["request_id"]
     b = client.get("/api/nonexistent").get_json()["request_id"]
     assert a != b

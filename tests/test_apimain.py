@@ -13,14 +13,18 @@ from pathlib import Path
 
 import pytest
 
+# The repository root must be on sys.path before `ttsapi` is imported,
+# so that import deliberately stays below this insert (E402 is expected).
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# Local imports
 import ttsapi  # noqa: E402
 
 
 def make_wav_bytes() -> bytes:
+    """Build a short silent 16-bit mono WAV to stand in for synthesized audio."""
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:
         w.setnchannels(1)
@@ -40,11 +44,13 @@ def quiet_main(monkeypatch, tmp_path):
 
 
 def run_main(monkeypatch, argv):
+    """Run `ttsapi.main()` with the given argv tail and return its exit code."""
     monkeypatch.setattr(sys, "argv", ["ttsapi.py", *argv])
     return ttsapi.main()
 
 
 def test_main_list_flag_returns_list_engines_exit_code(monkeypatch, quiet_main):
+    """`--list` short-circuits synthesis and exits with the listing status."""
     monkeypatch.setattr(ttsapi, "fetch_engines", lambda: {"engines": ["gtts"], "default": "gtts"})
     rc = run_main(monkeypatch, ["--list", "--quiet"])
     assert rc == 0
@@ -57,6 +63,7 @@ def test_main_missing_input_file_returns_2(monkeypatch, quiet_main, caplog):
 
 
 def test_main_invalid_output_format_returns_2(monkeypatch, quiet_main):
+    """An unknown token in `--output` is rejected with exit 2."""
     rc = run_main(monkeypatch, ["hello", "--output", "play,wat", "--quiet"])
     assert rc == 2
 
@@ -99,6 +106,7 @@ def test_main_engine_failure_returns_exit_code_3(monkeypatch, quiet_main):
     """fetch_audio raising RuntimeError on every chunk → all failures → rc=3."""
 
     def boom(text, engine, language):
+        """Fail every synthesis request so the run has no successful chunk."""
         raise RuntimeError("Server returned 500: boom")
 
     monkeypatch.setattr(ttsapi, "fetch_audio", boom)
@@ -114,6 +122,7 @@ def test_main_input_file_synthesizes_text(monkeypatch, quiet_main):
     captured = []
 
     def capture(text, engine, language):
+        """Record the text handed to the client and return canned audio."""
         captured.append(text)
         return make_wav_bytes()
 

@@ -1,34 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-TTS CLI Tool - Professional Command Line Interface
-
-A professional command-line interface for the TTS library with comprehensive
-error handling, validation, and user-friendly output.
-
-Features:
-- Multiple input methods (text, file)
-- Flexible output options (file, bytesio)
-- Multiple TTS engines (pyttsx3, gTTS)
-- Environment configuration support
-- Audio playback capabilities
-- Comprehensive error handling
-
-Usage:
-    python ttsgen.py "Hello world"                    # Play audio (default)
-    python ttsgen.py "Hello world" --file             # Save to auto-generated file
-    python ttsgen.py "Hello world" --file output.mp3  # Save to specific file
-    python ttsgen.py -i input.txt                     # Read text from file
-    python ttsgen.py "Hello" --file --play            # Save and play
-    python ttsgen.py "Hello" --engine pyttsx3         # Use offline engine
-    python ttsgen.py "Hello" --format bytesio         # Output as BytesIO (advanced)
-    python ttsgen.py --list                           # List engines and installed models
-    python ttsgen.py --install coquitts               # Install an engine and download models
-
-Author: TTS Library Team
-Version: 1.0.4
-License: MIT
-"""
+"""Command-line tool that synthesizes text locally and plays, saves or pipes the audio."""
 
 import argparse
 import io
@@ -38,6 +10,7 @@ import queue
 import shutil
 import sys
 import threading
+import traceback
 from pathlib import Path
 from typing import Any, cast
 
@@ -63,24 +36,34 @@ try:
         TTSException,
         ValidationError,
         play_audio,
+        text_to_speech_bytes,
     )
+    from libs.config import load_config
     from libs.tempfiles import safe_unlink
     from libs.tools import ensure_audio_directory, generate_timestamp_filename
-except ImportError as e:
-    logger.error(f"Failed to import TTS library: {e}")
+except ImportError as exc:
+    logger.error(f"Failed to import TTS library: {exc}")
     sys.exit(1)
 
 # Pipeline helpers (chunk_text, concat_wav_files, rec_worker, play_worker) live in libs.cli
 # so they're shared between ttsgen (offline) and ttsapi (HTTP-based) without code duplication.
+# This import sits below the logging setup and the guarded block above on purpose, so the
+# E402 waiver is deliberate rather than an oversight.
 from libs.cli import (  # noqa: E402
-    QueueItem as QUEUE_ITEM,
-)
-from libs.cli import (  # noqa: E402
+    QueueItem,
     chunk_text,
     concat_wav_files,
     play_worker,
     rec_worker,
 )
+
+# Long input is split into chunks so playback can start before synthesis finishes.
+DEFAULT_CHUNK_CHARS = 200
+
+# Bounded queue between producer and consumer threads — provides backpressure.
+PIPELINE_QUEUE_SIZE = 2
+
+VALID_OUTPUT_FORMATS = ("play", "file", "stdout")
 
 
 def get_config() -> dict[str, Any]:
@@ -90,22 +73,11 @@ def get_config() -> dict[str, Any]:
         load_dotenv(found)
     if os.path.exists(".env.local"):
         load_dotenv(".env.local", override=True)
-    engine = os.getenv("TTS_ENGINE", "gtts")
-    language = os.getenv("TTS_LANGUAGE", "en")
-    audio_directory = os.getenv("AUDIO_DIRECTORY", "audio")
-    filename_prefix = os.getenv("FILENAME_PREFIX", "")
-    default_output_format = os.getenv("DEFAULT_OUTPUT_FORMAT", "play")
-    output_formats = [f.strip() for f in default_output_format.split(",") if f.strip()]
-    audio_rate = int(os.getenv("AUDIO_RATE", "150"))
-    audio_volume = float(os.getenv("AUDIO_VOLUME", "0.9"))
     return {
-        "engine": engine,
-        "language": language,
-        "output_formats": output_formats,
-        "audio_directory": audio_directory,
-        "filename_prefix": filename_prefix,
-        "audio_rate": audio_rate,
-        "audio_volume": audio_volume,
+        "engine": os.getenv("TTS_ENGINE", "gtts"),
+        "language": os.getenv("TTS_LANGUAGE", "en"),
+        "audio_directory": os.getenv("AUDIO_DIRECTORY", "audio"),
+        "filename_prefix": os.getenv("FILENAME_PREFIX", ""),
     }
 
 
@@ -122,14 +94,18 @@ def read_file(file_path: str) -> str:
         if not content:
             raise ValidationError(f"File is empty: {file_path}")
         return content
-    except UnicodeDecodeError as e:
-        raise ValidationError(f"File encoding error: {e}") from e
-    except Exception as e:
-        raise ValidationError(f"Could not read file {file_path}: {e}") from e
+    except UnicodeDecodeError as exc:
+        raise ValidationError(f"File encoding error: {exc}") from exc
+    except Exception as exc:
+        raise ValidationError(f"Could not read file {file_path}: {exc}") from exc
 
 
 def parse_arguments() -> argparse.ArgumentParser:
-    """Create and configure argument parser."""
+    """Create and configure argument parser.
+
+    Returns the parser itself (not parsed arguments), so callers can decide when
+    to call `parse_args()` or reuse the parser for help output.
+    """
     parser = argparse.ArgumentParser(
         description="Professional TTS (Text-to-Speech) CLI tool",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -320,18 +296,16 @@ def model_display_name(engine: str, rel: Path) -> str:
     We strip the tts/ prefix and restore '/' so the displayed name matches the
     string users put in COQUITTS_MODEL.
     """
-    s = str(rel)
+    display = str(rel)
     if engine == "coquitts":
-        s = s.removeprefix("tts/").replace("--", "/")
-    return s
+        display = display.removeprefix("tts/").replace("--", "/")
+    return display
 
 
-def list_engines_and_models() -> None:
-    """Print engines and installed model files as a fixed-width table.
-
-    Format:  ENGINE  STATUS  MODEL    one row per (engine, model). Designed for
-    grep: `ttsgen --list | grep installed`, `... | grep xtts_v2`, etc.
-    """
+def collect_engine_rows() -> list[tuple[str, str, str]]:
+    """Build the (engine, status, model) rows shown by --list, one row per model."""
+    # Imported lazily: loading the engine package probes every optional dependency,
+    # which is wasted work for runs that never reach --list.
     from engines import is_engine_available
 
     engines_dir = Path(__file__).resolve().parent / "engines"
@@ -357,28 +331,155 @@ def list_engines_and_models() -> None:
             continue
 
         model_dir, patterns = ENGINE_MODEL_SOURCES[name]
-        d = Path(model_dir)
+        models_path = Path(model_dir)
         files: list[Path] = []
-        if d.exists():
-            for pat in patterns:
-                files.extend(sorted(d.glob(pat)))
+        if models_path.exists():
+            for pattern in patterns:
+                files.extend(sorted(models_path.glob(pattern)))
         if not files:
             rows.append((name, status, "-"))
         else:
-            for f in files:
-                rel = f.relative_to(d) if f.is_relative_to(d) else f
+            for model_file in files:
+                rel = model_file.relative_to(models_path) if model_file.is_relative_to(models_path) else model_file
                 rows.append((name, status, model_display_name(name, rel)))
 
     engines_logger.setLevel(prev_level)
+    return rows
+
+
+def list_engines_and_models() -> None:
+    """Print engines and installed model files as a fixed-width table.
+
+    Format:  ENGINE  STATUS  MODEL    one row per (engine, model). Designed for
+    grep: `ttsgen --list | grep installed`, `... | grep xtts_v2`, etc.
+    """
+    rows = collect_engine_rows()
 
     name_w = max(len("ENGINE"), max(len(r[0]) for r in rows)) + 2
     stat_w = max(len("STATUS"), max(len(r[1]) for r in rows)) + 2
+    # Human-facing table goes to stdout, not logging: it is the command's payload
+    # and must stay greppable and free of log prefixes.
     print(f"{'ENGINE':<{name_w}}{'STATUS':<{stat_w}}MODEL")
     for engine, status, model in rows:
         print(f"{engine:<{name_w}}{status:<{stat_w}}{model}")
 
 
+def resolve_output_formats(args: argparse.Namespace) -> list[str]:
+    """Combine --output, --file, --play and --stdout into ordered output modes.
+
+    Args:
+        args: Parsed command-line arguments.
+
+    Returns:
+        Deduplicated output modes; defaults to ["play"] when nothing is requested.
+
+    Raises:
+        ValidationError: If --output names a mode other than play, file or stdout.
+    """
+    output_formats: list[str] = []
+    if args.output:
+        for fmt in [f.strip() for f in args.output.split(",")]:
+            if fmt not in VALID_OUTPUT_FORMATS:
+                raise ValidationError(f"Invalid output format: {fmt}. Valid: play, file, stdout")
+            if fmt not in output_formats:
+                output_formats.append(fmt)
+    if args.file is not None and "file" not in output_formats:
+        output_formats.append("file")
+    if args.play and "play" not in output_formats:
+        output_formats.append("play")
+    if args.stdout and "stdout" not in output_formats:
+        output_formats.append("stdout")
+    if args.stdout and args.file is not None and not args.output:
+        output_formats = [f for f in output_formats if f != "file"]
+    return output_formats or ["play"]
+
+
+def log_run_summary(
+    text: str,
+    engine: str,
+    language: str,
+    output_formats: list[str],
+    output_filename: str | None,
+) -> None:
+    """Log the resolved run parameters before synthesis starts."""
+    logger.info("TTS CLI Tool")
+    logger.info("=" * 40)
+    preview = text[:50] + ("..." if len(text) > 50 else "")
+    logger.info(f"Text: {preview}")
+    logger.info(f"Engine: {engine}")
+    logger.info(f"Language: {language}")
+    logger.info(f"Formats: {', '.join(output_formats)}")
+    if output_filename:
+        logger.info(f"Output file: {output_filename}")
+
+
+def save_chunk_files(
+    collected_paths: list[str],
+    output_filename: str | None,
+    extension: str,
+    fallback_dir: str,
+) -> list[str]:
+    """Move the generated chunk temp files to their final destination.
+
+    Args:
+        collected_paths: Temp files produced by the pipeline, in playback order.
+        output_filename: Requested output path, a directory, or None.
+        extension: Audio extension used when the request carries none.
+        fallback_dir: Directory used when output_filename is missing or is a directory.
+
+    Returns:
+        Destination paths of the chunks that were written successfully.
+    """
+    saved_files: list[str] = []
+
+    if output_filename and not os.path.isdir(output_filename):
+        base, requested_ext = os.path.splitext(output_filename)
+        if not requested_ext:
+            requested_ext = f".{extension}"
+        for index, tmp_path in enumerate(collected_paths, start=1):
+            destination = f"{base}_{index:03d}{requested_ext}"
+            try:
+                shutil.copy2(tmp_path, destination)  # copy temp file to destination
+                safe_unlink(tmp_path)  # delete original temp file (Windows-safe)
+                saved_files.append(destination)
+            except Exception as exc:
+                logger.error(f"Failed to save chunk {index} to {destination}: {exc}")
+        return saved_files
+
+    out_dir = output_filename if (output_filename and os.path.isdir(output_filename)) else fallback_dir
+    ensure_audio_directory(out_dir)
+    for index, tmp_path in enumerate(collected_paths, start=1):
+        filename = generate_timestamp_filename(f"part_{index:03d}_", extension)
+        destination = os.path.join(out_dir, filename)
+        try:
+            shutil.copy2(tmp_path, destination)
+            safe_unlink(tmp_path)
+            saved_files.append(destination)
+        except Exception as exc:
+            logger.error(f"Failed to save chunk {index} to {destination}: {exc}")
+    return saved_files
+
+
+def write_stdout_audio(engine: str, audio_paths: list[str]) -> None:
+    """Write the generated audio to stdout, concatenating WAV chunks when possible."""
+    if engine == "gtts":
+        # MP3 - don't glue them together without recoding -
+        # write them sequentially
+        logger.warning("multiple MP3 chunks written sequentially to stdout; " "this is not a single valid MP3 file.")
+        for path in audio_paths:
+            with open(path, "rb") as f:
+                sys.stdout.buffer.write(f.read())
+        sys.stdout.buffer.flush()
+        return
+
+    stdout_buf = io.BytesIO()
+    concat_wav_files(audio_paths, stdout_buf)
+    sys.stdout.buffer.write(stdout_buf.getvalue())
+    sys.stdout.buffer.flush()
+
+
 def main() -> int:
+    """Run the ttsgen command line and return the process exit code."""
     parser = parse_arguments()
     args = parser.parse_args()
 
@@ -391,8 +492,6 @@ def main() -> int:
 
     # Load config files (./ttsgen.conf > ~/.config/ttsgen.conf > .env). Existing env
     # (set by shell or by the CLI flags above) is preserved — files only fill gaps.
-    from libs.config import load_config
-
     load_config()
 
     if getattr(args, "list", False):
@@ -400,6 +499,7 @@ def main() -> int:
         return 0
 
     if getattr(args, "install", None):
+        # Imported lazily so a plain synthesis run never pulls in the installer stack.
         from install import run as run_installer
 
         return run_installer(args.install, non_interactive=args.non_interactive)
@@ -411,24 +511,7 @@ def main() -> int:
         engine = args.engine or config["engine"]
         language = args.language or config["language"]
 
-        # Determine output formats
-        output_formats: list[str] = []
-        if args.output:
-            for fmt in [f.strip() for f in args.output.split(",")]:
-                if fmt not in ["play", "file", "stdout"]:
-                    raise ValidationError(f"Invalid output format: {fmt}. Valid: play, file, stdout")
-                if fmt not in output_formats:
-                    output_formats.append(fmt)
-        if args.file is not None and "file" not in output_formats:
-            output_formats.append("file")
-        if args.play and "play" not in output_formats:
-            output_formats.append("play")
-        if args.stdout and "stdout" not in output_formats:
-            output_formats.append("stdout")
-        if args.stdout and args.file is not None and not args.output:
-            output_formats = [f for f in output_formats if f != "file"]
-        if not output_formats:
-            output_formats = ["play"]
+        output_formats = resolve_output_formats(args)
 
         # Determine output filename if saving to file
         output_filename: str | None = None
@@ -443,23 +526,14 @@ def main() -> int:
                 timestamp_filename = generate_timestamp_filename(prefix, extension)
                 output_filename = os.path.join(audio_dir, timestamp_filename)
 
-        # Print summary
-        if not args.quiet and "stdout" not in output_formats:
-            logger.info("TTS CLI Tool")
-            logger.info("=" * 40)
-            preview = text[:50] + ("..." if len(text) > 50 else "")
-            logger.info(f"Text: {preview}")
-            logger.info(f"Engine: {engine}")
-            logger.info(f"Language: {language}")
-            logger.info(f"Formats: {', '.join(output_formats)}")
-            if output_filename:
-                logger.info(f"Output file: {output_filename}")
+        verbose_summary = not args.quiet and "stdout" not in output_formats
+        if verbose_summary:
+            log_run_summary(text, engine, language, output_formats, output_filename)
 
-        # CHUNKED MODE
-        MAX_LEN = 200
-        chunks = chunk_text(text, MAX_LEN)
-        if not args.quiet and "stdout" not in output_formats:
-            logger.info(f"Chunks: {len(chunks)} (<= {MAX_LEN} chars each)")
+        # Chunked mode: synthesis and playback overlap through a bounded queue.
+        chunks = chunk_text(text, DEFAULT_CHUNK_CHARS)
+        if verbose_summary:
+            logger.info(f"Chunks: {len(chunks)} (<= {DEFAULT_CHUNK_CHARS} chars each)")
 
         ext = "mp3" if engine == "gtts" else "wav"
         tmp_suffix = f".{ext}"
@@ -475,30 +549,28 @@ def main() -> int:
         else:
             tmp_dir = None
 
-        q: queue.Queue[QUEUE_ITEM] = queue.Queue(maxsize=2)
+        audio_queue: queue.Queue[QueueItem] = queue.Queue(maxsize=PIPELINE_QUEUE_SIZE)
         collected_paths: list[str] = []
         failures: list[tuple[int, BaseException]] = []
 
-        # Producer: bind engine/language; rec_worker calls generator(text) per chunk.
-        from libs.api import text_to_speech_bytes
+        def generator(chunk: str) -> bytes:
+            """Synthesize one chunk with the engine and language chosen for this run."""
+            return text_to_speech_bytes(text=chunk, engine=engine, language=language)
 
-        def generator(text: str) -> bytes:
-            return text_to_speech_bytes(text=text, engine=engine, language=language)
-
-        rec = threading.Thread(
+        rec_thread = threading.Thread(
             target=rec_worker,
-            args=(chunks, generator, q, tmp_suffix, tmp_dir),
+            args=(chunks, generator, audio_queue, tmp_suffix, tmp_dir),
             daemon=True,
         )
-        play = threading.Thread(
+        play_thread = threading.Thread(
             target=play_worker,
-            args=(q, output_formats, collected_paths, play_audio, failures),
+            args=(audio_queue, output_formats, collected_paths, play_audio, failures),
             daemon=True,
         )
-        rec.start()
-        play.start()
-        rec.join()
-        play.join()
+        rec_thread.start()
+        play_thread.start()
+        rec_thread.join()
+        play_thread.join()
 
         if failures:
             for idx, err in failures:
@@ -509,87 +581,42 @@ def main() -> int:
         saved_files: list[str] = []
 
         if out_is_file:
-            if output_filename and not os.path.isdir(output_filename):
-                base, ext2 = os.path.splitext(output_filename)
-                if not ext2:
-                    ext2 = f".{ext}"
-                for i, p in enumerate(collected_paths, start=1):
-                    dst = f"{base}_{i:03d}{ext2}"
-                    try:
-                        shutil.copy2(p, dst)  # copy temp file to destination
-                        safe_unlink(p)  # delete original temp file (Windows-safe)
-                        saved_files.append(dst)
-                    except Exception as e:
-                        logger.error(f"Failed to save chunk {i} to {dst}: {e}")
-
-            else:
-                out_dir = (
-                    output_filename
-                    if (output_filename and os.path.isdir(output_filename))
-                    else (args.audio_dir or config["audio_directory"])
-                )
-                ensure_audio_directory(out_dir)
-                for i, p in enumerate(collected_paths, start=1):
-                    fname = generate_timestamp_filename(f"part_{i:03d}_", ext)
-                    dst = os.path.join(out_dir, fname)
-                    try:
-                        shutil.copy2(p, dst)
-                        safe_unlink(p)
-                        saved_files.append(dst)
-                    except Exception as e:
-                        logger.error(f"Failed to save chunk {i} to {dst}: {e}")
-
+            fallback_dir = args.audio_dir or config["audio_directory"]
+            saved_files = save_chunk_files(collected_paths, output_filename, ext, fallback_dir)
             if "stdout" not in output_formats:
+                # Written to stdout so shells can capture it: FILE=$(ttsgen "Hi" --file).
                 for fpath in saved_files:
                     print(fpath, file=sys.stdout)
             else:
+                # stdout carries the audio stream, so the filenames go to the log instead.
                 for fpath in saved_files:
                     logger.info(fpath)
-        else:
-            pass
 
-        # STDOUT
         if out_is_stdout:
-            if engine == "gtts":
-                # MP3 - don't glue them together without recoding -
-                # write them sequentially
-                logger.warning("multiple MP3 chunks written sequentially to stdout; " "this is not a single valid MP3 file.")
-                src_list = saved_files if saved_files else collected_paths
-                for p in src_list:
-                    with open(p, "rb") as f:
-                        sys.stdout.buffer.write(f.read())
-                sys.stdout.buffer.flush()
-            else:
-                src_list = saved_files if saved_files else collected_paths
-                stdout_buf = io.BytesIO()
-                concat_wav_files(src_list, stdout_buf)
-                sys.stdout.buffer.write(stdout_buf.getvalue())
-                sys.stdout.buffer.flush()
+            write_stdout_audio(engine, saved_files if saved_files else collected_paths)
 
         if not out_is_file:
-            for p in collected_paths:
-                safe_unlink(p)
+            for tmp_path in collected_paths:
+                safe_unlink(tmp_path)
 
         return 0
 
-    except ValidationError as e:
-        logger.error(f"Validation error: {e}")
+    except ValidationError as exc:
+        logger.error(f"Validation error: {exc}")
         return 1
-    except EngineNotAvailableError as e:
-        logger.error(f"Engine not available: {e}")
+    except EngineNotAvailableError as exc:
+        logger.error(f"Engine not available: {exc}")
         return 1
-    except TTSException as e:
-        logger.error(f"TTS error: {e}")
+    except TTSException as exc:
+        logger.error(f"TTS error: {exc}")
         return 1
     except KeyboardInterrupt:
         logger.info("Operation cancelled by user")
         return 1
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}")
+    except Exception as exc:
+        logger.error(f"Unexpected error: {exc}")
         if args.verbose:
-            import traceback
-
-            traceback.print_exc()
+            logger.error(f"{type(exc).__name__}: {str(exc)}\n{traceback.format_exc()}")
         return 1
 
 

@@ -7,6 +7,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Load ttsgen.conf / .env at import time so installers see the user's stored
+# choices. The libs package may be absent in a partially installed checkout.
 try:
     from libs.config import load_config
 
@@ -14,12 +16,23 @@ try:
 except ImportError:
     pass
 
+# Engines that ship a dedicated install/<name>.py module.
 INSTALLERS = ("pipertts", "silerotts", "coquitts", "barktts", "kokorotts")
+# Engines whose dependencies are already covered by the base requirements.
 NO_INSTALLER_NEEDED = ("gtts", "pyttsx3")
 
 
 def run(engine: str, non_interactive: bool = False) -> int:
-    """Dispatch installation for the named engine. Returns process exit code."""
+    """Dispatch installation to the module for `engine`.
+
+    Args:
+        engine: Engine name as accepted by `ttsgen --install`.
+        non_interactive: Forwarded to the installer so it picks defaults silently.
+
+    Returns:
+        Process exit code: 0 on success, 2 when no installer matches `engine`,
+        otherwise whatever the engine installer returned.
+    """
     if engine in NO_INSTALLER_NEEDED:
         logger.info(f"Engine '{engine}' has no installer (covered by base requirements).")
         return 0
@@ -31,6 +44,7 @@ def run(engine: str, non_interactive: bool = False) -> int:
 
 
 def main():
+    """Module entrypoint placeholder — this file is import-only."""
     pass
 
 

@@ -1,31 +1,38 @@
-"""
-TTS Tools and Utilities
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Validation, default config and functional helpers shared by the API and the CLIs."""
 
-Validation, configuration, functional programming helpers, and utilities.
-"""
-
-from engines import is_engine_available, get_engine_function
-import os
+import io
 import logging
+import os
+import sys
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Dict, List, Any, Optional, Union, cast
-import io
+from typing import Any, cast
 
-from .exceptions import TTSException, EngineNotAvailableError, ValidationError
-import sys
+# Local imports
+from engines import get_engine_function, is_engine_available
 
+from .exceptions import EngineNotAvailableError, TTSException, ValidationError
+
+# Makes the repository root importable when libs/ is used straight from a source
+# checkout rather than from an installed wheel.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
-# Type definitions
-Config = Dict[str, Any]
+# Engine configuration passed down to `engines.<name>.generate()`.
+Config = dict[str, Any]
+
+# Text longer than this is rejected outright. Long text is the chunker's job
+# (libs/cli.chunk_text); this limit only stops pathological inputs that would
+# exhaust memory or stall a worker for hours. 1M chars is roughly a book chapter.
+MAX_TEXT_LENGTH = 1_000_000
 
 
 def get_default_config() -> Config:
-    """Get default configuration for TTS operations."""
+    """Return the baseline engine config that callers then override per request."""
     return {
         "engine": "gtts",
         "language": "en",
@@ -36,7 +43,18 @@ def get_default_config() -> Config:
 
 
 def validate_text(text: str) -> str:
-    """Validate and clean input text."""
+    """Return the input text stripped of surrounding whitespace.
+
+    Args:
+        text: Raw text supplied by the caller.
+
+    Returns:
+        The trimmed text.
+
+    Raises:
+        ValidationError: If the value is not a string, is blank, or exceeds
+            MAX_TEXT_LENGTH characters.
+    """
     if not isinstance(text, str):
         raise ValidationError("Text must be a string")
 
@@ -44,30 +62,31 @@ def validate_text(text: str) -> str:
     if not cleaned_text:
         raise ValidationError("Text cannot be empty")
 
-    # Long text is the chunker's job (libs/cli.chunk_text). validate_text only
-    # rejects pathological inputs that could exhaust memory or stall a worker
-    # for hours. 1M chars ≈ a book chapter — far above realistic real-time use.
-    if len(cleaned_text) > 1_000_000:
+    if len(cleaned_text) > MAX_TEXT_LENGTH:
         raise ValidationError("Text too long (max 1,000,000 characters)")
 
     return cleaned_text
 
 
 def validate_engine(engine: str) -> str:
-    """
-    Validate TTS engine type using dynamic engine loading.
+    """Return the engine name after confirming its module loads and its deps are installed.
 
-    Checks if engine module exists in engines/ directory and if its
-    dependencies are installed.
+    Args:
+        engine: Engine name, matching a module in the engines/ package.
+
+    Returns:
+        The engine name unchanged.
+
+    Raises:
+        ValidationError: If the name is empty or no engines/<engine>.py exists.
+        EngineNotAvailableError: If the module exists but its dependencies do not.
     """
     if not isinstance(engine, str) or not engine:
         raise ValidationError("Engine name must be a non-empty string")
 
-    # Check if engine module exists and is available
     if not is_engine_available(engine):
-        # Check if module file exists
-        from pathlib import Path
-
+        # Distinguish "no such engine" from "engine present, deps missing" so the
+        # message tells the user whether to write a module or run pip.
         engine_file = Path(__file__).parent.parent / "engines" / f"{engine}.py"
 
         if not engine_file.exists():
@@ -86,7 +105,11 @@ def validate_engine(engine: str) -> str:
 
 
 def validate_language(language: str) -> str:
-    """Validate language code."""
+    """Return a lowercased two-letter language code.
+
+    Raises:
+        ValidationError: If the value is not a string of exactly two characters.
+    """
     if not isinstance(language, str) or len(language) != 2:
         raise ValidationError("Language must be a 2-character code")
 
@@ -94,14 +117,16 @@ def validate_language(language: str) -> str:
 
 
 def get_engine_generate_function(engine_name: str) -> Callable[..., Any]:
-    """
-    Get the generate function for an engine.
+    """Look up the `generate(text, config)` callable of an engine.
 
     Args:
-        engine_name: Name of the engine
+        engine_name: Engine name, matching a module in the engines/ package.
 
     Returns:
-        Generate function that returns bytes
+        The engine's generate function, which returns audio bytes.
+
+    Raises:
+        ValidationError: If the engine exposes no generate function.
     """
     func = get_engine_function(engine_name)
 
@@ -112,9 +137,10 @@ def get_engine_generate_function(engine_name: str) -> Callable[..., Any]:
 
 
 def compose(*functions: Callable) -> Callable:
-    """Compose multiple functions into a single function."""
+    """Combine callables right-to-left, so compose(f, g)(x) evaluates f(g(x))."""
 
     def composed(x: Any) -> Any:
+        """Apply every wrapped function to x, last argument first."""
         for f in reversed(functions):
             x = f(x)
         return x
@@ -123,10 +149,13 @@ def compose(*functions: Callable) -> Callable:
 
 
 def with_engine(engine: str) -> Callable[..., Any]:
-    """Create a function that uses the given engine."""
+    """Build a decorator that pins the `engine` keyword of the function it wraps."""
 
     def engine_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
+        """Wrap func so every call is forced to use the captured engine."""
+
         def wrapper(*args: Any, **kwargs: Any) -> Any:
+            """Inject engine=<captured> and delegate to the wrapped function."""
             kwargs["engine"] = engine
             return func(*args, **kwargs)
 
@@ -136,10 +165,13 @@ def with_engine(engine: str) -> Callable[..., Any]:
 
 
 def with_language(language: str) -> Callable[..., Any]:
-    """Create a function that uses the given language."""
+    """Build a decorator that pins the `language` keyword of the function it wraps."""
 
     def language_wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
+        """Wrap func so every call is forced to use the captured language."""
+
         def wrapper(*args: Any, **kwargs: Any) -> Any:
+            """Inject language=<captured> and delegate to the wrapped function."""
             kwargs["language"] = language
             return func(*args, **kwargs)
 
@@ -149,19 +181,30 @@ def with_language(language: str) -> Callable[..., Any]:
 
 
 def create_tts_pipeline(engine: str = "gtts", language: str = "en") -> Callable:
-    """Create a TTS pipeline with predefined settings."""
-    # Import here to avoid circular import
-    import sys
-    from pathlib import Path
+    """Build a synthesis callable with the engine and language already bound.
 
-    sys.path.insert(0, str(Path(__file__).parent.parent))
+    Args:
+        engine: Engine name used for every call of the returned pipeline.
+        language: Two-letter language code used for every call.
+
+    Returns:
+        A callable `(text, output_format="file", filename=None)` returning a
+        path, raw bytes or a BytesIO depending on output_format.
+    """
+    # Imported inside the function: libs.api imports this module at load time, so a
+    # module-level import here would be circular.
     from libs.api import (
-        text_to_speech_file,
         text_to_speech_bytes,
         text_to_speech_bytesio,
+        text_to_speech_file,
     )
 
-    def pipeline(text: str, output_format: str = "file", filename: Optional[str] = None) -> Union[str, bytes, io.BytesIO]:
+    def pipeline(text: str, output_format: str = "file", filename: str | None = None) -> str | bytes | io.BytesIO:
+        """Synthesize text with the bound engine/language in the requested form.
+
+        Raises:
+            ValidationError: If output_format is not file, bytes or bytesio.
+        """
         if output_format == "file":
             return text_to_speech_file(text, filename, engine, language)
         elif output_format == "bytes":
@@ -175,12 +218,26 @@ def create_tts_pipeline(engine: str = "gtts", language: str = "en") -> Callable:
 
 
 def batch_tts(
-    texts: List[str],
+    texts: list[str],
     engine: str = "gtts",
     language: str = "en",
     output_dir: str = "audio",
-) -> List[str]:
-    """Process multiple texts in batch."""
+) -> list[str]:
+    """Synthesize several texts into timestamped MP3 files under output_dir.
+
+    Args:
+        texts: Non-empty list of texts, synthesized sequentially.
+        engine: Engine name used for every item.
+        language: Two-letter language code used for every item.
+        output_dir: Destination directory, created if missing.
+
+    Returns:
+        Paths of the generated files, in input order.
+
+    Raises:
+        ValidationError: If texts is not a non-empty list.
+        TTSException: On the first item that fails; earlier files are kept.
+    """
     if not isinstance(texts, list) or not texts:
         raise ValidationError("texts must be a non-empty list")
 
@@ -196,15 +253,15 @@ def batch_tts(
 
             result_filename = pipeline(text, "file", filename)
             generated_files.append(result_filename)
-        except Exception as e:
-            logger.error(f"Failed to process text {i}: {e}")
-            raise TTSException(f"Batch processing failed at item {i}: {e}")
+        except Exception as exc:
+            logger.error(f"Failed to process text {i}: {exc}")
+            raise TTSException(f"Batch processing failed at item {i}: {exc}") from exc
 
     return generated_files
 
 
 def generate_timestamp_filename(prefix: str = "", extension: str = "mp3") -> str:
-    """Generate filename with timestamp only."""
+    """Build a `[prefix_]YYYYmmdd_HHMMSS.<extension>` filename from the current time."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     if prefix:
         return f"{prefix}_{timestamp}.{extension}"
@@ -213,6 +270,6 @@ def generate_timestamp_filename(prefix: str = "", extension: str = "mp3") -> str
 
 
 def ensure_audio_directory(directory: str = "audio") -> str:
-    """Ensure audio directory exists."""
+    """Create the audio output directory if needed and return its path."""
     Path(directory).mkdir(parents=True, exist_ok=True)
     return directory

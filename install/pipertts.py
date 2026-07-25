@@ -36,6 +36,7 @@ VOICES = {
 
 
 def models_dir(non_interactive: bool = False) -> Path:
+    """Resolve (and create) the directory that holds Piper .onnx voice files."""
     return resolve_models_dir(
         engine_label="Piper TTS",
         env_key="PIPERTTS_MODELS",
@@ -46,13 +47,18 @@ def models_dir(non_interactive: bool = False) -> Path:
 
 
 def select_voices(non_interactive: bool) -> list[str]:
-    """Return list of voice codes to install."""
+    """Prompt for the voices to download and return their VOICES keys.
+
+    Accepts several space-separated indexes, or the "all" index. Invalid tokens
+    are warned about and ignored; an empty or fully-invalid answer means all
+    voices, which is also what non-interactive mode returns.
+    """
     codes = list(VOICES.keys())
     if non_interactive:
         return codes
     menu = ["\nSelect languages to download (space-separated, e.g. '1 2', or 6 for all):"]
     for i, code in enumerate(codes, start=1):
-        _, _, label = VOICES[code]
+        label = VOICES[code][2]
         menu.append(f"  {i}) {label}")
     menu.append(f"  {len(codes) + 1}) All languages")
     logger.info("\n".join(menu))
@@ -111,7 +117,7 @@ def download_voice(code: str, target_dir: Path, manifest: dict | None) -> bool:
     """
     path, basename, label = VOICES[code]
     info(f"\nProcessing: {label}")
-    ok = True
+    verified = True
     for ext in (".onnx", ".onnx.json"):
         url = f"{BASE_URL}/{path}/{basename}{ext}"
         dest = target_dir / f"{basename}{ext}"
@@ -123,15 +129,19 @@ def download_voice(code: str, target_dir: Path, manifest: dict | None) -> bool:
             continue
         digest, algo = expected
         if not verify_checksum(dest, digest, algo=algo):
-            ok = False
-    if ok:
+            verified = False
+    if verified:
         success(f"Done: {basename}")
     else:
         warn(f"Failed: {basename} — file(s) deleted, re-run installer to retry")
-    return ok
+    return verified
 
 
 def install(non_interactive: bool = False) -> int:
+    """Install the piper-tts package and the selected voice models.
+
+    Returns 0 on success, 1 when at least one voice failed checksum verification.
+    """
     info("Piper TTS Installer")
     pip_install(["piper-tts"])
 
@@ -153,11 +163,12 @@ def install(non_interactive: bool = False) -> int:
     info(f"Models in: {target}")
     info("Usage:")
     logger.info('  ttsgen "Hello world" --engine pipertts')
-    logger.info('  ttsgen "Привет мир" --engine pipertts --language ru')
+    logger.info('  ttsgen "Hola mundo" --engine pipertts --language es')
     return 0
 
 
 def main():
+    """Module entrypoint placeholder — this file is import-only."""
     pass
 
 

@@ -12,7 +12,7 @@ from libs.sample_resolver import resolve_sample_path
 
 
 def test_bare_name_found_in_samples(tmp_path, monkeypatch):
-    """First-priority lookup: <cwd>/samples/<name>."""
+    """A bare name is resolved first against <cwd>/samples/<name>."""
     monkeypatch.chdir(tmp_path)
     samples = tmp_path / "samples"
     samples.mkdir()
@@ -23,7 +23,7 @@ def test_bare_name_found_in_samples(tmp_path, monkeypatch):
 
 
 def test_bare_name_falls_back_to_user_config(tmp_path, monkeypatch):
-    """Second-priority lookup: ~/.config/<name> when ./samples doesn't have it."""
+    """A bare name missing from ./samples is looked up in ~/.config/<name>."""
     monkeypatch.chdir(tmp_path)
     fake_home = tmp_path / "home"
     (fake_home / ".config").mkdir(parents=True)
@@ -35,8 +35,7 @@ def test_bare_name_falls_back_to_user_config(tmp_path, monkeypatch):
 
 
 def test_bare_name_nowhere_returns_samples_candidate(tmp_path, monkeypatch):
-    """When neither location has the file, return cwd/samples candidate
-    so the caller's error message points at the conventional spot."""
+    """A bare name found nowhere still yields the cwd/samples candidate so errors point at the conventional spot."""
     monkeypatch.chdir(tmp_path)
     fake_home = tmp_path / "home"
     fake_home.mkdir()
@@ -47,14 +46,14 @@ def test_bare_name_nowhere_returns_samples_candidate(tmp_path, monkeypatch):
 
 
 def test_absolute_path_passed_through(tmp_path):
-    """Values containing '/' are not searched — used verbatim (abspath)."""
+    """A value containing a separator is used verbatim (abspath) rather than searched."""
     target = tmp_path / "explicit.wav"
     target.write_bytes(b"RIFF")
     assert resolve_sample_path(str(target)) == str(target)
 
 
 def test_tilde_path_expanded(tmp_path, monkeypatch):
-    """~/... gets expanduser'd to $HOME-relative absolute path."""
+    """A leading ~ is expanded to an absolute path under $HOME."""
     fake_home = tmp_path / "home"
     fake_home.mkdir()
     monkeypatch.setenv("HOME", str(fake_home))
@@ -64,8 +63,7 @@ def test_tilde_path_expanded(tmp_path, monkeypatch):
 
 
 def test_relative_with_separator_passed_through(tmp_path, monkeypatch):
-    """A relative path WITH a separator is treated as an explicit path,
-    not as a bare name to be searched in standard locations."""
+    """A relative path with a separator counts as explicit and skips the standard search locations."""
     monkeypatch.chdir(tmp_path)
     sub = tmp_path / "custom"
     sub.mkdir()
@@ -76,7 +74,7 @@ def test_relative_with_separator_passed_through(tmp_path, monkeypatch):
 
 
 def test_samples_wins_over_user_config(tmp_path, monkeypatch):
-    """If both locations contain the file, ./samples (priority 1) wins."""
+    """When both locations hold the file, ./samples takes priority over ~/.config."""
     monkeypatch.chdir(tmp_path)
     fake_home = tmp_path / "home"
     (fake_home / ".config").mkdir(parents=True)

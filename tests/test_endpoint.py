@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""POST/GET /api/tts: success + error paths."""
+"""Tests for the /api/tts and /api/voices endpoints, success and error paths."""
 
 from libs.exceptions import EngineNotAvailableError, TTSException
 
@@ -8,6 +8,7 @@ INTERNAL_MARKER = "INTERNAL-MARKER-9876"
 
 
 def test_tts_post_success_wav(client):
+    """A well-formed POST returns audio with an audio mimetype and a real payload."""
     resp = client.post("/api/tts", json={"text": "hello"})
     assert resp.status_code == 200
     assert resp.mimetype in ("audio/wav", "audio/mpeg")
@@ -15,11 +16,13 @@ def test_tts_post_success_wav(client):
 
 
 def test_tts_get_success(client):
+    """The GET variant accepts the text as a query parameter."""
     resp = client.get("/api/tts?text=hi")
     assert resp.status_code == 200
 
 
 def test_tts_empty_text_400(client):
+    """An empty text field is rejected as a bad request."""
     resp = client.post("/api/tts", json={"text": ""})
     assert resp.status_code == 400
     body = resp.get_json()
@@ -28,6 +31,7 @@ def test_tts_empty_text_400(client):
 
 
 def test_tts_missing_text_400(client):
+    """A body without a text field is rejected as a bad request."""
     resp = client.post("/api/tts", json={})
     assert resp.status_code == 400
     body = resp.get_json()
@@ -35,6 +39,7 @@ def test_tts_missing_text_400(client):
 
 
 def test_tts_text_too_long_400(client):
+    """Text above the 1M character ceiling is rejected before synthesis."""
     resp = client.post("/api/tts", json={"text": "a" * 1_000_001})
     assert resp.status_code == 400
     body = resp.get_json()
@@ -48,6 +53,7 @@ def test_tts_long_text_under_limit_ok(client):
 
 
 def test_tts_invalid_language_400(client):
+    """A language that is not a two-letter code is rejected."""
     resp = client.post("/api/tts", json={"text": "hi", "language": "english"})
     assert resp.status_code == 400
     body = resp.get_json()
@@ -55,7 +61,10 @@ def test_tts_invalid_language_400(client):
 
 
 def test_tts_engine_not_available_503(client, monkeypatch, app_module):
+    """A missing engine maps to 503 Service Unavailable rather than a 500."""
+
     def boom(text, engine=None, language=None, voice=None):
+        """Stand in for synthesis and report the engine as not installed."""
         raise EngineNotAvailableError("Engine xyz not installed")
 
     monkeypatch.setattr(app_module, "text_to_speech_bytes", boom)
@@ -70,6 +79,7 @@ def test_tts_internal_failure_no_leak(client, monkeypatch, app_module):
     """Critical regression guard: internals must not appear in the body."""
 
     def boom(text, engine=None, language=None, voice=None):
+        """Stand in for synthesis and fail with an internal marker in the message."""
         raise TTSException(INTERNAL_MARKER)
 
     monkeypatch.setattr(app_module, "text_to_speech_bytes", boom)
@@ -85,7 +95,10 @@ def test_tts_internal_failure_no_leak(client, monkeypatch, app_module):
 
 
 def test_tts_unexpected_exception_no_leak(client, monkeypatch, app_module):
+    """A non-TTS exception is also masked behind a generic 500 body."""
+
     def boom(text, engine=None, language=None, voice=None):
+        """Stand in for synthesis and fail with an unexpected RuntimeError."""
         raise RuntimeError(INTERNAL_MARKER)
 
     monkeypatch.setattr(app_module, "text_to_speech_bytes", boom)
@@ -104,6 +117,7 @@ def test_tts_voice_accepted_and_passed_through(client, monkeypatch, app_module):
     captured = {}
 
     def capture(text, engine=None, language=None, voice=None):
+        """Record the voice argument and return a minimal WAV-looking blob."""
         captured["voice"] = voice
         return b"RIFF" + b"\x00" * 40
 
@@ -117,6 +131,7 @@ def test_tts_voice_accepted_and_passed_through(client, monkeypatch, app_module):
 
 
 def test_voices_endpoint_lists_voices(client, monkeypatch, app_module):
+    """/api/voices echoes the requested engine and language with the voice catalogue."""
     monkeypatch.setattr(
         app_module,
         "get_engine_voices",

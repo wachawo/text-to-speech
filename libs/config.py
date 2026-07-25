@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Config loader with priority chain.
+"""Config loader that fills os.environ from KEY=VALUE files, highest priority first.
 
-Load order (later wins for overlapping keys):
-    1. ./.env                       (versioned defaults, shared with Docker)
-    2. ./.env.local                 (gitignored local overrides — override=True)
-    3. ~/.config/ttsgen.conf        (user-wide fallback — override=False)
-    4. ./ttsgen.conf                (project-local fallback — override=False)
+Priority, strongest first — a weaker source never overwrites a stronger one:
+    1. ./.env.local                 (gitignored local overrides; the only file loaded
+                                     with override=True, so it beats even shell variables)
+    2. process environment          (shell vars and CLI flags)
+    3. ./.env                       (versioned defaults, shared with Docker)
+    4. ~/.config/ttsgen.conf        (user-wide fallback)
+    5. ./ttsgen.conf                (project-local fallback)
 
-Files use the same KEY=VALUE format as `.env`. Configs (3, 4) are loaded
-last with override=False so they only fill keys not already set by the
-.env pair above — they act as last-resort defaults.
+All files use the same KEY=VALUE format as `.env`. Every file except `.env.local`
+is loaded with override=False, so it only fills keys nobody stronger has set.
 """
 
 import logging
@@ -31,11 +32,12 @@ USER_CONFIG_PATH = USER_CONFIG_DIR / "ttsgen.conf"
 
 DEFAULT_USER_CONFIG = """\
 # ttsgen configuration — KEY=VALUE format (same as .env).
-# Load order (later wins for overlapping keys):
-#   1. ./.env                       (versioned defaults)
-#   2. ./.env.local                 (gitignored override, beats .env)
-#   3. ~/.config/ttsgen.conf        (this file — fallback default)
-#   4. ./ttsgen.conf                (project fallback)
+# Load order, strongest first (a weaker source never overwrites a stronger one):
+#   1. ./.env.local                 (gitignored override; beats even shell variables)
+#   2. process environment          (shell vars and CLI flags)
+#   3. ./.env                       (versioned defaults)
+#   4. ~/.config/ttsgen.conf        (this file — fallback default)
+#   5. ./ttsgen.conf                (project fallback)
 #
 # Uncomment and edit the lines below to set your defaults.
 
@@ -65,7 +67,7 @@ DEFAULT_USER_CONFIG = """\
 # TTS_HOST=0.0.0.0
 # TTS_PORT=5000
 # TTS_DEBUG=False
-# TTS_TOKEN=SuP3rS3cr3tK3y!
+# TTS_TOKENS=SuP3rS3cr3tK3y!
 # TTS_POOL_SIZE=1
 """
 
@@ -86,10 +88,13 @@ def ensure_user_config() -> Path:
 
 
 def load_config() -> None:
-    """Populate os.environ from config files.
+    """Populate os.environ from the config files, weakest source loaded last.
 
-    Order: .env (base) → .env.local (override=True) → user/project ttsgen.conf
-    (override=False, last-resort fallback for keys neither .env nor .env.local set).
+    Load sequence: .env (base) -> .env.local (override=True) -> ~/.config/ttsgen.conf
+    -> ./ttsgen.conf. Only `.env.local` overrides values that are already set, which
+    is what puts it above the process environment in the module-level priority list;
+    every other file supplies keys nobody stronger has set.
+    Does nothing when python-dotenv is not installed.
     """
     if not DOTENV_AVAILABLE:
         return
@@ -113,12 +118,17 @@ def load_config() -> None:
 def persist_config_value(key: str, value: str) -> None:
     """Set or update KEY=VALUE in ~/.config/ttsgen.conf, uncommenting if needed.
 
-    Used by installers to remember the chosen model directory so the engine
-    finds it at synthesis time.
+    Used by installers and `ttsrec` to remember a chosen path so the engine
+    finds it at synthesis time. Only the first matching line is rewritten; if the
+    key is absent entirely it is appended at the end of the file.
+
+    Args:
+        key: Config key to write, without the leading `#`.
+        value: Value to store verbatim.
     """
     ensure_user_config()
     lines = USER_CONFIG_PATH.read_text().splitlines()
-    out: list = []
+    out: list[str] = []
     replaced = False
     for line in lines:
         bare = line.lstrip().lstrip("#").strip()
@@ -135,6 +145,7 @@ def persist_config_value(key: str, value: str) -> None:
 
 
 def main():
+    """Module entrypoint placeholder — this file is import-only."""
     pass
 
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Unit tests for engines/gtts.py — online TTS via Google.
+"""Unit tests for engines/gtts.py, the online Google TTS engine.
 
-Real `gtts` package is in the dev venv, so the engine imports cleanly.
+The real `gtts` package is in the dev venv, so the engine imports cleanly.
 Tests below pin the contract of is_available()/generate() with a fake
 gTTS class so no network call is ever made.
 """
@@ -22,12 +22,16 @@ def engine(monkeypatch):
     fake_gtts_pkg = types.ModuleType("gtts")
 
     class FakeGTTS:
+        """Stand-in for gtts.gTTS that records its arguments instead of calling out."""
+
         def __init__(self, text, lang="en", slow=False):
+            """Store the synthesis parameters handed over by the engine."""
             self.text = text
             self.lang = lang
             self.slow = slow
 
         def write_to_fp(self, fp):
+            """Write marker bytes encoding the stored parameters into `fp`."""
             # Marker bytes so we can assert pass-through.
             fp.write(f"MP3:{self.lang}:{self.slow}:{self.text}".encode())
 
@@ -41,10 +45,12 @@ def engine(monkeypatch):
 
 
 def test_is_available_true_when_gtts_imports(engine):
+    """The engine advertises itself once the gtts import succeeded."""
     assert engine.is_available() is True
 
 
 def test_is_available_false_when_flag_off(engine, monkeypatch):
+    """is_available() mirrors the module-level AVAILABLE flag."""
     monkeypatch.setattr(engine, "AVAILABLE", False)
     assert engine.is_available() is False
 
@@ -57,6 +63,7 @@ def test_is_available_false_when_gtts_not_installed(monkeypatch):
     real_import = __builtins__["__import__"] if isinstance(__builtins__, dict) else __builtins__.__import__
 
     def fake_import(name, *args, **kwargs):
+        """Delegate to the real importer except for gtts, which is made to fail."""
         if name == "gtts" or name.startswith("gtts."):
             raise ImportError("gtts not installed")
         return real_import(name, *args, **kwargs)
@@ -74,27 +81,32 @@ def test_is_available_false_when_gtts_not_installed(monkeypatch):
 
 
 def test_generate_passes_lang_and_slow_to_gtts(engine):
+    """The language and slow config keys reach gTTS unchanged."""
     audio = engine.generate("hello", {"language": "ru", "slow": True})
     assert audio == b"MP3:ru:True:hello"
 
 
 def test_generate_defaults_language_to_en_and_slow_to_false(engine):
+    """An empty config synthesizes English at normal speed."""
     audio = engine.generate("hi", {})
     assert audio == b"MP3:en:False:hi"
 
 
 def test_generate_raises_engine_not_available_when_flag_off(engine, monkeypatch):
+    """Synthesis refuses to run while the engine reports itself unavailable."""
     monkeypatch.setattr(engine, "AVAILABLE", False)
     with pytest.raises(EngineNotAvailableError, match="not available"):
         engine.generate("hi", {})
 
 
 def test_generate_wraps_underlying_failure_as_tts_exception(engine, monkeypatch):
-    """A network/library error inside gTTS must surface as TTSException,
-    not as a raw exception leaking the upstream type."""
+    """A network or library error inside gTTS surfaces as TTSException, never as the raw upstream type."""
 
     class BoomGTTS:
+        """Stand-in for gtts.gTTS that fails during construction."""
+
         def __init__(self, *a, **kw):
+            """Raise as if the network were unreachable."""
             raise RuntimeError("network down")
 
     # `engines.gtts` did `from gtts import gTTS`, so the symbol lives on the

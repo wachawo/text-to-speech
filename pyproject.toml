@@ -103,8 +103,6 @@ extend-exclude = '''
   | \.venv
   | audio
   | samples
-  | engines
-  | libs
   | models
 )/
 '''
@@ -112,13 +110,16 @@ extend-exclude = '''
 [tool.ruff]
 line-length = 128
 target-version = "py312"
-extend-exclude = ["libs", "engines", "models", ".venv", ".backup", "audio", "samples"]
+extend-exclude = ["models", ".venv", ".backup", "audio", "samples"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 # E501 — handled by black; UP009 — project style requires `# -*- coding: utf-8 -*-`;
 # E203/E266/W503 — historic flake8 ignores carried over.
 ignore = ["E501", "UP009", "E203", "E266"]
+# Project style forbids leading underscores, so deliberately unused names are
+# spelled `unused_*`; teach ruff to treat that prefix as a throwaway.
+dummy-variable-rgx = "^(_+|unused_[a-zA-Z0-9_]*)$"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

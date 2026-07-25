@@ -34,6 +34,7 @@ def resolve_sample_path(value: str) -> str:
 
 
 def main():
+    """Module entrypoint placeholder — this file is import-only."""
     pass
 
 

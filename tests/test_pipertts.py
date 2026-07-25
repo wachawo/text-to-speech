@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Unit tests for engines/pipertts.py — offline TTS via Piper, plus an
-integration check against the upstream `voices.json` manifest schema.
+"""Unit tests for engines/pipertts.py, plus a schema check against the upstream `voices.json` manifest.
 
 Unit tests fake the `piper` package and the on-disk .onnx model layout.
 The manifest tests at the bottom of this file are network-dependent and
@@ -11,6 +10,7 @@ auto-skip when the manifest cannot be fetched.
 import importlib
 import io
 import json
+import os
 import sys
 import types
 import urllib.error
@@ -28,14 +28,19 @@ def make_fake_piper(synthesise_bytes: bytes = b""):
     fake = types.ModuleType("piper")
 
     class FakePiperVoice:
+        """Stand-in for piper.PiperVoice that emits canned PCM instead of running inference."""
+
         def __init__(self, path):
+            """Remember the model path the voice was loaded from."""
             self.path = path
 
         @classmethod
         def load(cls, path):
+            """Return an instance bound to `path` without touching the filesystem."""
             return cls(path)
 
         def synthesize_wav(self, text, wav_file):
+            """Configure the open wave file and write the canned frames into it."""
             wav_file.setnchannels(1)
             wav_file.setsampwidth(2)
             wav_file.setframerate(22050)
@@ -47,6 +52,7 @@ def make_fake_piper(synthesise_bytes: bytes = b""):
 
 @pytest.fixture
 def engine(monkeypatch):
+    """Fresh-import engines.pipertts with the fake piper package in sys.modules."""
     monkeypatch.setitem(sys.modules, "piper", make_fake_piper())
     monkeypatch.delitem(sys.modules, "engines.pipertts", raising=False)
     return importlib.import_module("engines.pipertts")
@@ -56,6 +62,7 @@ def engine(monkeypatch):
 
 
 def test_is_available_true_with_fake_piper(engine):
+    """The engine reports itself usable once the piper import succeeds."""
     assert engine.is_available() is True
 
 
@@ -63,11 +70,13 @@ def test_is_available_true_with_fake_piper(engine):
 
 
 def test_models_dir_uses_env_var_absolute(engine, monkeypatch, tmp_path):
+    """An absolute PIPERTTS_MODELS value is used verbatim."""
     monkeypatch.setenv("PIPERTTS_MODELS", str(tmp_path / "abs_models"))
     assert engine.get_models_directory() == str(tmp_path / "abs_models")
 
 
 def test_models_dir_resolves_relative_env_against_project_root(engine, monkeypatch):
+    """A relative PIPERTTS_MODELS value resolves under the project root, not the cwd."""
     monkeypatch.setenv("PIPERTTS_MODELS", "custom_voices")
     result = engine.get_models_directory()
     # Relative env var must resolve under project root, NOT cwd.
@@ -76,29 +85,28 @@ def test_models_dir_resolves_relative_env_against_project_root(engine, monkeypat
 
 
 def test_models_dir_falls_back_to_cache_pipertts_in_project(engine, monkeypatch, tmp_path):
-    """If env var is unset, cache/pipertts in project root wins over the default."""
+    """With the env var unset, an existing cache/pipertts in the project root wins over the default."""
     monkeypatch.delenv("PIPERTTS_MODELS", raising=False)
     # Stub the project-root path lookup by patching the module attribute.
     fake_project = tmp_path / "fake_project"
     pipertts_dir = fake_project / "cache" / "pipertts"
     pipertts_dir.mkdir(parents=True)
 
-    import os as os_mod
-
-    real_dirname = os_mod.path.dirname
+    real_dirname = os.path.dirname
 
     def stubbed_dirname(p):
+        """Redirect the engines/ parent lookup to the fake project root."""
         # First call returns engines/, second engines/.. — i.e. project root.
         if p.endswith("engines"):
             return str(fake_project)
         return real_dirname(p)
 
-    monkeypatch.setattr(os_mod.path, "dirname", stubbed_dirname)
+    monkeypatch.setattr(os.path, "dirname", stubbed_dirname)
     assert engine.get_models_directory() == str(pipertts_dir)
 
 
 def test_models_dir_default_when_nothing_configured(engine, monkeypatch, tmp_path):
-    """Neither env var nor cache/pipertts/ → fallback to <project>/.piper/voices."""
+    """With neither the env var nor cache/pipertts present, the <project>/.piper/voices default applies."""
     monkeypatch.delenv("PIPERTTS_MODELS", raising=False)
     # Move CWD somewhere that has no cache/pipertts so the project-root one wins —
     # but the project DOES contain it in real life. We only assert the path
@@ -112,6 +120,7 @@ def test_models_dir_default_when_nothing_configured(engine, monkeypatch, tmp_pat
 
 
 def test_voice_path_known_language_uses_mapped_name(engine, monkeypatch, tmp_path):
+    """A mapped language resolves to its own .onnx file inside the models directory."""
     monkeypatch.setattr(engine, "get_models_directory", lambda: str(tmp_path))
     # Pre-create the file so the first existence check wins.
     (tmp_path / "ru_RU-ruslan-medium.onnx").write_bytes(b"x")
@@ -119,15 +128,14 @@ def test_voice_path_known_language_uses_mapped_name(engine, monkeypatch, tmp_pat
 
 
 def test_voice_path_unknown_language_defaults_to_english(engine, monkeypatch, tmp_path):
+    """An unmapped language falls back to the English voice rather than failing."""
     monkeypatch.setattr(engine, "get_models_directory", lambda: str(tmp_path))
     (tmp_path / "en_US-lessac-medium.onnx").write_bytes(b"x")
     assert engine.get_voice_path("xx") == str(tmp_path / "en_US-lessac-medium.onnx")
 
 
 def test_voice_path_returns_models_dir_path_when_file_missing(engine, monkeypatch, tmp_path):
-    """When neither models_dir nor fallback dirs contain the .onnx, the
-    function still returns the canonical models_dir candidate so generate()
-    can produce a useful FileNotFoundError downstream."""
+    """When no directory holds the .onnx, the canonical models_dir candidate is returned for a useful error."""
     monkeypatch.setattr(engine, "get_models_directory", lambda: str(tmp_path))
     monkeypatch.setattr(engine.os.path, "exists", lambda p: False)
     result = engine.get_voice_path("en")
@@ -138,6 +146,7 @@ def test_voice_path_returns_models_dir_path_when_file_missing(engine, monkeypatc
 
 
 def test_download_instructions_mention_installer_and_url(engine):
+    """The instructions name the install command, the upstream repo and the exact voice file."""
     out = engine.get_download_instructions("ru")
     assert "ttsgen --install pipertts" in out
     assert "huggingface.co/rhasspy/piper-voices" in out
@@ -145,6 +154,7 @@ def test_download_instructions_mention_installer_and_url(engine):
 
 
 def test_download_instructions_unknown_language_falls_back_to_en(engine):
+    """Instructions for an unmapped language point at the English voice."""
     out = engine.get_download_instructions("xx")
     assert "en_US-lessac-medium.onnx" in out
 
@@ -153,17 +163,18 @@ def test_download_instructions_unknown_language_falls_back_to_en(engine):
 
 
 def test_generate_raises_engine_not_available_when_flag_off(engine, monkeypatch):
+    """Synthesising with AVAILABLE cleared raises EngineNotAvailableError."""
     monkeypatch.setattr(engine, "AVAILABLE", False)
     with pytest.raises(EngineNotAvailableError, match="not available"):
         engine.generate("hi", {})
 
 
 def test_generate_filenotfound_yields_download_instructions(engine, monkeypatch, tmp_path):
-    """FileNotFoundError from PiperVoice.load → TTSException whose message
-    contains the install command (so end users know what to do)."""
+    """A missing model file produces a TTSException whose message carries the install command."""
     monkeypatch.setattr(engine, "get_voice_path", lambda lang: str(tmp_path / "missing.onnx"))
 
     def boom_load(path):
+        """Fail the way PiperVoice.load does when the .onnx is absent."""
         raise FileNotFoundError(path)
 
     monkeypatch.setattr(engine.PiperVoice, "load", staticmethod(boom_load))
@@ -172,9 +183,11 @@ def test_generate_filenotfound_yields_download_instructions(engine, monkeypatch,
 
 
 def test_generate_other_failure_wrapped_as_tts_exception(engine, monkeypatch, tmp_path):
+    """Any other backend failure is wrapped as TTSException instead of escaping raw."""
     monkeypatch.setattr(engine, "get_voice_path", lambda lang: str(tmp_path / "v.onnx"))
 
     def boom(path):
+        """Fail the way a crashing inference session would."""
         raise RuntimeError("inference crashed")
 
     monkeypatch.setattr(engine.PiperVoice, "load", staticmethod(boom))
@@ -186,7 +199,7 @@ def test_generate_other_failure_wrapped_as_tts_exception(engine, monkeypatch, tm
 
 
 def test_generate_returns_valid_wav_bytes(engine, monkeypatch, tmp_path):
-    """generate writes WAV via wave.open into BytesIO; result must be parseable."""
+    """The returned bytes are a parseable mono 16-bit 22.05 kHz WAV."""
     monkeypatch.setattr(engine, "get_voice_path", lambda lang: str(tmp_path / "v.onnx"))
     audio = engine.generate("hi", {"language": "en"})
 
@@ -201,8 +214,7 @@ def test_generate_returns_valid_wav_bytes(engine, monkeypatch, tmp_path):
 
 
 def test_generate_caches_voice_between_calls(engine, monkeypatch, tmp_path):
-    """PiperVoice.load is the dominant cost (~1.5s) — repeated calls for the
-    same voice MUST hit the cache instead of re-loading the ONNX session."""
+    """Repeated synthesis for the same voice loads the ONNX session only once."""
     engine.VOICE_CACHE.clear()
     monkeypatch.setattr(engine, "get_voice_path", lambda lang: str(tmp_path / "v.onnx"))
 
@@ -211,6 +223,7 @@ def test_generate_caches_voice_between_calls(engine, monkeypatch, tmp_path):
     original_load = fake_voice_cls.load
 
     def counting_load(path):
+        """Count invocations before delegating to the fake loader."""
         calls["n"] += 1
         return original_load(path)
 
@@ -223,7 +236,7 @@ def test_generate_caches_voice_between_calls(engine, monkeypatch, tmp_path):
 
 
 def test_generate_creates_separate_voice_per_path(engine, monkeypatch, tmp_path):
-    """Cache is keyed by voice_path — different paths must each load once."""
+    """The cache is keyed by voice path, so two different paths each load once."""
     engine.VOICE_CACHE.clear()
     paths = iter([str(tmp_path / "a.onnx"), str(tmp_path / "b.onnx")])
     monkeypatch.setattr(engine, "get_voice_path", lambda lang: next(paths))
@@ -232,6 +245,7 @@ def test_generate_creates_separate_voice_per_path(engine, monkeypatch, tmp_path)
     original_load = engine.PiperVoice.load
 
     def counting_load(path):
+        """Count invocations before delegating to the fake loader."""
         calls["n"] += 1
         return original_load(path)
 
@@ -249,6 +263,7 @@ EXPECTED_HASH_KEYS = {"sha256", "md5_digest", "md5"}
 
 
 def try_fetch_manifest() -> dict | None:
+    """Download and parse the upstream voices.json, or return None if it is unreachable."""
     try:
         req = urllib.request.Request(VOICES_JSON_URL, headers={"User-Agent": "ttsgen-tests"})
         with urllib.request.urlopen(req, timeout=15) as resp:
@@ -259,6 +274,7 @@ def try_fetch_manifest() -> dict | None:
 
 @pytest.fixture(scope="module")
 def manifest() -> dict:
+    """Provide the upstream voices.json, skipping the module when the network is unavailable."""
     data = try_fetch_manifest()
     if data is None:
         pytest.skip(f"manifest not reachable: {VOICES_JSON_URL}")
@@ -267,14 +283,13 @@ def manifest() -> dict:
 
 
 def test_manifest_has_entry_for_every_voice_we_install(manifest: dict) -> None:
+    """Every voice the installer ships still has a matching entry upstream."""
     missing = [code for code in VOICES if VOICES[code][1] not in manifest]
     assert not missing, f"voices.json missing entries for: {missing}"
 
 
 def test_every_voice_file_has_a_known_hash_key(manifest: dict) -> None:
-    """For each voice we ship, both .onnx and .onnx.json must expose at least
-    one of (sha256 | md5_digest | md5). If upstream renames the field this
-    test fails — better than expected_hash silently returning None."""
+    """Both the .onnx and .onnx.json of every shipped voice expose a recognised checksum field."""
     bad: list[str] = []
     for code, voice_info in VOICES.items():
         path, basename = voice_info[0], voice_info[1]
@@ -296,9 +311,7 @@ def test_every_voice_file_has_a_known_hash_key(manifest: dict) -> None:
 
 
 def test_expected_hash_extracts_a_value_for_every_voice(manifest: dict) -> None:
-    """Round-trip through the helper itself — any voice for which
-    expected_hash returns None means verify_checksum will be skipped at
-    install time, which is what we want to know about now (not later)."""
+    """expected_hash yields a usable digest for every shipped voice, so install-time verification never silently skips."""
     skipped: list[str] = []
     for code, voice_info in VOICES.items():
         path, basename = voice_info[0], voice_info[1]

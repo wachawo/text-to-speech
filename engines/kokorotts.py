@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Kokoro TTS Engine
+"""Offline ONNX TTS engine backed by kokoro-onnx (Kokoro 82M v1.0).
 
-Offline ONNX-based TTS using kokoro-onnx (Kokoro 82M v1.0). Multi-language
-(English/French/Italian/Japanese/Mandarin/Spanish/Hindi/Portuguese), multi-voice,
-fast on CPU.
+Multi-language (English/French/Italian/Japanese/Mandarin/Spanish/Hindi/Portuguese),
+multi-voice, fast on CPU.
 
 See: https://github.com/nazdridoy/kokoro-tts (CLI upstream this engine wraps)
      https://github.com/thewh1teagle/kokoro-onnx (Python bindings)
@@ -15,11 +13,8 @@ import io
 import logging
 import os
 
+# Local imports
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
-
-# Kokoro is offline ONNX (~10x realtime CPU). Bound single calls so a runaway
-# input doesn't blow memory; chunking remains the CLI's job.
-MAX_TEXT_LENGTH = 50_000
 
 # Centralised config loader handles ./ttsgen.conf > ~/.config/ttsgen.conf > .env > defaults
 try:
@@ -27,9 +22,13 @@ try:
 
     load_config()
 except ImportError:
-    pass
+    pass  # libs.config or dotenv not available — engine will fall back to env / defaults.
 
 logger = logging.getLogger(__name__)
+
+# Kokoro is offline ONNX (~10x realtime CPU). Bound single calls so a runaway
+# input doesn't blow memory; chunking remains the CLI's job.
+MAX_TEXT_LENGTH = 50_000
 
 DEFAULT_KOKOROTTS_MODELS = "cache/kokorotts"
 DEFAULT_KOKOROTTS_MODEL = "kokoro-v1.0.onnx"
@@ -57,8 +56,8 @@ KOKORO_CACHE: dict = {}
 # are required for synthesis. If either is missing the engine is unusable —
 # report False from is_available() so `ttsgen --list` doesn't lie.
 try:
-    from kokoro_onnx import Kokoro  # type: ignore
     import soundfile  # type: ignore  # noqa: F401
+    from kokoro_onnx import Kokoro  # type: ignore
 
     AVAILABLE = True
 except ImportError:
@@ -144,6 +143,11 @@ def generate(text: str, config: dict) -> bytes:
 
     Returns:
         Audio bytes in WAV format (24000 Hz, 16-bit PCM, mono).
+
+    Raises:
+        EngineNotAvailableError: kokoro-onnx / soundfile are not installed.
+        ValidationError: Text exceeds MAX_TEXT_LENGTH.
+        TTSException: Model files are missing, or synthesis failed.
     """
     if not AVAILABLE:
         raise EngineNotAvailableError(
@@ -177,12 +181,13 @@ def generate(text: str, config: dict) -> bytes:
     try:
         samples, sample_rate = kokoro.create(text, voice=voice, speed=speed, lang=lang_code)
     except Exception as exc:
-        raise TTSException(f"Kokoro TTS generation failed ({type(exc).__name__}): {exc}")
+        raise TTSException(f"Kokoro TTS generation failed ({type(exc).__name__}): {exc}") from exc
 
     return samples_to_wav_bytes(samples, int(sample_rate))
 
 
 def main():
+    """Module entrypoint placeholder — this file is import-only."""
     pass
 
 

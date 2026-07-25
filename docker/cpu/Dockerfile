@@ -20,8 +20,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         -r /tmp/base.txt -r /tmp/extra.txt \
  && rm /tmp/*.txt
 
-COPY ttssrv/__init__.py ttssrv/app1.py ttssrv/validators.py ttssrv/gu.py ttssrv/entrypoint.sh \
-     /opt/ttssrv/
+# Copy the package, not a hand-written file list: the enumeration used to omit
+# ttssrv/streaming.py, which app1.py imports unconditionally.
+COPY ttssrv/ /opt/ttssrv/
 RUN chmod +x /opt/ttssrv/entrypoint.sh
 
 ENV PYTHONUSERBASE=/opt/data/userbase \

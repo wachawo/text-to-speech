@@ -2,11 +2,8 @@
 # -*- coding: utf-8 -*-
 """Record a voice sample WAV from the default microphone.
 
-Saves to one of:
-  ttsrec                          → uses COQUITTS_SAMPLE from config / env
-  ttsrec /path/to/file.wav        → explicit path
+The saved path is persisted as COQUITTS_SAMPLE so voice cloning picks it up:
 
-Usage:
   ttsrec                          # default location (config-driven)
   ttsrec ~/voice.wav              # explicit path
   ttsrec --duration 12            # 12 seconds (default 8)
@@ -18,6 +15,8 @@ import logging
 import os
 import sys
 import time
+import traceback
+import wave
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -31,11 +30,14 @@ LOGGING = {
 
 DEFAULT_DURATION = 8  # seconds
 DEFAULT_RATE = 22050  # Hz — matches xtts_v2 voice cloning expectations
+INT16_MAX = 32767  # Full-scale amplitude of a 16-bit sample
+SILENT_PEAK_THRESHOLD = 1000  # ~3% of INT16_MAX; below this the take is treated as silent
 # Single source of truth shared with engines/coquitts.py:DEFAULT_COQUITTS_SAMPLE.
 DEFAULT_FALLBACK = Path.home() / ".config" / "ttsgen.wav"
 
 
 def parse_args() -> argparse.Namespace:
+    """Build the CLI parser and return the parsed command-line arguments."""
     parser = argparse.ArgumentParser(
         description="Record a voice sample WAV from the default microphone.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -80,6 +82,7 @@ def resolve_output_path(arg_path: str | None) -> Path:
     if arg_path:
         return Path(os.path.expanduser(arg_path)).resolve()
 
+    # Imported lazily: recording to an explicit path must work even without libs/.
     try:
         from libs.config import load_config
 
@@ -96,6 +99,7 @@ def resolve_output_path(arg_path: str | None) -> Path:
 
 def record_wav(output: Path, duration: int, rate: int) -> None:
     """Record `duration` seconds of mono audio at `rate` Hz to `output`."""
+    # Imported lazily: sounddevice is an optional dependency, needed only when recording.
     import sounddevice as sd
 
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -110,27 +114,26 @@ def record_wav(output: Path, duration: int, rate: int) -> None:
     sd.wait()
     logger.info("  done")
 
-    # Quick silence check — int16 max is 32767. Anything below ~5% peak is "silent".
+    # Quick silence check: a muted or unselected microphone yields a near-zero peak.
     peak = int(abs(audio).max())
-    if peak < 1000:
+    if peak < SILENT_PEAK_THRESHOLD:
         logger.warning(
-            f"Recording is nearly silent (peak amplitude: {peak}/32767). "
+            f"Recording is nearly silent (peak amplitude: {peak}/{INT16_MAX}). "
             f"Check that your microphone is selected and not muted. "
             f"List devices with: python -c 'import sounddevice; print(sounddevice.query_devices())'"
         )
     else:
-        logger.info(f"  peak amplitude: {peak}/32767 ({peak * 100 // 32767}%)")
+        logger.info(f"  peak amplitude: {peak}/{INT16_MAX} ({peak * 100 // INT16_MAX}%)")
 
-    import wave
-
-    with wave.open(str(output), "wb") as w:
-        w.setnchannels(1)
-        w.setsampwidth(2)  # 16-bit
-        w.setframerate(rate)
-        w.writeframes(audio.tobytes())
+    with wave.open(str(output), "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)  # 16-bit
+        wav_file.setframerate(rate)
+        wav_file.writeframes(audio.tobytes())
 
 
 def main() -> int:
+    """Record a sample to the resolved path and return a shell exit code."""
     logging.basicConfig(**LOGGING)  # type: ignore[arg-type]
     args = parse_args()
     output = resolve_output_path(args.path)
@@ -148,8 +151,6 @@ def main() -> int:
         logger.warning("Recording interrupted.")
         return 1
     except Exception as exc:
-        import traceback
-
         logger.error(f"{type(exc).__name__}: {str(exc)}\n{traceback.format_exc()}")
         return 1
 

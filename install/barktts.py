@@ -25,6 +25,7 @@ REQUIRED_GB = 15
 
 
 def check_disk_space(non_interactive: bool) -> bool:
+    """Return True when there is room for Bark's ~15 GB of weights, or the user insists."""
     free_bytes = shutil.disk_usage(str(project_root())).free
     free_gb = free_bytes // (1024**3)
     if free_gb < REQUIRED_GB:
@@ -34,8 +35,13 @@ def check_disk_space(non_interactive: bool) -> bool:
 
 
 def predownload() -> int:
-    """Trigger Bark's preload_models() with PyTorch 2.6+ safe-globals workaround."""
+    """Fetch every Bark checkpoint up front. Returns 0 on success, 1 on failure.
+
+    PyTorch 2.6+ defaults `torch.load` to `weights_only=True`, which rejects the
+    numpy scalars stored in Bark's checkpoints, so they are allow-listed first.
+    """
     try:
+        # Late imports: torch, numpy and bark are pip-installed by install() above.
         import numpy as np
         import torch
 
@@ -44,19 +50,22 @@ def predownload() -> int:
             info("Detected PyTorch 2.6+, applying compatibility fix...")
             torch.serialization.add_safe_globals([np.core.multiarray.scalar, np.dtype])
 
-        from bark import preload_models  # noqa: WPS433 — late import after pip install
+        from bark import preload_models
 
         info("Downloading Bark models (text encoder ~1GB, coarse ~5GB, fine ~5GB)...")
         preload_models()
         success("All models downloaded and cached at ~/.cache/suno/bark_v0/")
         return 0
     except Exception as exc:
-        error(f"Pre-download failed: {type(exc).__name__}: {exc}")
-        traceback.print_exc()
+        error(f"Pre-download failed: {type(exc).__name__}: {str(exc)}\n{traceback.format_exc()}")
         return 1
 
 
 def install(non_interactive: bool = False) -> int:
+    """Install torch, Bark and its extras, optionally pre-downloading the weights.
+
+    Returns 0 on success, 1 if a requested pre-download failed.
+    """
     info("Bark TTS Installer")
 
     if not warn_no_venv(non_interactive):
@@ -89,9 +98,9 @@ def install(non_interactive: bool = False) -> int:
     ]
     choice = choose_from("\nPre-download models?", options, default=2)
     if choice == 1:
-        rc = predownload()
-        if rc != 0:
-            return rc
+        exit_code = predownload()
+        if exit_code != 0:
+            return exit_code
 
     success("\nInstallation complete!")
     info("Usage:")
@@ -102,6 +111,7 @@ def install(non_interactive: bool = False) -> int:
 
 
 def main():
+    """Module entrypoint placeholder — this file is import-only."""
     pass
 
 
