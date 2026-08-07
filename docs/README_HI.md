@@ -4,11 +4,11 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/wachawo/text-to-speech/blob/main/LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
 
+[English](https://github.com/wachawo/text-to-speech/blob/main/README.md) | [Español](https://github.com/wachawo/text-to-speech/blob/main/docs/README_ES.md) | [Português](https://github.com/wachawo/text-to-speech/blob/main/docs/README_PT.md) | [Français](https://github.com/wachawo/text-to-speech/blob/main/docs/README_FR.md) | [Deutsch](https://github.com/wachawo/text-to-speech/blob/main/docs/README_DE.md) | [Italiano](https://github.com/wachawo/text-to-speech/blob/main/docs/README_IT.md) | [Русский](https://github.com/wachawo/text-to-speech/blob/main/docs/README_RU.md) | [中文](https://github.com/wachawo/text-to-speech/blob/main/docs/README_ZH.md) | [日本語](https://github.com/wachawo/text-to-speech/blob/main/docs/README_JA.md) | **[हिन्दी](https://github.com/wachawo/text-to-speech/blob/main/docs/README_HI.md)** | [한국어](https://github.com/wachawo/text-to-speech/blob/main/docs/README_KR.md)
+
 `text-to-speech` आपको एक ही इंटरफ़ेस के माध्यम से कई स्पीच-सिंथेसिस इंजनों के साथ काम करने देता है। आप ऑनलाइन gTTS से शुरुआत कर सकते हैं और बाद में स्थानीय Piper, Silero, Coqui, Bark, या Kokoro पर स्विच कर सकते हैं — अपने CLI कमांड, Python कोड, या HTTP इंटीग्रेशन को फिर से लिखे बिना।
 
 यह प्रोजेक्ट स्थानीय उपयोग, ऑटोमेशन, और नेटवर्क पर अपना खुद का TTS सर्वर चलाने के लिए उपयुक्त है।
-
-[English](https://github.com/wachawo/text-to-speech/blob/main/README.md) | [Español](https://github.com/wachawo/text-to-speech/blob/main/docs/README_ES.md) | [Português](https://github.com/wachawo/text-to-speech/blob/main/docs/README_PT.md) | [Français](https://github.com/wachawo/text-to-speech/blob/main/docs/README_FR.md) | [Deutsch](https://github.com/wachawo/text-to-speech/blob/main/docs/README_DE.md) | [Italiano](https://github.com/wachawo/text-to-speech/blob/main/docs/README_IT.md) | [Русский](https://github.com/wachawo/text-to-speech/blob/main/docs/README_RU.md) | [中文](https://github.com/wachawo/text-to-speech/blob/main/docs/README_ZH.md) | [日本語](https://github.com/wachawo/text-to-speech/blob/main/docs/README_JA.md) | **[हिन्दी](https://github.com/wachawo/text-to-speech/blob/main/docs/README_HI.md)** | [한국어](https://github.com/wachawo/text-to-speech/blob/main/docs/README_KR.md)
 
 * **विभिन्न इंजनों के साथ काम करने का एक ही तरीका।** आपको जिस इंजन की ज़रूरत है उसे चुनें और उसे CLI (`ttsgen`), Python API (`libs.api`), या HTTP API के माध्यम से कॉल करें।
 * **आप पूरी तरह स्थानीय रूप से काम कर सकते हैं।** Piper, Silero, Coqui, Bark, Kokoro, और `pyttsx3` सभी आपकी अपनी मशीन पर चलते हैं।
