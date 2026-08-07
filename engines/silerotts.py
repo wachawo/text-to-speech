@@ -1,10 +1,9 @@
-"""
-Silero TTS Engine
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Offline TTS engine backed by Silero torch.hub models.
 
-High-quality offline text-to-speech using Silero models.
-Fast on CPU, excellent quality, particularly good for Russian.
-
-Supports: Russian, English, German, Spanish, French, Ukrainian, and more.
+Fast on CPU with excellent quality; ships voices for Russian, English,
+German, Spanish, French, Ukrainian and more.
 """
 
 import io
@@ -14,10 +13,8 @@ import wave
 
 import numpy as np
 
+# Local imports
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
-
-# Silero is fast offline; protect single calls from runaway memory.
-MAX_TEXT_LENGTH = 50_000
 
 # .env via find_dotenv (walks up from cwd) → then .env.local override.
 try:
@@ -34,6 +31,9 @@ except ImportError:
     pass  # dotenv not installed, skip
 
 logger = logging.getLogger(__name__)
+
+# Silero is fast offline; protect single calls from runaway memory.
+MAX_TEXT_LENGTH = 50_000
 
 # Cache loaded models by (model_id, device) to avoid re-running torch.hub.load
 # on every call. Mirrors engines/coquitts.py:TTS_CACHE. Without this, each
@@ -68,7 +68,6 @@ def get_model_info(language: str = "en") -> tuple:
     Returns:
         Tuple of (model_id, speaker, sample_rate)
     """
-    # Language to model mapping
     language_models = {
         "ru": ("v3_1_ru", "aidar", 48000),  # Russian (excellent quality)
         "en": ("v3_en", "en_0", 48000),  # English
@@ -95,24 +94,21 @@ def get_models_directory() -> str:
     Returns:
         Path to models directory
     """
-    # Get project root (parent of engines/ directory)
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-    # Priority 1: Check environment variable (from .env or export)
     env_var = os.environ.get("SILEROTTS_MODELS")
     if env_var:
         models_path = env_var.strip()
-        # If relative path, resolve from project root
+        # A relative override is anchored to the project root, not the cwd,
+        # so `ttsgen` finds the same models from any working directory.
         if not os.path.isabs(models_path):
             models_path = os.path.join(project_root, models_path)
         return os.path.expanduser(models_path)
 
-    # Priority 2: Check cache/silerotts directory in project root
     silerotts_dir = os.path.join(project_root, "cache", "silerotts")
     if os.path.exists(silerotts_dir) and os.path.isdir(silerotts_dir):
         return silerotts_dir
 
-    # Priority 3: Default - use torch default
     return os.path.expanduser("~/.cache/torch/hub")
 
 
@@ -124,11 +120,10 @@ def load_model(language: str) -> tuple:
         TTS_CACHE by (model_id, device) so repeated calls are cheap.
     """
     model_id, default_speaker, sample_rate = get_model_info(language)
-    device = torch.device("cpu")  # Use CPU
+    device = torch.device("cpu")
     cache_key = (model_id, str(device))
     model = TTS_CACHE.get(cache_key)
     if model is None:
-        # Set custom models directory if configured
         models_dir = get_models_directory()
         if models_dir != os.path.expanduser("~/.cache/torch/hub"):
             torch.hub.set_dir(models_dir)
@@ -152,14 +147,11 @@ def load_model(language: str) -> tuple:
             trust_repo=True,
         )
 
-        # Unpack result
         if isinstance(result, tuple) and len(result) >= 2:
             model = result[0]
-            # example_text = result[1]
         else:
             raise TTSException(f"Unexpected torch.hub.load result: {type(result)}")
 
-        # Check model
         if model is None:
             raise TTSException("Silero model failed to load")
 
@@ -196,10 +188,15 @@ def generate(text: str, config: dict) -> bytes:
 
     Args:
         text: Text to synthesize
-        config: Configuration dict with language
+        config: Configuration dict with language and optional voice
 
     Returns:
         Audio bytes in WAV format (48000 Hz, 16-bit, mono)
+
+    Raises:
+        EngineNotAvailableError: torch / torchaudio are not installed.
+        ValidationError: Text is too long, unpronounceable, or the voice is unknown.
+        TTSException: Model could not be loaded, or synthesis failed.
 
     Note:
         First run will download the model from torch hub.
@@ -226,8 +223,7 @@ def generate(text: str, config: dict) -> bytes:
         speakers = getattr(model, "speakers", None)
         if speakers and speaker not in speakers:
             raise ValidationError(
-                f"Unknown voice '{speaker}' for language '{language}'. "
-                f"Available: {', '.join(sorted(speakers))}"
+                f"Unknown voice '{speaker}' for language '{language}'. " f"Available: {', '.join(sorted(speakers))}"
             )
 
         # Generate audio (float32 mono waveform in [-1, 1]).
@@ -247,38 +243,47 @@ def generate(text: str, config: dict) -> bytes:
             wav_file.writeframes(pcm16)
         return audio_buffer.getvalue()
 
-    except ValueError as e:
+    except ValueError as exc:
         # Silero's process_simple_text raises a bare ValueError (no message) when
         # the text has no pronounceable content left after its internal cleaning:
         # digits/punctuation/whitespace only, or characters outside the model's
         # alphabet (e.g. Latin text routed to the Russian v3_1_ru model). This is
         # bad input, not an engine failure — raise ValidationError so the HTTP API
         # returns 400 instead of a 500 with a traceback.
-        if str(e):
-            raise TTSException(f"Silero TTS generation failed: {e}")
+        if str(exc):
+            raise TTSException(f"Silero TTS generation failed: {exc}") from exc
         raise ValidationError(
             f"Silero TTS could not process the text for language '{language}': "
             "it contains no pronounceable characters for this model (e.g. only "
             "digits, punctuation, or characters from a different alphabet). "
             f"Text: {text!r}"
-        )
+        ) from exc
 
     except ValidationError:
         # Unknown-voice (and text) validation errors are already actionable 400s —
         # do not wrap them as generic engine failures below.
         raise
 
-    except Exception as e:
-        error_msg = str(e)
+    except Exception as exc:
+        error_msg = str(exc)
 
         if "No module named" in error_msg or "cannot import" in error_msg:
             raise EngineNotAvailableError(
                 "Silero TTS dependencies missing. Install with:\n"
                 "   pip install torch torchaudio\n"
                 "See docs/SILEROTTS.md for details."
-            )
+            ) from exc
 
         if "model" in error_msg.lower() and "not found" in error_msg.lower():
-            raise TTSException(f"Silero model not found for language.\n" f"Error: {e}")
+            raise TTSException(f"Silero model not found for language.\n" f"Error: {exc}") from exc
 
-        raise TTSException(f"Silero TTS generation failed: {e}")
+        raise TTSException(f"Silero TTS generation failed: {exc}") from exc
+
+
+def main():
+    """Module entrypoint placeholder — this file is import-only."""
+    pass
+
+
+if __name__ == "__main__":
+    main()

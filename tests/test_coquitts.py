@@ -14,6 +14,7 @@ import types
 
 import pytest
 
+# Local imports
 from libs.exceptions import CustomError, EngineNotAvailableError, TTSException
 
 
@@ -28,13 +29,18 @@ def install_fake_torch(monkeypatch):
         return  # real torch already importable, leave it alone
 
     class SafeGlobalsCtx:
+        """No-op stand-in for `torch.serialization.safe_globals`."""
+
         def __init__(self, *args, **kwargs):
+            """Accept and ignore the allow-list of globals."""
             pass
 
         def __enter__(self):
+            """Enter the context without changing any deserialization state."""
             return self
 
         def __exit__(self, *exc):
+            """Leave the context and let any exception propagate."""
             return False
 
     fake_torch = types.ModuleType("torch")
@@ -52,22 +58,23 @@ def install_fake_tts(monkeypatch, tts_class):
     """Install the minimum TTS.* sub-package tree the engine imports."""
 
     def make_module(name, **attrs):
+        """Create a named module object carrying the given attributes."""
         m = types.ModuleType(name)
         for k, v in attrs.items():
             setattr(m, k, v)
         return m
 
     class XttsConfig:
-        ...
+        """Placeholder for the xtts config class registered as a safe global."""
 
     class XttsAudioConfig:
-        ...
+        """Placeholder for the xtts audio config class registered as a safe global."""
 
     class XttsArgs:
-        ...
+        """Placeholder for the xtts args class registered as a safe global."""
 
     class BaseDatasetConfig:
-        ...
+        """Placeholder for the shared dataset config registered as a safe global."""
 
     pkg = make_module("TTS")
     api = make_module("TTS.api", TTS=tts_class)
@@ -93,16 +100,19 @@ class FakeTTS:
     instances: list = []  # capture constructor calls
 
     def __init__(self, model_name, progress_bar=False):
+        """Record the requested model and register this instance for inspection."""
         self.model_name = model_name
         self.progress_bar = progress_bar
         self.calls: list = []
         FakeTTS.instances.append(self)
 
     def to(self, device):
+        """Record the target device and return self, mirroring the real API."""
         self.device = device
         return self
 
     def tts_to_file(self, text, file_path, language=None, speaker_wav=None):
+        """Record the synthesis arguments and write a recognisable marker payload."""
         self.calls.append({"text": text, "file": file_path, "language": language, "speaker": speaker_wav})
         with open(file_path, "wb") as f:
             f.write(b"RIFFFAKECOQUI")
@@ -110,6 +120,7 @@ class FakeTTS:
 
 @pytest.fixture
 def engine(monkeypatch, tmp_path):
+    """Import `engines.coquitts` freshly against the fake TTS stack and a dummy sample."""
     FakeTTS.instances = []
     install_fake_torch(monkeypatch)
     install_fake_tts(monkeypatch, FakeTTS)
@@ -129,10 +140,12 @@ def engine(monkeypatch, tmp_path):
 
 
 def test_is_available_true_with_fake_TTS(engine):
+    """With the TTS package importable the engine reports itself usable."""
     assert engine.is_available() is True
 
 
 def test_is_available_reflects_module_flag(engine, monkeypatch):
+    """is_available mirrors the module-level AVAILABLE flag rather than re-probing."""
     monkeypatch.setattr(engine, "AVAILABLE", False)
     assert engine.is_available() is False
 
@@ -141,6 +154,7 @@ def test_is_available_reflects_module_flag(engine, monkeypatch):
 
 
 def test_get_models_directory_uses_env_var(engine, monkeypatch, tmp_path):
+    """COQUITTS_MODELS overrides the default model cache location."""
     monkeypatch.setenv("COQUITTS_MODELS", str(tmp_path / "models_here"))
     assert engine.get_models_directory() == str(tmp_path / "models_here")
 
@@ -156,6 +170,7 @@ def test_get_models_directory_expanduser(engine, monkeypatch, tmp_path):
 
 
 def test_generate_raises_engine_not_available_when_flag_off(engine, monkeypatch):
+    """Synthesis refuses to run while the engine is marked unavailable."""
     monkeypatch.setattr(engine, "AVAILABLE", False)
     with pytest.raises(EngineNotAvailableError, match="not available"):
         engine.generate("hi", {})
@@ -221,10 +236,14 @@ def test_generate_translates_model_not_found_to_tts_exception(engine, monkeypatc
     be wrapped with the actionable hint, not bubble up unchanged."""
 
     class BoomTTS:
+        """TTS stand-in whose constructor reports an unknown model."""
+
         def __init__(self, *a, **kw):
+            """Fail immediately with a registry lookup error."""
             raise RuntimeError("Requested model not found in registry")
 
         def to(self, device):
+            """Return self so the engine's device call would still chain."""
             return self
 
     monkeypatch.setattr(engine, "TTS", BoomTTS)
@@ -234,11 +253,17 @@ def test_generate_translates_model_not_found_to_tts_exception(engine, monkeypatc
 
 
 def test_generate_other_failure_wrapped_as_tts_exception(engine, monkeypatch):
+    """Any unrecognised load failure is wrapped in a generic TTSException."""
+
     class BoomTTS:
+        """TTS stand-in whose constructor reports an unclassified crash."""
+
         def __init__(self, *a, **kw):
+            """Fail immediately with a generic runtime error."""
             raise RuntimeError("inference crashed")
 
         def to(self, device):
+            """Return self so the engine's device call would still chain."""
             return self
 
     monkeypatch.setattr(engine, "TTS", BoomTTS)
@@ -252,8 +277,10 @@ def test_generate_raises_tts_exception_when_output_file_empty(engine, monkeypatc
     raise TTSException — never return broken empty audio."""
 
     class EmptyTTS(FakeTTS):
+        """FakeTTS variant that writes an empty output file."""
+
         def tts_to_file(self, text, file_path, language=None, speaker_wav=None):
-            # Create an empty file.
+            """Create an empty file so the engine sees zero-length audio."""
             open(file_path, "wb").close()
 
     monkeypatch.setattr(engine, "TTS", EmptyTTS)

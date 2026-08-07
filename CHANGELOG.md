@@ -2,6 +2,63 @@
 
 ### [Unreleased]
 
+#### Changed
+- **Readability pass across the whole codebase, no behaviour change.** Every module
+  now opens with the canonical `#!/usr/bin/env python3` / `# -*- coding: utf-8 -*-`
+  header plus a one-sentence summary docstring, and every function, method, class,
+  fixture and closure — in `libs/`, `engines/`, `install/`, `ttssrv/`, the four CLIs
+  and `tests/` — carries a docstring stating what it does rather than restating its
+  name. Import blocks were regrouped into stdlib / third-party / local, the
+  `MAX_TEXT_LENGTH` constants that sat wedged between imports in five engines were
+  moved below them, and legacy `typing.Dict/List/Optional/Union/Callable` were
+  migrated to PEP 585/604 syntax.
+- **Diagnostics go through logging.** The three `traceback.print_exc()` calls in the
+  installers and `ttsgen` were replaced with the house error format
+  (`f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}"`). The remaining
+  `print()`/`sys.stdout.write` sites — the `--list` table, the shell-pipeable saved
+  filename, and the carriage-return download progress bar — are deliberate and now
+  carry a comment saying why they bypass logging.
+- **`libs/` and `engines/` are linted again.** Both packages were excluded from ruff,
+  black and pre-commit; the excludes are gone and the 71 findings they were hiding
+  (unused imports, unordered import blocks, missing exception chaining) are fixed.
+  Every re-raise inside an `except` block now uses `raise ... from exc`.
+- Magic numbers became named constants: `DEFAULT_CHUNK_CHARS` / `PIPELINE_QUEUE_SIZE`
+  in `ttsgen.py`, `SILENT_PEAK_THRESHOLD` / `INT16_MAX` in `ttsrec.py`, the mixer
+  sample-rate and buffer literals in `libs/playback.py`, `MAX_TEXT_LENGTH` in
+  `libs/tools.py`.
+- `ttsgen.main()` shed five behaviour-identical helpers (`resolve_output_formats`,
+  `log_run_summary`, `save_chunk_files`, `write_stdout_audio`, `collect_engine_rows`);
+  `install/common.py` gained `persist_env_choice()` and `install/coquitts.py`
+  `confirm_xtts_license()`, each replacing a verbatim duplicate.
+- Deliberately unused names are spelled `unused_*` instead of `_`; ruff's
+  `dummy-variable-rgx` was widened so the convention is machine-checked.
+
+#### Fixed
+- The generated `~/.config/ttsgen.conf` template offered `TTS_TOKEN` for the HTTP
+  server, but `ttssrv` reads `TTS_TOKENS` — a user who followed the template got a
+  server with authentication silently disabled.
+- `libs/config.py` documented its own priority chain backwards. The corrected order
+  is `.env.local` (loaded with `override=True`, so it beats even shell variables) >
+  process environment > `.env` > `~/.config/ttsgen.conf` > `./ttsgen.conf`.
+- `libs/playback.py` no longer swallows the reason a WAV header could not be read
+  before falling back to 22050 Hz mono; it logs a warning naming the file.
+- `logger.info(voice_path)` in `engines/pipertts.py` emitted a bare filesystem path
+  with no label during every run; it now reads `Piper voice: <path>`.
+- Removed the stale 29-line `ttsgen.py` module docstring that documented a
+  `--format bytesio` flag the parser never defined, and the same dead flag from the
+  `ttsplay.py` usage example.
+- `libs/__init__.py` pointed readers at a `tts_lib.py` that does not exist.
+- Dropped `output_formats`, `audio_rate` and `audio_volume` from `ttsgen.get_config()`
+  — nothing ever read them, so `DEFAULT_OUTPUT_FORMAT`, `AUDIO_RATE` and
+  `AUDIO_VOLUME` never had any effect.
+- Both Dockerfiles copied a hand-written list of `ttssrv/` files that omitted
+  `streaming.py`, which `app1.py` imports unconditionally — the built image could
+  only start because compose bind-mounts `./ttssrv` over it. They now copy the
+  package directory.
+- Replaced the Cyrillic usage examples printed by the coqui, piper and silero
+  installers with Latin-script equivalents, matching the repo's English-only rule
+  for anything that ships.
+
 ### [1.0.4] — 2026-06-23
 
 #### Added

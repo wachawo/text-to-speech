@@ -1,34 +1,35 @@
-"""
-Coqui TTS Engine
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Voice-cloning TTS engine backed by the Idiap community fork of Coqui TTS.
 
-High-quality text-to-speech using Coqui TTS (formerly Mozilla TTS).
-Supports voice cloning, multi-speaker models, and emotion control.
-
-Requires Python 3.11+ (Idiap community fork `coqui-tts`, transformers>=4.46,<5.0).
-
-Note: Works best with GPU. CPU mode is very slow.
+Supports multi-speaker and multilingual models (xtts_v2 by default) and needs
+Python 3.11+ with `coqui-tts` and `transformers>=4.46,<5.0`. Works best with a
+GPU; CPU mode is very slow.
 """
 
-import tempfile
-import os
 import logging
+import os
+import tempfile
+
 from libs.exceptions import CustomError, EngineNotAvailableError, TTSException, ValidationError
+from libs.sample_resolver import resolve_sample_path
+from libs.tempfiles import safe_unlink
 
 # Coqui xtts_v2 is the slowest engine but voice-cloning works on book-length text.
 # Kept high deliberately — chunking and pacing are the caller's job.
 MAX_TEXT_LENGTH = 1_000_000
-from libs.sample_resolver import resolve_sample_path
-from libs.tempfiles import safe_unlink
 
-# .env via find_dotenv (walks up from cwd) → then .env.local override.
+# .env via find_dotenv (walks up from cwd) then .env.local override.
 try:
     from dotenv import find_dotenv, load_dotenv
 except ImportError:
 
     def find_dotenv(*args, **kwargs):
+        """Return an empty path when python-dotenv is not installed."""
         return ""
 
     def load_dotenv(*args, **kwargs):
+        """Do nothing when python-dotenv is not installed."""
         pass
 
 
@@ -70,11 +71,17 @@ except ImportError:
 
 
 def is_available() -> bool:
-    """Check if Coqui TTS is available."""
+    """Report whether torch and the coqui-tts fork are installed."""
     return AVAILABLE
 
 
 def get_models_directory() -> str:
+    """Resolve the absolute directory holding the Coqui model checkpoints.
+
+    Returns:
+        COQUITTS_MODELS when set, else a project-local `cache/coquitts` if it
+        exists, else the Coqui default `~/.local/share/tts`.
+    """
     coquitts_path = os.getenv("COQUITTS_MODELS", DEFAULT_COQUITTS_MODELS)
     if coquitts_path:
         return os.path.abspath(os.path.expanduser(coquitts_path))
@@ -85,23 +92,27 @@ def get_models_directory() -> str:
 
 
 def generate(text: str, config: dict) -> bytes:
-    """
-    Generate TTS and return audio as bytes.
+    """Synthesize text by cloning the configured voice sample.
+
+    The model is loaded once per (model, device) pair and kept in TTS_CACHE;
+    the first call downloads the checkpoint if needed and takes ~15s.
 
     Args:
-        text: Text to synthesize
-        config: Configuration dict with language
+        text: Text to synthesize.
+        config: Configuration dict with 'language'.
 
     Returns:
-        Audio bytes in WAV format (22050 Hz by default)
+        Audio bytes in WAV format (22050 Hz by default).
 
-    Note:
-        First run will download the model (can be slow).
-        Generation is slow on CPU, fast on GPU.
+    Raises:
+        EngineNotAvailableError: Coqui TTS is not installed.
+        ValidationError: Text exceeds MAX_TEXT_LENGTH.
+        CustomError: The reference voice sample WAV is missing.
+        TTSException: Model lookup or synthesis failed.
     """
     if not is_available():
         raise EngineNotAvailableError(
-            "Coqui TTS not available. Install with: pip install TTS\n" "See docs/COQUITTS.md for setup instructions."
+            "Coqui TTS not available. Install with: pip install TTS\nSee docs/COQUITTS.md for setup instructions."
         )
     if len(text) > MAX_TEXT_LENGTH:
         raise ValidationError(f"Text too long for coquitts: {len(text)} > {MAX_TEXT_LENGTH}")
@@ -126,7 +137,6 @@ def generate(text: str, config: dict) -> bytes:
     try:
         language = config.get("language", "en")
         model_name = os.getenv("COQUITTS_MODEL", DEFAULT_COQUITTS_MODEL)
-        # Set custom models directory if configured
         models_dir = get_models_directory()
         # Coqui TTS uses TTS_HOME for model cache
         os.environ["TTS_HOME"] = models_dir
@@ -144,14 +154,11 @@ def generate(text: str, config: dict) -> bytes:
             with safe_globals([XttsConfig, XttsAudioConfig, BaseDatasetConfig, XttsArgs]):
                 tts = TTS(model_name=model_name, progress_bar=False).to(device)
             TTS_CACHE[cache_key] = tts
-        # Generate to temporary file (Coqui TTS requires file output)
+        # Coqui TTS can only write to a path, so synthesis goes through a scratch file.
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
             temp_filename = temp_file.name
         try:
-            # Generate audio
-            # For multilingual models, specify language
             if "multilingual" in model_name:
-                # tts.tts_to_file(text=text, file_path=temp_filename, language=language)
                 tts.tts_to_file(
                     text=text,
                     file_path=temp_filename,
@@ -160,14 +167,22 @@ def generate(text: str, config: dict) -> bytes:
                 )
             else:
                 tts.tts_to_file(text=text, file_path=temp_filename)
-            # Read and return bytes
             if not os.path.exists(temp_filename) or os.path.getsize(temp_filename) == 0:
                 raise TTSException("Coqui TTS failed to generate audio")
-            with open(temp_filename, "rb") as f:
-                return f.read()
+            with open(temp_filename, "rb") as wav_file:
+                return wav_file.read()
         finally:
             safe_unlink(temp_filename)
-    except Exception as e:
-        if "model" in str(e).lower() and "not found" in str(e).lower():
-            raise TTSException(f"Coqui TTS model not found.\n" f"Error: {e}")
-        raise TTSException(f"Coqui TTS generation failed: {e}")
+    except Exception as exc:
+        if "model" in str(exc).lower() and "not found" in str(exc).lower():
+            raise TTSException(f"Coqui TTS model not found.\nError: {exc}") from exc
+        raise TTSException(f"Coqui TTS generation failed: {exc}") from exc
+
+
+def main():
+    """Module entrypoint placeholder — this file is import-only."""
+    pass
+
+
+if __name__ == "__main__":
+    main()

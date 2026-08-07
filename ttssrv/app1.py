@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Flask TTS server — preloads engine, exposes HTTP API for synthesis.
+"""Flask TTS server that preloads engines and exposes an HTTP API for synthesis.
 
-Architecture mirrors `speech-to-text/stt_server.py`:
-- `init_engine_pool()` warms up the default engine and seeds a `queue.Queue` with
-  N tokens for concurrency control. Per-request: acquire token, synthesize via
-  `text_to_speech_bytes()` (engine-level `TTS_CACHE` hits), release token.
-- Heavy model load happens once at startup, not per-request.
-- The actual TTS is the same `libs.api.text_to_speech_bytes` ttsgen uses;
-  this server is a thin HTTP veneer over the offline pipeline.
+`init_engine_pool()` warms up the configured engines and seeds a `queue.Queue`
+with N tokens used purely as a concurrency semaphore: every request acquires a
+token, synthesizes through `libs.api.text_to_speech_bytes` (which hits the
+engine-level model cache), then releases it. Heavy model loading therefore
+happens once at startup rather than per request, and this module stays a thin
+HTTP veneer over the same offline pipeline that `ttsgen` drives.
 """
 
 import hmac
@@ -106,6 +105,10 @@ def init_engine_pool(size: int = TTS_POOL_SIZE) -> None:
     across all engines, not per engine. Heavy models stay resident in their
     own module caches (e.g. engines/coquitts.py:TTS_CACHE), so a warmed engine
     answers later requests without reloading.
+
+    Args:
+        size: Number of pool tokens to seed; anything below 1 disables both the
+            warmup and the concurrency cap.
     """
     if size < 1:
         logger.info("TTS_POOL_SIZE=0 → unlimited concurrency, no warmup")
@@ -115,15 +118,15 @@ def init_engine_pool(size: int = TTS_POOL_SIZE) -> None:
         if engine in ("gtts", "pyttsx3"):
             continue
         logger.info(f"Warming up {engine}...")
-        t0 = time.monotonic()
+        start_time = time.monotonic()
         try:
             text_to_speech_bytes(text=".", engine=engine, language=TTS_LANGUAGE_DEFAULT)
-            logger.info(f"Warmup OK {engine} ({time.monotonic() - t0:.2f}s)")
+            logger.info(f"Warmup OK {engine} ({time.monotonic() - start_time:.2f}s)")
         except Exception as exc:
             logger.warning(f"Warmup failed for {engine}: {type(exc).__name__}: {exc} — will retry on first request")
 
-    for i in range(size):
-        ENGINE_POOL.put(i)
+    for slot_index in range(size):
+        ENGINE_POOL.put(slot_index)
     logger.info(f"Pool ready: {size} slot(s) for engines {TTS_ENGINES}")
 
 
@@ -131,6 +134,7 @@ class JSONProvider(DefaultJSONProvider):
     """Custom JSON provider — datetime/date as 'YYYY-MM-DD HH:MM:SS'."""
 
     def default(self, o):
+        """Serialize datetime/date values with DATETIME_FMT, delegate the rest."""
         if isinstance(o, datetime | date):
             return o.strftime(DATETIME_FMT)
         return super().default(o)
@@ -151,10 +155,11 @@ CORS(app, resources={r"/api/*": {"origins": CORS_ORIGINS}})
 
 
 def get_req_id() -> str:
+    """Return the correlation id of the current request, or an empty string outside one."""
     return getattr(g, "request_id", "")
 
 
-def detect_audio_mime(audio_bytes: bytes) -> "tuple[str, str]":
+def detect_audio_mime(audio_bytes: bytes) -> tuple[str, str]:
     """Return (mimetype, extension) by sniffing audio bytes header."""
     if audio_bytes.startswith(b"ID3") or audio_bytes[0:2] == b"\xff\xfb":
         return "audio/mpeg", "mp3"
@@ -164,7 +169,14 @@ def detect_audio_mime(audio_bytes: bytes) -> "tuple[str, str]":
 
 
 def parse_tts_payload() -> dict:
-    """Read tts request from JSON body, form data, or query string and validate."""
+    """Read a TTS request from the JSON body, form data or query string.
+
+    Returns:
+        The deserialized payload as produced by TtsRequestSchema.
+
+    Raises:
+        MarshmallowValidationError: If the payload fails schema validation.
+    """
     payload = request.get_json(silent=True) if request.is_json else None
     if not payload:
         payload = request.form.to_dict() or request.args.to_dict()
@@ -181,11 +193,12 @@ def token_required(view):
 
     @wraps(view)
     def wrapper(*args, **kwargs):
+        """Reject the request with 401 unless it carries a known bearer token."""
         if not TTS_TOKENS:
             return view(*args, **kwargs)
 
         header = request.headers.get("Authorization", "")
-        scheme, _, token = header.partition(" ")
+        scheme, unused_separator, token = header.partition(" ")
         if scheme != "Bearer" or not token:
             logger.warning(f"[{get_req_id()}] Auth missing/invalid scheme: {scheme!r}")
             return jsonify({"error": "Unauthorized", "request_id": get_req_id()}), 401
@@ -202,12 +215,14 @@ def token_required(view):
 
 @app.before_request
 def assign_request_id():
+    """Attach a short correlation id and a start timestamp to the request context."""
     g.request_id = uuid.uuid4().hex[:12]
     g.start_time = time.monotonic()
 
 
 @app.after_request
 def after_request(resp):
+    """Log the request line with its status and duration, then return the response."""
     log_fn = logger.debug if request.path == "/api/health" else logger.info
     elapsed = time.monotonic() - getattr(g, "start_time", time.monotonic())
     log_fn(f"[{get_req_id()}] {request.method} {request.path}: {resp.status} ({elapsed:.3f}s)")
@@ -216,6 +231,7 @@ def after_request(resp):
 
 @app.route("/api/health", methods=["GET"])
 def health():
+    """Report liveness plus the configured engines and free pool slots."""
     return (
         jsonify(
             {
@@ -233,6 +249,7 @@ def health():
 @app.route("/api/engines", methods=["GET"])
 @token_required
 def engines_list():
+    """List supported engines alongside the ones installed and preloaded here."""
     available = sorted(get_available_engines().keys())
     return (
         jsonify(
@@ -267,12 +284,21 @@ def voices_list():
     )
 
 
-def stream_tts(text: str, engine: str, language: str, voice: "str | None" = None):
+def stream_tts(text: str, engine: str, language: str, voice: str | None = None):
     """Synthesize per chunk and stream audio as it is ready (chunked transfer).
 
     WAV engines emit one streaming WAV (single header + concatenated PCM); MP3
     (gtts) concatenates per-chunk bytes. One pool slot is held for the whole
     stream and released when the generator is exhausted or the client disconnects.
+
+    Args:
+        text: Full utterance; split into chunks of TTS_STREAM_MAX_CHARS.
+        engine: Engine name to synthesize with.
+        language: Two-letter language code passed to the engine.
+        voice: Engine-specific voice id, or None for the engine default.
+
+    Returns:
+        A streaming Response, or a 503 JSON tuple when no pool slot frees up.
     """
     chunks = chunk_text(text, max_len=TTS_STREAM_MAX_CHARS) or [text]
 
@@ -296,6 +322,7 @@ def stream_tts(text: str, engine: str, language: str, voice: "str | None" = None
     is_wav = mimetype == "audio/wav"
 
     def generate():
+        """Yield the first chunk, then each remaining chunk as it is synthesized."""
         try:
             if is_wav:
                 rate, channels, width = wav_params(first)
@@ -318,6 +345,7 @@ def stream_tts(text: str, engine: str, language: str, voice: "str | None" = None
 @app.route("/api/tts", methods=["GET", "POST"])
 @token_required
 def tts_generate():
+    """Synthesize the requested text and return it as a stream or a file download."""
     data = parse_tts_payload()
     text = data["text"]
     engine = data.get("engine") or TTS_ENGINE_DEFAULT
@@ -356,24 +384,28 @@ def tts_generate():
 
 @app.errorhandler(MarshmallowValidationError)
 def handle_marshmallow_validation_error(error):
+    """Answer 400 when the request payload fails schema validation."""
     logger.warning(f"[{get_req_id()}] Validation error: {error.messages}")
     return jsonify({"error": "Bad Request", "request_id": get_req_id()}), 400
 
 
 @app.errorhandler(ValidationError)
 def handle_tts_validation_error(error):
+    """Answer 400 when the TTS layer rejects the text, language or voice."""
     logger.warning(f"[{get_req_id()}] {type(error).__name__}: {str(error)}")
     return jsonify({"error": "Bad Request", "request_id": get_req_id()}), 400
 
 
 @app.errorhandler(EngineNotAvailableError)
 def handle_engine_not_available(error):
+    """Answer 503 when the requested engine has no usable installation."""
     logger.warning(f"[{get_req_id()}] {type(error).__name__}: {str(error)}")
     return jsonify({"error": "Service Unavailable", "request_id": get_req_id()}), 503
 
 
 @app.errorhandler(CustomError)
 def handle_custom_error(error):
+    """Return the engine-supplied error payload verbatim with its own status."""
     # Engine produced a structured payload — return it verbatim, log a one-liner.
     body = dict(error.payload)
     body.setdefault("request_id", get_req_id())
@@ -384,12 +416,14 @@ def handle_custom_error(error):
 
 @app.errorhandler(TTSException)
 def handle_tts_exception(error):
+    """Answer 500 for any synthesis failure not covered by a narrower handler."""
     logger.error(f"[{get_req_id()}] {type(error).__name__}: {str(error)}\n{traceback.format_exc()}")
     return jsonify({"error": "TTS failed", "request_id": get_req_id()}), 500
 
 
 @app.errorhandler(413)
 def payload_too_large(error):
+    """Answer 413 when the body exceeds TTS_MAX_BODY_BYTES, echoing the limit."""
     logger.warning(f"[{get_req_id()}] Payload too large (limit={TTS_MAX_BODY_MB}MB)")
     return (
         jsonify(
@@ -405,6 +439,7 @@ def payload_too_large(error):
 
 @app.errorhandler(Exception)
 def handle_exception(exc):
+    """Map any unhandled exception to its HTTP status, or to 500 with a traceback."""
     if isinstance(exc, werkzeug.exceptions.HTTPException):
         logger.warning(f"[{get_req_id()}] HTTP {exc.code} {exc.name}")
         return jsonify({"error": exc.name, "request_id": get_req_id()}), exc.code
@@ -413,6 +448,11 @@ def handle_exception(exc):
 
 
 def main() -> int:
+    """Warm the engine pool and serve the app via Flask (debug) or uvicorn.
+
+    Returns:
+        The process exit code (0 once the server loop ends).
+    """
     logger.info(
         f"Starting TTS server on {TTS_HOST}:{TTS_PORT} "
         f"debug={TTS_DEBUG} engines={TTS_ENGINES} default={TTS_ENGINE_DEFAULT} pool={TTS_POOL_SIZE} "
@@ -422,6 +462,8 @@ def main() -> int:
     if TTS_DEBUG:
         app.run(host=TTS_HOST, port=TTS_PORT, debug=True)
     else:
+        # Imported lazily: the ASGI stack is only needed for production serving,
+        # so a debug-only install does not have to provide uvicorn/asgiref.
         import uvicorn
         from asgiref.wsgi import WsgiToAsgi
 

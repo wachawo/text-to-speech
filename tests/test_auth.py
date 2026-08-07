@@ -10,6 +10,7 @@ def test_no_tokens_allows_all(client):
 
 
 def test_missing_token_when_required(client, monkeypatch, app_module):
+    """With tokens configured, an unauthenticated request gets 401 and a minimal body."""
     monkeypatch.setattr(app_module, "TTS_TOKENS", {"secret"})
     resp = client.post("/api/tts", json={"text": "hi"})
     assert resp.status_code == 401
@@ -19,6 +20,7 @@ def test_missing_token_when_required(client, monkeypatch, app_module):
 
 
 def test_wrong_bearer_token(client, monkeypatch, app_module):
+    """A Bearer token that is not in TTS_TOKENS is rejected with 401."""
     monkeypatch.setattr(app_module, "TTS_TOKENS", {"secret"})
     resp = client.post(
         "/api/tts",
@@ -29,6 +31,7 @@ def test_wrong_bearer_token(client, monkeypatch, app_module):
 
 
 def test_invalid_scheme(client, monkeypatch, app_module):
+    """Only the Bearer scheme is honoured — Basic credentials are rejected."""
     monkeypatch.setattr(app_module, "TTS_TOKENS", {"secret"})
     resp = client.post(
         "/api/tts",
@@ -39,6 +42,7 @@ def test_invalid_scheme(client, monkeypatch, app_module):
 
 
 def test_correct_bearer_token(client, monkeypatch, app_module):
+    """A Bearer token listed in TTS_TOKENS grants access to the synthesis endpoint."""
     monkeypatch.setattr(app_module, "TTS_TOKENS", {"secret"})
     resp = client.post(
         "/api/tts",

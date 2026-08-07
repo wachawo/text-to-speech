@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Unit tests for engines/__init__.py — dynamic engine loader.
+"""Unit tests for the dynamic engine loader in engines/__init__.py.
 
 The package is the project's plugin system: each engine module declares
 is_available()/generate(); the loader hides the rest. These tests pin
 down its behaviour without depending on torch/coqui/etc.
 """
 
+import importlib
 import types
 
 import engines as engines_pkg
@@ -29,6 +30,7 @@ def test_module_path_for_known_engine_is_a_file():
 
 
 def test_module_path_for_unknown_returns_none():
+    """An engine name with no matching module file resolves to None."""
     assert get_engine_module_path("definitely_not_a_real_engine_xyz") is None
 
 
@@ -36,6 +38,7 @@ def test_module_path_for_unknown_returns_none():
 
 
 def test_load_engine_unknown_returns_none():
+    """Loading an engine that has no module file yields None instead of raising."""
     assert load_engine("definitely_not_a_real_engine_xyz") is None
 
 
@@ -53,19 +56,16 @@ def test_load_engine_returns_none_when_module_reports_unavailable(monkeypatch):
     fake.is_available = lambda: False
     fake.generate = lambda text, config: b""
 
-    import importlib
-
     monkeypatch.setattr(importlib, "import_module", lambda name, package=None: fake)
     # Real path lookup must succeed (gtts.py exists) so we reach the import branch.
     assert load_engine("gtts") is None
 
 
 def test_load_engine_swallows_importerror(monkeypatch, caplog):
-    """A missing optional dep raising ImportError must produce None + warning,
-    never propagate to the caller."""
-    import importlib
+    """A missing optional dependency yields None plus a warning, never propagates."""
 
     def explode(name, package=None):
+        """Simulate an engine module whose optional dependency is absent."""
         raise ImportError("simulated missing dep")
 
     monkeypatch.setattr(importlib, "import_module", explode)
@@ -76,10 +76,10 @@ def test_load_engine_swallows_importerror(monkeypatch, caplog):
 
 
 def test_load_engine_swallows_unexpected_exception(monkeypatch, caplog):
-    """Any other exception during import → None, not a crash."""
-    import importlib
+    """Any other exception during import yields None instead of crashing."""
 
     def explode(name, package=None):
+        """Simulate an engine module that blows up for a non-import reason."""
         raise RuntimeError("boom")
 
     monkeypatch.setattr(importlib, "import_module", explode)
@@ -93,11 +93,13 @@ def test_load_engine_swallows_unexpected_exception(monkeypatch, caplog):
 
 
 def test_is_engine_available_true_for_loaded_module(monkeypatch):
+    """Any module the loader returns counts as an available engine."""
     monkeypatch.setattr(engines_pkg, "load_engine", lambda name: types.ModuleType("x"))
     assert is_engine_available("anything") is True
 
 
 def test_is_engine_available_false_when_loader_returns_none(monkeypatch):
+    """A loader miss reports the engine as unavailable."""
     monkeypatch.setattr(engines_pkg, "load_engine", lambda name: None)
     assert is_engine_available("anything") is False
 
@@ -106,6 +108,7 @@ def test_is_engine_available_false_when_loader_returns_none(monkeypatch):
 
 
 def test_get_engine_function_returns_callable_when_module_has_generate(monkeypatch):
+    """The module's generate attribute is handed back ready to call."""
     fake = types.ModuleType("fake")
     fake.generate = lambda text, config: b"audio"
     monkeypatch.setattr(engines_pkg, "load_engine", lambda name: fake)
@@ -115,13 +118,13 @@ def test_get_engine_function_returns_callable_when_module_has_generate(monkeypat
 
 
 def test_get_engine_function_returns_none_when_module_lacks_generate(monkeypatch):
-    """A module that loaded but is missing the generate attribute → None,
-    NOT AttributeError surfacing to the caller."""
+    """A loaded module missing generate yields None, not an AttributeError."""
     fake = types.ModuleType("incomplete")
     monkeypatch.setattr(engines_pkg, "load_engine", lambda name: fake)
     assert get_engine_function("any") is None
 
 
 def test_get_engine_function_returns_none_when_loader_returns_none(monkeypatch):
+    """No module means no callable."""
     monkeypatch.setattr(engines_pkg, "load_engine", lambda name: None)
     assert get_engine_function("any") is None

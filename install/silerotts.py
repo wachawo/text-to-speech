@@ -3,6 +3,7 @@
 """Silero TTS installer — torch + torchaudio + omegaconf, optional model pre-download."""
 
 import logging
+import traceback
 from pathlib import Path
 
 from install.common import (
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_silero_dir(non_interactive: bool) -> Path:
+    """Resolve (and create) the torch.hub cache directory used for Silero models."""
     return resolve_models_dir(
         engine_label="Silero TTS",
         env_key="SILEROTTS_MODELS",
@@ -30,9 +32,15 @@ def get_silero_dir(non_interactive: bool) -> Path:
     )
 
 
-def predownload(models_dir: Path, languages: list) -> None:
-    """Trigger torch.hub download for each language."""
-    import torch  # noqa: WPS433 — late import; package may have just been installed
+def predownload(models_dir: Path, languages: list[tuple[str, str]]) -> None:
+    """Trigger a torch.hub download of the Silero model for each (language, speaker) pair.
+
+    Args:
+        models_dir: Directory torch.hub caches into; set as the hub dir for this process.
+        languages: Pairs such as `("ru", "v3_1_ru")` to fetch.
+    """
+    # Late import: torch may have been pip-installed moments ago by install().
+    import torch
 
     torch.hub.set_dir(str(models_dir))
 
@@ -55,6 +63,11 @@ def predownload(models_dir: Path, languages: list) -> None:
 
 
 def install(non_interactive: bool = False) -> int:
+    """Install torch/omegaconf and optionally pre-download Silero voice models.
+
+    Returns 0 — a failed pre-download only warns, since models are fetched
+    lazily on first synthesis anyway.
+    """
     info("Silero TTS Installer")
 
     if not warn_no_venv(non_interactive):
@@ -92,20 +105,18 @@ def install(non_interactive: bool = False) -> int:
         try:
             predownload(models_dir, languages)
         except Exception as exc:
-            import traceback
-
-            warn(f"Pre-download failed: {type(exc).__name__}: {exc}")
-            traceback.print_exc()
+            warn(f"Pre-download failed: {type(exc).__name__}: {str(exc)}\n{traceback.format_exc()}")
             warn("Models will be downloaded on first use.")
 
     success("\nInstallation complete!")
     info("Usage:")
     logger.info('  ttsgen "Hello world" --engine silerotts')
-    logger.info('  ttsgen "Привет мир" --engine silerotts --language ru')
+    logger.info('  ttsgen "Hallo Welt" --engine silerotts --language de')
     return 0
 
 
 def main():
+    """Module entrypoint placeholder — this file is import-only."""
     pass
 
 

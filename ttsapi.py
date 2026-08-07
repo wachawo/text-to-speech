@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 """TTS HTTP client — mirror of `ttsgen` that forwards synthesis to a remote `ttssrv`.
 
-Same argparse surface as `ttsgen` (text input, --file/--play/--stdout/--output,
---engine, --language, --list, -i, -v/-q, --coqui-model, --coqui-sample, etc.).
-Replaces local `text_to_speech_bytes()` with `POST {TTS_URL}/api/tts`.
+Accepts the same core argparse surface as `ttsgen` (text input, --file/--play/--stdout/
+--output, --engine, --language, --list, -i, -v/-q) but replaces local
+`text_to_speech_bytes()` with `POST {TTS_URL}/api/tts`.
 
 Reads `TTS_URL` and `TTS_TOKEN` from the same config chain as ttsgen
 (./ttsgen.conf > ~/.config/ttsgen.conf > .env > defaults).
@@ -18,19 +18,14 @@ import queue
 import shutil
 import sys
 import threading
+import traceback
+from datetime import datetime
 from typing import Any, cast
 
 import requests
 
-from libs.cli import (
-    QueueItem as QUEUE_ITEM,
-)
-from libs.cli import (
-    chunk_text,
-    concat_wav_files,
-    play_worker,
-    rec_worker,
-)
+# Local imports
+from libs.cli import QueueItem, chunk_text, concat_wav_files, play_worker, rec_worker
 from libs.tempfiles import safe_unlink
 
 LOGGING = {
@@ -47,10 +42,12 @@ DEFAULT_TIMEOUT = 120
 
 
 def get_url() -> str:
+    """Return the remote ttssrv base URL without a trailing slash."""
     return os.getenv("TTS_URL", DEFAULT_URL).rstrip("/")
 
 
 def get_headers() -> dict[str, str]:
+    """Build request headers, adding bearer auth only when TTS_TOKEN is set."""
     token = os.getenv("TTS_TOKEN", "").strip()
     if token:
         return {"Authorization": f"Bearer {token}"}
@@ -58,7 +55,19 @@ def get_headers() -> dict[str, str]:
 
 
 def fetch_audio(text: str, engine: str, language: str) -> bytes:
-    """POST text to remote ttssrv → return audio bytes."""
+    """POST text to remote ttssrv → return audio bytes.
+
+    Args:
+        text: Text to synthesize (one chunk).
+        engine: Remote engine name; empty string lets the server pick its default.
+        language: Two-letter language code.
+
+    Returns:
+        Raw audio bytes (MP3 or WAV, depending on the server-side engine).
+
+    Raises:
+        RuntimeError: The server answered with an HTTP status of 400 or above.
+    """
     url = f"{get_url()}/api/tts"
     payload = {"text": text, "engine": engine, "language": language}
     resp = requests.post(url, json=payload, headers=get_headers(), timeout=DEFAULT_TIMEOUT)
@@ -68,7 +77,7 @@ def fetch_audio(text: str, engine: str, language: str) -> bytes:
 
 
 def fetch_engines() -> dict[str, Any]:
-    """GET /api/engines → {engines: [...], default: ...}."""
+    """Return the decoded JSON body of GET /api/engines."""
     url = f"{get_url()}/api/engines"
     resp = requests.get(url, headers=get_headers(), timeout=10)
     resp.raise_for_status()
@@ -76,11 +85,13 @@ def fetch_engines() -> dict[str, Any]:
 
 
 def list_remote_engines() -> int:
+    """Print the engines reported by the server and return a shell exit code."""
     try:
         data = fetch_engines()
     except Exception as exc:
         logger.error(f"Failed to fetch engines from {get_url()}: {type(exc).__name__}: {exc}")
         return 1
+    # Human-facing table: stdout, not logging, so the listing stays free of log decoration.
     print(f"Remote engines on {get_url()}:")
     for name in data.get("engines", []):
         marker = "*" if name == data.get("default") else " "
@@ -89,6 +100,7 @@ def list_remote_engines() -> int:
 
 
 def parse_arguments() -> argparse.ArgumentParser:
+    """Build the argparse parser mirroring the ttsgen command line."""
     parser = argparse.ArgumentParser(
         description="TTS HTTP client — synthesize via remote ttssrv (mirror of ttsgen).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -126,6 +138,7 @@ Configuration (read from process env, ./ttsgen.conf, ~/.config/ttsgen.conf, .env
 
 
 def setup_logging(verbose: bool, quiet: bool) -> None:
+    """Set the root log level from the -v/-q flags (quiet wins over verbose)."""
     if quiet:
         logging.getLogger().setLevel(logging.ERROR)
     elif verbose:
@@ -135,6 +148,12 @@ def setup_logging(verbose: bool, quiet: bool) -> None:
 
 
 def read_text_file(path: str) -> str:
+    """Read and strip the text to synthesize from `path`.
+
+    Raises:
+        FileNotFoundError: `path` is missing or is not a regular file.
+        ValueError: The file contains only whitespace.
+    """
     if not os.path.isfile(path):
         raise FileNotFoundError(f"Not a file: {path}")
     with open(path, encoding="utf-8") as f:
@@ -145,11 +164,13 @@ def read_text_file(path: str) -> str:
 
 
 def main() -> int:
+    """Run the remote-synthesis CLI and return a shell exit code."""
     parser = parse_arguments()
     args = parser.parse_args()
     setup_logging(args.verbose, args.quiet)
 
-    # Load config files (./ttsgen.conf > ~/.config/ttsgen.conf > .env > defaults)
+    # Load config files (./ttsgen.conf > ~/.config/ttsgen.conf > .env > defaults).
+    # Imported lazily and tolerantly so the client still runs from a bare checkout.
     try:
         from libs.config import load_config
 
@@ -198,8 +219,6 @@ def main() -> int:
     if out_is_file:
         ext = "mp3" if engine in ("", "gtts") else "wav"
         if args.file == "" or args.file is None:
-            from datetime import datetime
-
             audio_dir = args.audio_dir or os.getenv("AUDIO_DIRECTORY", "audio")
             os.makedirs(audio_dir, exist_ok=True)
             output_filename = os.path.join(audio_dir, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.{ext}")
@@ -221,17 +240,20 @@ def main() -> int:
 
     ext = "mp3" if engine in ("", "gtts") else "wav"
     tmp_suffix = f".{ext}"
+    # Keep scratch files next to the destination in file mode to avoid cross-device moves.
     tmp_dir = (args.audio_dir or os.getenv("AUDIO_DIRECTORY", "audio")) if out_is_file else None
     if tmp_dir:
         os.makedirs(tmp_dir, exist_ok=True)
 
     def generator(text_chunk: str) -> bytes:
+        """Synthesize one chunk remotely, binding the resolved engine and language."""
         return fetch_audio(text_chunk, engine or "", language)
 
-    q: queue.Queue[QUEUE_ITEM] = queue.Queue(maxsize=2)
+    q: queue.Queue[QueueItem] = queue.Queue(maxsize=2)
     collected_paths: list[str] = []
     failures: list[tuple[int, BaseException]] = []
 
+    # Imported lazily: playback pulls in pygame, which is useless for --file/--stdout runs.
     from libs.api import play_audio
 
     rec = threading.Thread(target=rec_worker, args=(chunks, generator, q, tmp_suffix, tmp_dir), daemon=True)
@@ -258,22 +280,23 @@ def main() -> int:
                 logger.error(f"Failed to save {output_filename}: {exc}")
         else:
             base, ext_dot = os.path.splitext(output_filename)
-            for i, p in enumerate(collected_paths, start=1):
+            for i, chunk_path in enumerate(collected_paths, start=1):
                 dst = f"{base}_{i:03d}{ext_dot}"
                 try:
-                    shutil.copy2(p, dst)
-                    safe_unlink(p)
+                    shutil.copy2(chunk_path, dst)
+                    safe_unlink(chunk_path)
                     saved.append(dst)
                 except Exception as exc:
                     logger.error(f"Failed to save chunk {i}: {exc}")
         if not out_is_stdout:
-            for f in saved:
-                print(f, file=sys.stdout)
+            # Shell-pipeable output: FILE=$(ttsapi "Hi" --file) must capture the path alone.
+            for saved_path in saved:
+                print(saved_path, file=sys.stdout)
 
     if out_is_stdout:
         if ext == "mp3":
-            for p in saved if saved else collected_paths:
-                with open(p, "rb") as f:
+            for chunk_path in saved if saved else collected_paths:
+                with open(chunk_path, "rb") as f:
                     sys.stdout.buffer.write(f.read())
             sys.stdout.buffer.flush()
         else:
@@ -283,8 +306,8 @@ def main() -> int:
             sys.stdout.buffer.flush()
 
     if not out_is_file:
-        for p in collected_paths:
-            safe_unlink(p)
+        for chunk_path in collected_paths:
+            safe_unlink(chunk_path)
 
     return 0
 
@@ -296,7 +319,5 @@ if __name__ == "__main__":
         logger.warning("Interrupted")
         sys.exit(1)
     except Exception as exc:
-        import traceback
-
         logger.error(f"{type(exc).__name__}: {str(exc)}\n{traceback.format_exc()}")
         sys.exit(1)

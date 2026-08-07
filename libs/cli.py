@@ -12,12 +12,15 @@ import os
 import queue
 import re
 import tempfile
+import traceback
 import wave
 from collections.abc import Callable
 from typing import IO, NamedTuple
 
 logger = logging.getLogger(__name__)
 
+# Zero-width split after sentence-ish punctuation, so each fragment keeps its own
+# terminator and can be regrouped into chunks without re-parsing.
 SPLIT_REGEX = re.compile(r"(?<=[.!?]|,|\n)")
 
 # Producer: (text) -> audio bytes. Engine/language are bound at call site.
@@ -43,7 +46,18 @@ QueueItem = ChunkResult | None
 
 
 def chunk_text(text: str, max_len: int = 5000) -> list[str]:
-    """Split text by sentence-ish boundaries to chunks ≤ max_len chars."""
+    """Split text at sentence-ish boundaries and regroup it into chunks of <= max_len chars.
+
+    Fragments are packed greedily so each chunk is as full as possible. A single
+    fragment longer than max_len is hard-sliced at max_len.
+
+    Args:
+        text: Source text of any length.
+        max_len: Maximum characters per returned chunk.
+
+    Returns:
+        Non-empty chunks in source order; an empty list for blank input.
+    """
     parts = [p.strip() for p in SPLIT_REGEX.split(text) if p and p.strip()]
     chunks: list[str] = []
     buf: list[str] = []
@@ -70,7 +84,16 @@ def chunk_text(text: str, max_len: int = 5000) -> list[str]:
 
 
 def concat_wav_files(in_paths: list[str], out_stream: IO[bytes]) -> None:
-    """Concat WAV files (same params expected) into one stream."""
+    """Append several WAV files into one WAV written to out_stream.
+
+    Output format is taken from the first input. Inputs whose channel count,
+    sample width or frame rate differ are appended anyway and logged as a
+    warning — the result may be malformed, but no chunk is silently dropped.
+
+    Args:
+        in_paths: WAV file paths in playback order; an empty list is a no-op.
+        out_stream: Writable binary stream receiving the combined WAV.
+    """
     if not in_paths:
         return
     wout = wave.open(out_stream, "wb")
@@ -107,19 +130,24 @@ def rec_worker(
 ) -> None:
     """Generate audio for each chunk and push a ChunkResult onto the queue.
 
-    On generator failure, the chunk is forwarded as a ChunkResult with
-    `error` set instead of being silently replaced by empty bytes. The caller
-    (play_worker) is responsible for collecting failures so the CLI can exit
-    non-zero. Each call is guaranteed to push exactly one ChunkResult per
-    chunk plus a final `None` sentinel — including on partial failure.
+    Runs as the producer thread of the CLI pipeline. On generator failure the
+    chunk is forwarded as a ChunkResult with `error` set instead of being
+    silently replaced by empty bytes; play_worker collects those failures so
+    the CLI can exit non-zero. Exactly one ChunkResult per chunk plus a final
+    `None` sentinel is pushed — including on partial failure.
+
+    Args:
+        text_chunks: Chunks to synthesize, in playback order.
+        generator: Callable turning one chunk of text into audio bytes.
+        q: Bounded queue shared with play_worker; provides backpressure.
+        tmp_suffix: Extension for the per-chunk temp files (".wav" / ".mp3").
+        tmp_dir: Directory for temp files; None uses the system temp dir.
     """
     try:
         for i, chunk in enumerate(text_chunks, start=1):
             try:
                 audio_bytes = generator(chunk)
             except Exception as exc:
-                import traceback
-
                 logger.error(f"TTS error on chunk {i}: {type(exc).__name__}: {exc}\n{traceback.format_exc()}")
                 q.put(ChunkResult(idx=i, tmp_path=None, audio_bytes=b"", error=exc))
                 continue
@@ -148,10 +176,19 @@ def play_worker(
     play_func: Callable[[bytes], None],
     failures: list[tuple[int, BaseException]] | None = None,
 ) -> None:
-    """Consume queue items; play audio if 'play' in modes; collect tmp paths in order.
+    """Consume queue items until the sentinel, playing and collecting each chunk.
 
-    Failed chunks (ChunkResult.error not None) are appended to `failures`
-    when provided, never to `collected_paths`, and are not played.
+    Runs as the consumer thread of the CLI pipeline. Failed chunks
+    (ChunkResult.error not None) are appended to `failures` when provided,
+    never to `collected_paths`, and are not played. A playback error on one
+    chunk is logged and the remaining chunks still play.
+
+    Args:
+        q: Queue fed by rec_worker; a `None` item ends the loop.
+        modes: Active output modes; audio is played only if "play" is present.
+        collected_paths: Populated in order with the temp paths of good chunks.
+        play_func: Callable that plays one chunk of audio bytes.
+        failures: Optional sink for (chunk index, exception) pairs.
     """
     while True:
         item = q.get()
@@ -171,6 +208,7 @@ def play_worker(
 
 
 def main():
+    """Module entrypoint placeholder — this file is import-only."""
     pass
 
 

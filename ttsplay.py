@@ -1,19 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Audio Player from STDIN
+"""Play raw audio bytes read from stdin.
 
-Reads audio data from stdin and plays it.
-Useful for piping audio from other commands.
+Companion to `ttsgen --stdout`, so audio can be piped between processes:
 
-Usage:
-    python ttsgen.py "Hello" --format bytesio | python ttsplay.py
-    cat audio.wav | python ttsplay.py
+    ttsgen "Hello" --stdout | ttsplay
+    cat audio.wav | ttsplay
 """
 
 import logging
 import os
 import sys
+import traceback
 
 LOGGING = {
     "handlers": [
@@ -28,9 +26,11 @@ LOGGING = {
 logging.basicConfig(**LOGGING)  # type: ignore
 logger = logging.getLogger(__name__)
 
-# Add libs to path
+# Source-checkout fallback: put the bundled libs/ directory on sys.path before the
+# libs.* import below, so the script also runs from a clone without installation.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "libs"))
 
+# Local imports
 try:
     from libs.api import play_audio
 except ImportError as e:
@@ -39,9 +39,9 @@ except ImportError as e:
 
 
 def main():
-    """Read audio from stdin and play it."""
+    """Read audio bytes from stdin, play them, and return a shell exit code."""
     try:
-        # Check if stdin has data
+        # Refuse to block on an interactive terminal: without a pipe there is nothing to play.
         if sys.stdin.isatty():
             logger.error("No input data")
             logger.error("Usage: ttsgen 'text' --stdout | ttsplay")
@@ -55,7 +55,7 @@ def main():
             logger.error("No audio data received")
             return 1
 
-        # Detect format
+        # Format is reported for diagnostics only; play_audio sniffs the header itself.
         if audio_data.startswith(b"RIFF"):
             format_type = "WAV"
         elif audio_data.startswith(b"ID3") or audio_data[0:2] == b"\xff\xfb":
@@ -65,7 +65,6 @@ def main():
 
         logger.info(f"Playing {len(audio_data)} bytes ({format_type})...")
 
-        # Play audio
         play_audio(audio_data)
 
         logger.info("Playback completed")
@@ -75,8 +74,6 @@ def main():
         logger.warning("Playback interrupted")
         return 1
     except Exception as exc:
-        import traceback
-
         logger.error(f"{type(exc).__name__}: {str(exc)}\n{traceback.format_exc()}")
         return 1
 

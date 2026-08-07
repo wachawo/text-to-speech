@@ -17,7 +17,16 @@ STREAMING_SIZE = 0xFFFFFFFF  # placeholder length for an unbounded/streaming WAV
 
 
 def streaming_wav_header(sample_rate: int, channels: int = 1, sample_width: int = 2) -> bytes:
-    """Build a 44-byte WAV header with streaming (unknown-length) size fields."""
+    """Build a 44-byte WAV header with streaming (unknown-length) size fields.
+
+    Args:
+        sample_rate: Frames per second of the PCM payload that will follow.
+        channels: Number of interleaved audio channels.
+        sample_width: Bytes per sample (2 = 16-bit PCM).
+
+    Returns:
+        The header bytes, with both RIFF and data sizes set to STREAMING_SIZE.
+    """
     bits = sample_width * 8
     byte_rate = sample_rate * channels * sample_width
     block_align = channels * sample_width
@@ -32,13 +41,13 @@ def streaming_wav_header(sample_rate: int, channels: int = 1, sample_width: int 
     )
 
 
-def wav_params(wav_bytes: bytes) -> "tuple[int, int, int]":
+def wav_params(wav_bytes: bytes) -> tuple[int, int, int]:
     """Return (sample_rate, channels, sample_width) of a WAV blob."""
-    with wave.open(io.BytesIO(wav_bytes), "rb") as w:
-        return w.getframerate(), w.getnchannels(), w.getsampwidth()
+    with wave.open(io.BytesIO(wav_bytes), "rb") as reader:
+        return reader.getframerate(), reader.getnchannels(), reader.getsampwidth()
 
 
 def wav_data(wav_bytes: bytes) -> bytes:
     """Return the raw PCM payload of a WAV blob (header stripped)."""
-    with wave.open(io.BytesIO(wav_bytes), "rb") as w:
-        return w.readframes(w.getnframes())
+    with wave.open(io.BytesIO(wav_bytes), "rb") as reader:
+        return reader.readframes(reader.getnframes())

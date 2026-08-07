@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Test fixtures.
+"""Shared pytest fixtures that stub the synthesis layer before the Flask app is imported.
 
-Stubs `libs.api` and `engines.get_available_engines` BEFORE importing
+`libs.api` and `engines.get_available_engines` are replaced BEFORE importing
 `ttssrv.app1` so the test suite never pulls pygame, torch, coqui or any other
 heavy dependency. The HTTP layer is what we actually exercise.
 """
@@ -15,10 +15,13 @@ from pathlib import Path
 
 import pytest
 
+# The repository root must be on sys.path before the local imports below,
+# so those imports deliberately stay after this insert (E402 is expected).
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# Local imports
 # Real exception classes — pure-python, safe to import.
 from libs.exceptions import (  # noqa: E402
     EngineNotAvailableError,
@@ -28,7 +31,7 @@ from libs.exceptions import (  # noqa: E402
 
 
 def build_silent_wav(duration_ms: int = 100, rate: int = 22050) -> bytes:
-    """Build a valid 16-bit mono PCM WAV with `duration_ms` of silence."""
+    """Build a valid 16-bit mono PCM WAV holding `duration_ms` of silence."""
     nframes = int(rate * duration_ms / 1000)
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:
@@ -40,6 +43,7 @@ def build_silent_wav(duration_ms: int = 100, rate: int = 22050) -> bytes:
 
 
 def default_text_to_speech_bytes(text, engine=None, language=None, voice=None):
+    """Stand in for real synthesis by returning a fixed silent WAV payload."""
     return build_silent_wav()
 
 
@@ -68,6 +72,7 @@ from ttssrv import app1 as app1_module  # noqa: E402
 
 
 def abort_view(code: int):
+    """Raise the requested HTTP status so error-handler tests can trigger it by URL."""
     abort(code)
 
 
@@ -97,4 +102,5 @@ def client(monkeypatch):
 
 @pytest.fixture
 def make_wav():
+    """Expose the silent-WAV builder to tests that need canned audio bytes."""
     return build_silent_wav

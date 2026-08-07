@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Unit tests for libs.config — user-config bootstrap, persistence,
-and dotenv priority chain.
+"""Unit tests for libs.config — user-config bootstrap, persistence, and dotenv priority chain.
 
-Each test patches USER_CONFIG_PATH/_DIR in the module so the real
+Each test patches USER_CONFIG_PATH/USER_CONFIG_DIR in the module so the real
 ~/.config/ttsgen.conf on the developer's machine is never touched.
 """
 
@@ -12,12 +11,13 @@ from pathlib import Path
 
 import pytest
 
+# Local imports
 from libs import config as cfg
 
 
 @pytest.fixture
 def isolated_user_config(tmp_path, monkeypatch):
-    """Redirect USER_CONFIG_DIR/_PATH at the module so file-IO is sandboxed."""
+    """Redirect USER_CONFIG_DIR/USER_CONFIG_PATH at the module so file-IO is sandboxed."""
     user_dir = tmp_path / "fakehome" / ".config"
     user_path = user_dir / "ttsgen.conf"
     monkeypatch.setattr(cfg, "USER_CONFIG_DIR", user_dir)
@@ -29,6 +29,7 @@ def isolated_user_config(tmp_path, monkeypatch):
 
 
 def test_ensure_user_config_creates_with_defaults(isolated_user_config):
+    """A missing user config is created from the template and its path returned."""
     assert not isolated_user_config.exists()
     returned = cfg.ensure_user_config()
     assert returned == isolated_user_config
@@ -39,6 +40,7 @@ def test_ensure_user_config_creates_with_defaults(isolated_user_config):
 
 
 def test_ensure_user_config_idempotent_on_existing_file(isolated_user_config):
+    """An existing user config is left byte-for-byte untouched."""
     isolated_user_config.parent.mkdir(parents=True)
     isolated_user_config.write_text("USER_TWEAK=1\n")
     cfg.ensure_user_config()
@@ -54,6 +56,7 @@ def test_ensure_user_config_silent_on_oserror(monkeypatch, tmp_path, caplog):
     monkeypatch.setattr(cfg, "USER_CONFIG_PATH", blocked / "ttsgen.conf")
 
     def fail_mkdir(*a, **kw):
+        """Simulate a read-only filesystem when the config directory is created."""
         raise PermissionError("readonly fs")
 
     monkeypatch.setattr(Path, "mkdir", fail_mkdir)
@@ -67,6 +70,7 @@ def test_ensure_user_config_silent_on_oserror(monkeypatch, tmp_path, caplog):
 
 
 def test_persist_appends_when_key_absent(isolated_user_config):
+    """A key not yet present is appended to the user config."""
     cfg.persist_config_value("MY_NEW_KEY", "value1")
     body = isolated_user_config.read_text()
     assert "MY_NEW_KEY=value1" in body
@@ -125,7 +129,7 @@ def test_load_config_priority_local_over_shared_env(monkeypatch, isolated_user_c
 
 
 def test_load_config_dotenv_beats_user_config(monkeypatch, isolated_user_config, tmp_path):
-    """.env is priority 3, ~/.config/ttsgen.conf is priority 5 — .env wins."""
+    """.env is priority 3, ~/.config/ttsgen.conf is priority 4 — .env wins."""
     monkeypatch.chdir(tmp_path)
     isolated_user_config.parent.mkdir(parents=True, exist_ok=True)
     isolated_user_config.write_text("USER_PRIORITY=user_loses\n")
@@ -136,7 +140,7 @@ def test_load_config_dotenv_beats_user_config(monkeypatch, isolated_user_config,
 
 
 def test_load_config_process_env_beats_files(monkeypatch, isolated_user_config, tmp_path):
-    """Real process env is priority 1 — no file may override it."""
+    """Real process env outranks every file except .env.local, which is absent here."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".env").write_text("PROCESS_ENV_KEY=from_env_file\n")
     monkeypatch.setenv("PROCESS_ENV_KEY", "from_process")

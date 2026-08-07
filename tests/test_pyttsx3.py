@@ -2,12 +2,13 @@
 # -*- coding: utf-8 -*-
 """Unit tests for engines/pyttsx3.py — offline TTS via espeak.
 
-Fake `pyttsx3` is injected into sys.modules before importing the engine
+A fake `pyttsx3` is injected into sys.modules before importing the engine
 so the tests run without the real package or any audio backend.
 """
 
 import importlib
 import sys
+import time
 import types
 
 import pytest
@@ -21,23 +22,30 @@ def make_fake_pyttsx3(write_bytes: bytes = b"RIFFFAKE", voices: list | None = No
     state: dict = {}
 
     class FakeEngine:
+        """Stand-in for a pyttsx3 engine that records properties instead of speaking."""
+
         def getProperty(self, name):
+            """Return the recorded value for `name`, or the canned voice list."""
             if name == "voices":
                 return voices if voices is not None else [types.SimpleNamespace(id="v1")]
             return state.get(name)
 
         def setProperty(self, name, value):
+            """Record a property assignment so tests can assert on it."""
             state[name] = value
 
         def save_to_file(self, text, filename):
+            """Write the canned payload to `filename` and remember the spoken text."""
             with open(filename, "wb") as f:
                 f.write(write_bytes)
             state["last_text"] = text
 
         def runAndWait(self):
+            """Mark that the synthesis queue was flushed."""
             state["ran"] = True
 
         def stop(self):
+            """Mark that the engine was stopped."""
             state["stopped"] = True
 
     fake.init = lambda: FakeEngine()
@@ -51,9 +59,7 @@ def engine(monkeypatch):
     monkeypatch.setitem(sys.modules, "pyttsx3", make_fake_pyttsx3())
     monkeypatch.delitem(sys.modules, "engines.pyttsx3", raising=False)
     # Make sure time.sleep doesn't actually sleep 0.5s per test.
-    import time as time_mod
-
-    monkeypatch.setattr(time_mod, "sleep", lambda s: None)
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
     return importlib.import_module("engines.pyttsx3")
 
 
@@ -61,10 +67,12 @@ def engine(monkeypatch):
 
 
 def test_is_available_true_when_pyttsx3_imports(engine):
+    """The engine reports itself usable once the pyttsx3 import succeeds."""
     assert engine.is_available() is True
 
 
 def test_is_available_false_when_module_flag_off(engine, monkeypatch):
+    """Clearing the AVAILABLE flag makes the engine report itself unusable."""
     monkeypatch.setattr(engine, "AVAILABLE", False)
     assert engine.is_available() is False
 
@@ -73,17 +81,20 @@ def test_is_available_false_when_module_flag_off(engine, monkeypatch):
 
 
 def test_generate_returns_file_bytes(engine):
+    """generate returns the bytes the backend wrote to its temporary file."""
     audio = engine.generate("hello", {"language": "en", "rate": 200, "volume": 0.5})
     assert audio == b"RIFFFAKE"
 
 
 def test_generate_passes_text_to_engine(engine):
+    """The text reaches the backend unmodified, including non-ASCII characters."""
     fake = sys.modules["pyttsx3"]
-    engine.generate("привет", {})
-    assert fake.state["last_text"] == "привет"
+    engine.generate("Grüße", {})
+    assert fake.state["last_text"] == "Grüße"
 
 
 def test_generate_applies_rate_and_volume_from_config(engine):
+    """Rate and volume supplied in the config are pushed onto the backend."""
     fake = sys.modules["pyttsx3"]
     engine.generate("hi", {"rate": 220, "volume": 0.7})
     assert fake.state["rate"] == 220
@@ -91,6 +102,7 @@ def test_generate_applies_rate_and_volume_from_config(engine):
 
 
 def test_generate_uses_defaults_when_config_lacks_keys(engine):
+    """An empty config falls back to the documented default rate and volume."""
     fake = sys.modules["pyttsx3"]
     engine.generate("hi", {})
     assert fake.state["rate"] == 150  # documented default
@@ -101,19 +113,17 @@ def test_generate_uses_defaults_when_config_lacks_keys(engine):
 
 
 def test_generate_raises_engine_not_available_when_flag_off(engine, monkeypatch):
+    """Synthesising with AVAILABLE cleared raises EngineNotAvailableError."""
     monkeypatch.setattr(engine, "AVAILABLE", False)
     with pytest.raises(EngineNotAvailableError, match="not available"):
         engine.generate("hi", {})
 
 
 def test_generate_raises_tts_exception_when_file_is_empty(monkeypatch):
-    """If save_to_file produces zero bytes, generate must raise TTSException —
-    not silently return an unusable empty payload."""
+    """A zero-byte result raises TTSException instead of returning an unusable payload."""
     monkeypatch.setitem(sys.modules, "pyttsx3", make_fake_pyttsx3(write_bytes=b""))
     monkeypatch.delitem(sys.modules, "engines.pyttsx3", raising=False)
-    import time as time_mod
-
-    monkeypatch.setattr(time_mod, "sleep", lambda s: None)
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
     eng = importlib.import_module("engines.pyttsx3")
 
     with pytest.raises(TTSException, match="failed to generate"):
@@ -121,22 +131,21 @@ def test_generate_raises_tts_exception_when_file_is_empty(monkeypatch):
 
 
 def test_generate_handles_no_voices(monkeypatch):
-    """voices=None must not crash — engine just skips setProperty('voice')."""
+    """An empty voice list is tolerated — the engine simply skips voice selection."""
     monkeypatch.setitem(sys.modules, "pyttsx3", make_fake_pyttsx3(voices=[]))
     monkeypatch.delitem(sys.modules, "engines.pyttsx3", raising=False)
-    import time as time_mod
-
-    monkeypatch.setattr(time_mod, "sleep", lambda s: None)
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
     eng = importlib.import_module("engines.pyttsx3")
     audio = eng.generate("hi", {})
     assert audio == b"RIFFFAKE"
 
 
 def test_generate_wraps_unexpected_exception_as_tts_exception(engine, monkeypatch):
-    """A backend crash during init() must surface as TTSException, not raw."""
+    """A backend crash during init() surfaces as TTSException rather than the raw error."""
     fake = sys.modules["pyttsx3"]
 
     def boom():
+        """Fail the way a broken audio backend would."""
         raise RuntimeError("backend dead")
 
     fake.init = boom

@@ -13,26 +13,32 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Optional, Union
 
 logger = logging.getLogger(__name__)
 
 IS_WINDOWS = sys.platform.startswith("win")
 
 
-def safe_unlink(path: Union[str, Path], retries: int = 5, delay: float = 0.1) -> bool:
+def safe_unlink(path: str | Path, retries: int = 5, delay: float = 0.1) -> bool:
     """Delete a file, retrying on transient Windows file-locking errors.
 
-    Returns True if the file was deleted (or already absent), False otherwise.
-    Logs a warning instead of raising — caller can ignore lingering temp files;
-    the OS will reclaim them.
+    Args:
+        path: File to remove; a missing file counts as success.
+        retries: Maximum number of attempts (Windows only; other platforms
+            give up after the first PermissionError).
+        delay: Seconds to sleep between attempts.
+
+    Returns:
+        True if the file was deleted (or already absent), False otherwise.
+        Logs a warning instead of raising — callers can ignore lingering temp
+        files; the OS will reclaim them.
     """
     p = os.fspath(path)
     if not os.path.exists(p):
         return True
 
-    last_exc: Optional[Exception] = None
-    for _ in range(retries):
+    last_exc: Exception | None = None
+    for unused_attempt in range(retries):
         try:
             os.unlink(p)
             return True
@@ -48,11 +54,12 @@ def safe_unlink(path: Union[str, Path], retries: int = 5, delay: float = 0.1) ->
             last_exc = exc
             time.sleep(delay)
 
-    logger.warning(f"Failed to delete {p} after {retries} attempts: " f"{type(last_exc).__name__}: {last_exc}")
+    logger.warning(f"Failed to delete {p} after {retries} attempts: {type(last_exc).__name__}: {last_exc}")
     return False
 
 
 def main():
+    """Module entrypoint placeholder — this file is import-only."""
     pass
 
 

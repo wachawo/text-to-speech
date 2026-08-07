@@ -1,4 +1,4 @@
-exclude: ^(libs|engines|models|\.backup|audio|samples)/
+exclude: ^(models|\.backup|audio|samples)/
 repos:
   - repo: https://github.com/psf/black
     rev: 23.3.0

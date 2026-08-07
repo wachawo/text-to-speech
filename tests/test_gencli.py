@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""End-to-end CLI smoke test for ttsgen.
+"""End-to-end CLI smoke tests for ttsgen run as a real subprocess.
 
-Spawns ttsgen.py as a real subprocess with the gtts package stubbed (no
-network), verifies the file output mode produces a non-empty audio file
-and exits 0. Also asserts a non-zero exit when the stub raises, exercising
-the new sentinel error propagation in libs.cli.rec_worker.
+The gtts package is stubbed via PYTHONPATH so no network call happens.
+The tests verify that file output produces a non-empty audio file and
+exits 0, and that a failing stub exits non-zero — exercising the sentinel
+error propagation in libs.cli.rec_worker.
 """
 
 import os
@@ -34,6 +34,7 @@ def stubbed_env(extra: dict | None = None) -> dict:
 
 
 def run_ttsgen(args: list[str], env: dict, timeout: int = 30) -> subprocess.CompletedProcess:
+    """Run ttsgen.py as a subprocess from the repo root and capture its output."""
     return subprocess.run(
         [sys.executable, str(TTSGEN), *args],
         env=env,
@@ -45,6 +46,7 @@ def run_ttsgen(args: list[str], env: dict, timeout: int = 30) -> subprocess.Comp
 
 
 def test_ttsgen_file_output_writes_audio(tmp_path):
+    """File output mode exits 0 and leaves a non-empty audio file on disk."""
     out = tmp_path / "out.mp3"
     env = stubbed_env({"AUDIO_DIRECTORY": str(tmp_path)})
     result = run_ttsgen(

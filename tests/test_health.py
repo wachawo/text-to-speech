@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Health endpoint."""
+"""Tests for the open /api/health endpoint."""
 
 
 def test_health_ok(client):
+    """Health returns 200 with the status flag and the engine/pool diagnostics."""
     resp = client.get("/api/health")
     assert resp.status_code == 200
     body = resp.get_json()

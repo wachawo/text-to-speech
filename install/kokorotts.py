@@ -20,6 +20,7 @@ from install.common import (
     info,
     pip_install,
     project_root,
+    prompt_yes_no,
     resolve_models_dir,
     success,
     warn,
@@ -45,6 +46,7 @@ def check_python_version() -> bool:
 
 
 def models_dir(non_interactive: bool = False) -> Path:
+    """Resolve (and create) the directory that holds the Kokoro ONNX model and voices."""
     return resolve_models_dir(
         engine_label="Kokoro TTS",
         env_key="KOKOROTTS_MODELS",
@@ -67,11 +69,13 @@ def select_runtime(non_interactive: bool) -> str:
 
 
 def install(non_interactive: bool = False) -> int:
+    """Install kokoro-onnx plus a runtime, then download the model and voice files.
+
+    Returns 0 on success, 1 if the user declines an unsupported Python version.
+    """
     info("Kokoro TTS Installer")
 
     if not check_python_version() and not non_interactive:
-        from install.common import prompt_yes_no
-
         if not prompt_yes_no("Continue anyway?", default=False):
             return 1
 
@@ -103,6 +107,7 @@ def install(non_interactive: bool = False) -> int:
 
 
 def main():
+    """Module entrypoint placeholder — this file is import-only."""
     pass
 
 

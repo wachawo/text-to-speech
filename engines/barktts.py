@@ -1,22 +1,16 @@
-"""
-Bark TTS Engine
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Ultra-realistic TTS engine backed by Suno's Bark models.
 
-Ultra-realistic text-to-speech by Suno AI.
-Supports emotions, laughter, music, and sound effects.
-
-Note: Very slow on CPU, requires significant memory (10GB+ models).
-Best used with GPU.
+Supports emotions, laughter, music and sound effects. Very slow on CPU and
+memory hungry (10GB+ of model weights) — best used with a GPU.
 """
 
-import io
 import logging
-import sys
 import os
 
+# Local imports
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
-
-# Bark generates ~14s of audio per minute on CPU; 5k chars is already heavy.
-MAX_TEXT_LENGTH = 5_000
 from libs.tempfiles import safe_unlink
 
 # .env via find_dotenv (walks up from cwd) → then .env.local override.
@@ -35,10 +29,13 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# Bark generates ~14s of audio per minute on CPU; 5k chars is already heavy.
+MAX_TEXT_LENGTH = 5_000
+
 # Try to import Bark
 try:
-    from bark import SAMPLE_RATE, generate_audio, preload_models
     import numpy as np
+    from bark import SAMPLE_RATE, generate_audio, preload_models
 
     AVAILABLE = True
 except ImportError:
@@ -63,24 +60,21 @@ def get_models_directory() -> str:
     Returns:
         Path to models directory
     """
-    # Get project root (parent of engines/ directory)
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-    # Priority 1: Check environment variable (from .env or export)
     env_var = os.environ.get("BARKTTS_MODELS")
     if env_var:
         models_path = env_var.strip()
-        # If relative path, resolve from project root
+        # A relative override is anchored to the project root, not the cwd,
+        # so `ttsgen` finds the same models from any working directory.
         if not os.path.isabs(models_path):
             models_path = os.path.join(project_root, models_path)
         return os.path.expanduser(models_path)
 
-    # Priority 2: Check cache/barktts directory in project root
     barktts_dir = os.path.join(project_root, "cache", "barktts")
     if os.path.exists(barktts_dir) and os.path.isdir(barktts_dir):
         return barktts_dir
 
-    # Priority 3: Default - use Bark default
     return os.path.expanduser("~/.cache/suno/bark_v0")
 
 
@@ -96,7 +90,6 @@ def get_speaker_for_language(language: str) -> str:
     Returns:
         Speaker preset string
     """
-    # Speaker presets for different languages
     speaker_map = {
         "en": "v2/en_speaker_6",  # English (clear female)
         "ru": "v2/ru_speaker_0",  # Russian
@@ -127,6 +120,11 @@ def generate(text: str, config: dict) -> bytes:
     Returns:
         Audio bytes in WAV format (24000 Hz, mono, 32-bit float)
 
+    Raises:
+        EngineNotAvailableError: Bark or one of its dependencies is missing.
+        ValidationError: Text exceeds MAX_TEXT_LENGTH.
+        TTSException: Out of GPU/host memory, or synthesis failed.
+
     Note:
         First run downloads models (10GB+), can take time.
         Generation is VERY slow on CPU (30-60s per sentence).
@@ -150,51 +148,48 @@ def generate(text: str, config: dict) -> bytes:
         raise ValidationError(f"Text too long for barktts: {len(text)} > {MAX_TEXT_LENGTH}")
 
     try:
-        import scipy.io.wavfile
+        # scipy/tempfile/torch are imported lazily: they are only needed on the
+        # synthesis path, and Bark's stack is heavy enough that `ttsgen --list`
+        # should not pay for it.
         import tempfile
+
+        import scipy.io.wavfile
 
         language = config.get("language", "en")
 
-        # Set custom models directory if configured
         models_dir = get_models_directory()
         if models_dir != os.path.expanduser("~/.cache/suno/bark_v0"):
-            # Bark uses XDG_CACHE_HOME for models
-            # Set to custom directory/suno/bark_v0
-            cache_dir = os.path.dirname(os.path.dirname(models_dir))  # Remove /suno/bark_v0
+            # Bark resolves its weights under $XDG_CACHE_HOME/suno/bark_v0, so
+            # point XDG_CACHE_HOME at the grandparent of the configured directory.
+            cache_dir = os.path.dirname(os.path.dirname(models_dir))
             os.environ["XDG_CACHE_HOME"] = cache_dir
             logger.info(f"Using custom Bark TTS models directory: {models_dir}")
 
-        # Fix for PyTorch 2.6+ weights_only security issue
-        # Bark models require weights_only=False or safe_globals
+        # Fix for PyTorch 2.6+ weights_only security issue.
+        # Bark checkpoints need these numpy globals allow-listed (actual
+        # objects, not strings) or torch.load refuses to unpickle them.
         import torch
 
         torch_version = tuple(map(int, torch.__version__.split(".")[:2]))
         if torch_version >= (2, 6):
-            # Add numpy globals to safe list for Bark models
-            # Must pass actual objects, not strings
             torch.serialization.add_safe_globals([np.core.multiarray.scalar, np.dtype])
 
-        # Preload models (first run downloads, subsequent runs load from cache)
-        # This can take time on first run
+        # First run downloads the weights; later runs load them from cache.
         preload_models()
 
-        # Get speaker for language
         history_prompt = get_speaker_for_language(language)
 
-        # Generate audio
-        # Bark returns numpy array with sample rate 24000
+        # Bark returns a numpy waveform sampled at SAMPLE_RATE (24000 Hz).
         audio_array = generate_audio(text, history_prompt=history_prompt, text_temp=0.7, waveform_temp=0.7)
 
-        # Convert numpy array to WAV bytes
-        # Create temporary file
+        # scipy.io.wavfile.write needs a real path, so encode through a
+        # temporary file and hand the caller the resulting bytes.
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
             temp_filename = temp_file.name
 
         try:
-            # Save as WAV
             scipy.io.wavfile.write(temp_filename, SAMPLE_RATE, audio_array)
 
-            # Read back as bytes
             with open(temp_filename, "rb") as f:
                 audio_bytes = f.read()
 
@@ -202,8 +197,8 @@ def generate(text: str, config: dict) -> bytes:
         finally:
             safe_unlink(temp_filename)
 
-    except Exception as e:
-        error_msg = str(e)
+    except Exception as exc:
+        error_msg = str(exc)
 
         if "No module named" in error_msg or "cannot import" in error_msg:
             raise EngineNotAvailableError(
@@ -211,14 +206,23 @@ def generate(text: str, config: dict) -> bytes:
                 "   pip install git+https://github.com/suno-ai/bark.git\n"
                 "   pip install scipy\n"
                 "See docs/BARKTTS.md for details."
-            )
+            ) from exc
 
         if "CUDA" in error_msg or "GPU" in error_msg or "memory" in error_msg.lower():
             raise TTSException(
                 f"Bark TTS GPU/memory error.\n"
                 f"Bark requires significant memory (10GB+ for models).\n"
                 f"Consider using CPU with smaller models or use different engine.\n"
-                f"Error: {e}"
-            )
+                f"Error: {exc}"
+            ) from exc
 
-        raise TTSException(f"Bark TTS generation failed: {e}")
+        raise TTSException(f"Bark TTS generation failed: {exc}") from exc
+
+
+def main():
+    """Module entrypoint placeholder — this file is import-only."""
+    pass
+
+
+if __name__ == "__main__":
+    main()

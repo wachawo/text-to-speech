@@ -1,27 +1,21 @@
-"""
-pyttsx3 TTS Engine
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Offline TTS engine backed by pyttsx3 (espeak on Linux, SAPI5 on Windows)."""
 
-Offline text-to-speech using espeak backend.
-"""
-
-from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
-
-# Offline espeak; fast but text >10k chars stalls audio threads.
-MAX_TEXT_LENGTH = 10_000
-from libs.tempfiles import safe_unlink
+import logging
 import os
 import tempfile
 import time
-import logging
-import sys
-from pathlib import Path as PathLib
 
-# Add libs to path
-sys.path.insert(0, str(PathLib(__file__).parent.parent / "libs"))
+from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
+from libs.tempfiles import safe_unlink
+
+# Offline espeak; fast but text >10k chars stalls audio threads.
+MAX_TEXT_LENGTH = 10_000
 
 logger = logging.getLogger(__name__)
 
-# Try to import pyttsx3
+# Optional dependency: absence only disables this engine, it must not break import.
 try:
     import pyttsx3  # type: ignore
 
@@ -32,20 +26,24 @@ except ImportError:
 
 
 def is_available() -> bool:
-    """Check if pyttsx3 is available."""
+    """Report whether the pyttsx3 dependency is installed."""
     return AVAILABLE
 
 
 def generate(text: str, config: dict) -> bytes:
-    """
-    Generate TTS and return audio as bytes.
+    """Synthesize text with the local pyttsx3 backend.
 
     Args:
-        text: Text to synthesize
-        config: Configuration dict with language, rate, volume
+        text: Text to synthesize.
+        config: Configuration dict with 'rate' and 'volume'.
 
     Returns:
-        Audio bytes in WAV format
+        Audio bytes in WAV format.
+
+    Raises:
+        EngineNotAvailableError: pyttsx3 is not installed.
+        ValidationError: Text exceeds MAX_TEXT_LENGTH.
+        TTSException: The backend produced no audio or failed outright.
     """
     if not AVAILABLE:
         raise EngineNotAvailableError("pyttsx3 not available")
@@ -54,7 +52,6 @@ def generate(text: str, config: dict) -> bytes:
         raise ValidationError(f"Text too long for pyttsx3: {len(text)} > {MAX_TEXT_LENGTH}")
 
     try:
-        # Initialize engine
         engine = pyttsx3.init()
         voices = engine.getProperty("voices")
         if voices:
@@ -62,7 +59,7 @@ def generate(text: str, config: dict) -> bytes:
         engine.setProperty("rate", config.get("rate", 150))
         engine.setProperty("volume", config.get("volume", 0.9))
 
-        # Generate to temporary file
+        # pyttsx3 can only write to a path, so synthesis goes through a scratch file.
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
             temp_filename = temp_file.name
 
@@ -70,18 +67,26 @@ def generate(text: str, config: dict) -> bytes:
             engine.save_to_file(text, temp_filename)
             engine.runAndWait()
 
-            # Give time for file writing (Linux espeak issue)
+            # espeak on Linux returns from runAndWait() before the file is flushed.
             time.sleep(0.5)
             engine.stop()
 
-            # Read and return bytes
             if not os.path.exists(temp_filename) or os.path.getsize(temp_filename) == 0:
                 raise TTSException("pyttsx3 failed to generate audio")
 
-            with open(temp_filename, "rb") as f:
-                return f.read()
+            with open(temp_filename, "rb") as wav_file:
+                return wav_file.read()
         finally:
             safe_unlink(temp_filename)
 
-    except Exception as e:
-        raise TTSException(f"pyttsx3 generation failed: {e}")
+    except Exception as exc:
+        raise TTSException(f"pyttsx3 generation failed: {exc}") from exc
+
+
+def main():
+    """Module entrypoint placeholder — this file is import-only."""
+    pass
+
+
+if __name__ == "__main__":
+    main()
