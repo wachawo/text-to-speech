@@ -65,13 +65,17 @@ services:
       nofile:
         soft: 65535
         hard: 65535
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    # GPU passthrough via CDI. Requires a CDI spec on the host:
+    #   sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
+    # (nvidia-container-toolkit >= 1.14; regenerate after a driver update).
+    #
+    # Preferred over deploy.resources.reservations.devices: with that form a
+    # `systemctl daemon-reload` silently revokes the container's access to the
+    # nvidia device nodes on cgroup v2. The container keeps running and looks
+    # healthy, but nvidia-smi inside reports "Failed to initialize NVML" and
+    # CUDA calls start failing with misleading cuDNN/cuBLAS errors.
+    devices:
+      - "nvidia.com/gpu=all"
 
 networks:
   tts_network:
