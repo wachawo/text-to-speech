@@ -80,6 +80,22 @@
           </template>
           <small class="text-secondary" v-else>Nothing generated yet</small>
         </div>
+
+        <!-- The same request as GENERATE, written for a shell. Follows the
+             selects and the editor live, so an operator who has found the
+             voice they want leaves with the command that reproduces it. -->
+        <div class="tts-card mt-2" v-if="$store.state.view.curl">
+          <div class="fw-bold text-primary border-bottom mb-1 d-flex align-items-center">
+            <span>API</span>
+            <span class="ms-auto"></span>
+            <button type="button" class="btn btn-sm btn-secondary" title="Copy the command"
+                    @click="copyCurl">
+              <i class="fa fa-copy"></i> COPY
+            </button>
+          </div>
+          <pre class="tts-code"><code>{{ curlCommand }}</code></pre>
+          <small class="text-secondary">Through this address nginx adds the API token for you; calling ttssrv directly needs -H 'Authorization: Bearer &lt;token&gt;' when TTS_TOKENS is set.</small>
+        </div>
       </div>
 
       <div class="col-lg-4">
@@ -175,6 +191,28 @@ var dropWait = function (wait, prefix) {
   if (i !== -1) wait.splice(i, 1);
 };
 
+/* The clipboard the old way, for a page the browser does not trust with
+   navigator.clipboard - plain http from another host is the common case for
+   a UI like this one. Answers whether the copy went through. */
+var copyByTextarea = function (text) {
+  if (typeof document === 'undefined' || !document.body) return false;
+  var box = document.createElement('textarea');
+  box.value = text;
+  box.setAttribute('readonly', '');
+  box.style.position = 'fixed';
+  box.style.opacity = '0';
+  document.body.appendChild(box);
+  box.select();
+  var copied = false;
+  try {
+    copied = document.execCommand('copy');
+  } catch (err) {
+    copied = false;
+  }
+  document.body.removeChild(box);
+  return copied;
+};
+
 module.exports = {
   data: function () {
     return {
@@ -188,6 +226,10 @@ module.exports = {
       languages: LANGUAGES,
       voices: [],
       form: { engine: '', language: 'en', voice: '', text: '' },
+      // The server's own defaults from GET /api/engines, kept for the case
+      // where a saved preference goes back to "server default".
+      serverEngine: '',
+      serverLanguage: '',
       items: [],
       total: 0,
       selected: null,
@@ -203,6 +245,9 @@ module.exports = {
     this.elapsedTimer = null;
     this.voiceSerial = 0;
     this.healthError = '';
+    // False until the engines and the first voices answer have been applied;
+    // see the `choice` watcher.
+    this.settled = false;
     this.fetchEngines();
     this.fetchHistory();
     this.pollHealth();
@@ -223,12 +268,12 @@ module.exports = {
       return this.selected ? '/api/history/' + this.selected.id + '/audio' : '';
     },
 
-    /* "wav - 4.2 s - 186 KB - generated in 3.1 s". The duration is only known
+    /* "WAV - 4.2 s - 186 KB - generated in 3.1 s". The duration is only known
        for WAV, so an MP3 take simply has no duration part. */
     summary: function () {
       var item = this.selected;
       if (!item) return '';
-      var parts = [item.format || '-'];
+      var parts = [(item.format || '-').toUpperCase()];
       if (item.seconds !== null && item.seconds !== undefined) parts.push(this.$fmtSeconds(item.seconds));
       parts.push(this.$fmtBytes(item.bytes));
       parts.push('generated in ' + this.$fmtSeconds(item.elapsed));
@@ -240,11 +285,87 @@ module.exports = {
     voiceKey: function () {
       return this.form.engine + '/' + this.form.language;
     },
+
+    /* The three selects as one string, so one watcher sees a row click that
+       moves all three as one change rather than three. */
+    choice: function () {
+      return this.form.engine + '/' + this.form.language + '/' + this.form.voice;
+    },
+
+    /* The request GENERATE would send, as a curl command line.
+
+       Addressed to the origin of this page, not to ttssrv: the page is served
+       by the nginx that carries the API token on the browser's behalf, and
+       the same nginx does it for curl - a command aimed at the container's
+       own address would be refused for want of a token the page never sees.
+       Single quotes in the text end the shell's quoting, so each becomes the
+       '\'' spelling; everything else JSON.stringify has already escaped. */
+    curlCommand: function () {
+      var body = {
+        text: this.form.text.trim() || 'Hello world',
+        engine: this.form.engine,
+        language: this.form.language,
+      };
+      if (this.form.voice) body.voice = this.form.voice;
+      var json = JSON.stringify(body).split("'").join("'\\''");
+      var ext = this.form.engine === 'gtts' ? 'mp3' : 'wav';
+      return [
+        'curl -sS -X POST ' + window.location.origin + '/api/tts',
+        "-H 'Content-Type: application/json'",
+        "-d '" + json + "'",
+        '-o out.' + ext,
+      ].join(' \\\n  ');
+    },
   },
 
   watch: {
     voiceKey: function () {
       this.fetchVoices();
+    },
+
+    /* The selects are remembered as the operator's choice - but only once the
+       initial load has settled. Before that they move on their own, as the
+       engines answer and then the voices, and a value written then would be
+       the server's default filed as a preference: change TTS_ENGINE on the
+       server afterwards and every browser would keep the old one. A row
+       click counts as a choice - it moves the selects, and the take on the
+       screen is the one the operator asked to see. */
+    choice: function () {
+      if (!this.settled) return;
+      this.$savePrefs('studio', {
+        engine: this.form.engine,
+        language: this.form.language,
+        voice: this.form.voice,
+      });
+    },
+
+    /* A SAVE in the settings dialog while this screen is open lands here, and
+       is applied the way a fresh open applies it: engine and language from
+       the saved values when this server has them, else the server's own
+       defaults. The screen's own saves pass through too, carrying what is
+       already on the selects, so they move nothing. A saved engine or
+       language change refetches the voices through voiceKey and the stored
+       voice is picked up there; a voice-only change is applied directly when
+       the current list has it. */
+    '$store.state.studio': function (prefs) {
+      if (!this.settled) return;
+      var self = this;
+      var isKnown = LANGUAGES.some(function (lang) { return lang.code === prefs.language; });
+      var engine = this.engines.indexOf(prefs.engine) !== -1 ? prefs.engine : this.serverEngine;
+      var language = isKnown ? prefs.language : this.serverLanguage;
+      var moved = false;
+      if (engine && this.engines.indexOf(engine) !== -1 && engine !== this.form.engine) {
+        this.form.engine = engine;
+        moved = true;
+      }
+      if (language && language !== this.form.language) {
+        this.form.language = language;
+        moved = true;
+      }
+      if (moved) return;
+      if (prefs.voice && prefs.voice !== this.form.voice && self.voices.indexOf(prefs.voice) !== -1) {
+        this.form.voice = prefs.voice;
+      }
     },
   },
 
@@ -295,12 +416,21 @@ module.exports = {
           // The default is TTS_ENGINE as configured, reported whether or not
           // that engine is installed here; a blank select and a 503 on
           // GENERATE would follow from taking it on trust.
-          var wanted = data['default'];
+          // The remembered choice outranks the default, and either only when
+          // this server has it: a browser that last picked coquitts on another
+          // deployment must not open on a blank select here.
+          var prefs = self.$store.state.studio;
+          self.serverEngine = data['default'] || '';
+          self.serverLanguage = data.language || '';
+          var wanted = self.engines.indexOf(prefs.engine) !== -1 ? prefs.engine : data['default'];
           if (!self.form.engine || self.engines.indexOf(self.form.engine) === -1) {
             self.form.engine = self.engines.indexOf(wanted) !== -1 ? wanted : (self.engines[0] || '');
           }
-          var known = LANGUAGES.some(function (lang) { return lang.code === data.language; });
-          if (known) self.form.language = data.language;
+          var isKnown = function (code) {
+            return LANGUAGES.some(function (lang) { return lang.code === code; });
+          };
+          if (isKnown(prefs.language)) self.form.language = prefs.language;
+          else if (isKnown(data.language)) self.form.language = data.language;
         })
         .catch(function (err) { self.error = self.$apiError(err); })
         .finally(function () { dropWait(self.wait, 'engines'); });
@@ -308,10 +438,15 @@ module.exports = {
 
     /* The voices of the engine and language in force. The chosen voice is
        kept when the new list still has it - a row click sets the voice before
-       this runs, and the answer must not undo it - otherwise the server's
-       default, otherwise the engine default. Answers arriving out of order are
-       dropped by the serial: two quick changes of engine would otherwise leave
-       the first engine's voices under the second engine's name. */
+       this runs, and the answer must not undo it - otherwise the remembered
+       one, otherwise the server's default, otherwise the engine default.
+       Answers arriving out of order are dropped by the serial: two quick
+       changes of engine would otherwise leave the first engine's voices under
+       the second engine's name.
+
+       The first answer applied is what settles the initial load. Marked on the
+       next tick rather than here: the watcher that this answer's assignment
+       queued runs before that tick, and must still find the flag down. */
     fetchVoices: function () {
       var self = this;
       if (!this.form.engine) return;
@@ -323,7 +458,9 @@ module.exports = {
           var data = resp.data || {};
           self.voices = data.voices || [];
           if (self.voices.indexOf(self.form.voice) !== -1) return;
-          self.form.voice = self.voices.indexOf(data['default']) !== -1 ? data['default'] : '';
+          var stored = self.$store.state.studio.voice;
+          if (self.voices.indexOf(stored) !== -1) self.form.voice = stored;
+          else self.form.voice = self.voices.indexOf(data['default']) !== -1 ? data['default'] : '';
         })
         .catch(function (err) {
           if (serial !== self.voiceSerial) return;
@@ -331,7 +468,12 @@ module.exports = {
           self.form.voice = '';
           self.error = self.$apiError(err);
         })
-        .finally(function () { dropWait(self.wait, 'voices'); });
+        .finally(function () {
+          dropWait(self.wait, 'voices');
+          if (serial === self.voiceSerial && !self.settled) {
+            self.$nextTick(function () { self.settled = true; });
+          }
+        });
     },
 
     /* History */
@@ -426,6 +568,32 @@ module.exports = {
         if (started && started.catch) started.catch(function () {});
       } catch (err) {
         // Nothing to report: see above.
+      }
+    },
+
+    /* Copy */
+
+    /* navigator.clipboard first, the textarea trick where the browser has
+       none or refuses; a toast either way, because a COPY that says nothing
+       is a COPY the operator presses three times and then pastes the wrong
+       thing. */
+    copyCurl: function () {
+      var self = this;
+      var text = this.curlCommand;
+      var done = function () {
+        self.$store.dispatch('push_toast', { level: 'success', message: 'Copied', ttl: 3000 });
+      };
+      var fallback = function () {
+        if (copyByTextarea(text)) return done();
+        self.$store.dispatch('push_toast', {
+          level: 'danger',
+          message: 'This browser would not copy - select the command and copy it by hand.',
+        });
+      };
+      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, fallback);
+      } else {
+        fallback();
       }
     },
 

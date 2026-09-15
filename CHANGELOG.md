@@ -23,8 +23,15 @@
   `GET /api/history/<id>/audio?download=1` and `DELETE /api/history/<id>` manage it.
   Items live as audio plus a JSON sidecar under `TTS_HISTORY_DIR` (default
   `data/history`), and the oldest are pruned past `TTS_HISTORY_MAX` (default 200).
+- Settings dialog behind the gear in the header: a default engine, language and
+  voice that the Studio remembers, and whether the curl example is shown. The
+  choices live in the browser (`localStorage`), not on the server.
+- The Studio shows a `curl` example for the current request, with a COPY button.
+- The Voices screen records a sample from the microphone; the browser encodes it
+  as 22050 Hz 16-bit mono WAV and uploads it like a file.
 
 #### Changed
+- The Studio summary line prints the format in upper case.
 - `GET /api/engines` now also returns `language`, the server's default language.
 - `ENGINE_MODEL_SOURCES` became `libs.models.engine_model_sources()`, which reads the
   `*_MODELS` directories at call time; `ttsgen --list` therefore reads them after the

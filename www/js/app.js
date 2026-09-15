@@ -1,7 +1,8 @@
 /* TTS - Vue 2 entry point.
    - Hash-mode router with named routes and no guard: the web UI has no
      sign-in, nginx carries the API token on its behalf
-   - Minimal Vuex: the toasts, the theme in force, the last health answer
+   - Minimal Vuex: the toasts, the theme in force, the two preference groups,
+     whether the settings dialog is asked for, the last health answer
    - Shared formatters, so every screen prints a size and a duration the same
      way
    - Shared error unwrapping, so no screen shows the operator raw JSON
@@ -72,12 +73,15 @@ const screen = function (name) {
    `tts-alerts` is the four bars - error, warning, info, success - each bound
    with `.sync` to a string on the screen. `tts-confirm` is the only dialog
    allowed to stand in front of a destructive action; `window.confirm` is what
-   it replaces and no screen may go back to it. `tts-header` and `tts-toaster`
-   are the shell's own and are rendered by the App root below. */
-Vue.component('tts-alerts',  httpVueLoader('/views/Alerts.vue'));
-Vue.component('tts-confirm', httpVueLoader('/views/Confirm.vue'));
-Vue.component('tts-toaster', httpVueLoader('/views/Toaster.vue'));
-Vue.component('tts-header',  httpVueLoader('/views/Header.vue'));
+   it replaces and no screen may go back to it. `tts-header`, `tts-toaster`
+   and `tts-settings` are the shell's own and are rendered by the App root
+   below - the settings dialog beside the header, not inside it, because the
+   bar paints everything in it in its own ink. */
+Vue.component('tts-alerts',   httpVueLoader('/views/Alerts.vue'));
+Vue.component('tts-confirm',  httpVueLoader('/views/Confirm.vue'));
+Vue.component('tts-toaster',  httpVueLoader('/views/Toaster.vue'));
+Vue.component('tts-header',   httpVueLoader('/views/Header.vue'));
+Vue.component('tts-settings', httpVueLoader('/views/Settings.vue'));
 
 /* Shared formatters. Two screens print a file size and a duration, and a
    size written "186 KB" on one and "186.0 KB" on the other reads as two
@@ -117,7 +121,7 @@ Vue.prototype.$fmtSeconds = function (value) {
    sandbox where the global is simply absent. Either way the app has to start:
    the preference becomes the default, not a ReferenceError thrown before the
    router exists. */
-const themeStorage = function () {
+const browserStorage = function () {
   try {
     return typeof localStorage === 'undefined' ? null : localStorage;
   } catch (err) {
@@ -151,7 +155,7 @@ const systemTheme = function () {
 };
 
 const readTheme = function () {
-  var box = themeStorage();
+  var box = browserStorage();
   var stored = null;
   if (box) {
     try {
@@ -188,6 +192,47 @@ const applyTheme = function (theme) {
    operator opens all day. */
 const startingTheme = readTheme();
 applyTheme(startingTheme);
+
+/* The other two preferences of this browser: what the studio opens with, and
+   what the screens show. Same home as the theme - localStorage, one key per
+   group, 'tts.view' and 'tts.studio' - and the same rule on the way in: only
+   the fields named here, only in the type named here, anything else the
+   default. The stored text is hand-editable, and a `curl: "no"` read as
+   truthy would be a checkbox that cannot be switched off.
+
+   An empty string in the studio group means the server's own default -
+   TTS_ENGINE, TTS_LANGUAGE, COQUITTS_SAMPLE - so a browser that never chose
+   follows the deployment rather than a value baked into this file. */
+const PREFS_PREFIX = 'tts.';
+const PREFS = {
+  view:   { curl: true },
+  studio: { engine: '', language: '', voice: '' },
+};
+
+const validatePrefs = function (name, value) {
+  var defaults = PREFS[name];
+  var given = (value && typeof value === 'object') ? value : {};
+  var clean = {};
+  Object.keys(defaults).forEach(function (key) {
+    var fallback = defaults[key];
+    clean[key] = typeof given[key] === typeof fallback ? given[key] : fallback;
+  });
+  return clean;
+};
+
+const readPrefs = function (name) {
+  var box = browserStorage();
+  var stored = null;
+  if (box) {
+    try {
+      stored = JSON.parse(box.getItem(PREFS_PREFIX + name));
+    } catch (err) {
+      // Nothing stored, or text that is not JSON any more: the defaults.
+      stored = null;
+    }
+  }
+  return validatePrefs(name, stored);
+};
 
 /* Global toast notifications.
    Pushed from anywhere via `this.$store.dispatch('push_toast', {...})`.
@@ -228,6 +273,18 @@ const state = {
   // screen opened later does not have to ask again to know the server is
   // ready.
   health: null,
+  // The two preference groups, already validated. Screens read these and
+  // never localStorage: the store is the copy that holds for the session in
+  // a browser that refused to keep them, and it is what a screen can watch.
+  // Replaced whole by $savePrefs, never edited in place, so a watcher on the
+  // object fires.
+  view: readPrefs('view'),
+  studio: readPrefs('studio'),
+  // Whether the settings dialog is asked for. The gear in the header sets it,
+  // the dialog watches it and clears it once it has closed - the two never
+  // hold a reference to each other, and the dialog is not rendered inside the
+  // bar (see Header.vue for why).
+  settingsOpen: false,
 };
 
 const actions = {
@@ -249,7 +306,7 @@ const store = new Vuex.Store({ state, actions });
    fault. */
 Vue.prototype.$saveTheme = function (next) {
   var theme = THEMES.indexOf(next) === -1 ? 'light' : next;
-  var box = themeStorage();
+  var box = browserStorage();
   var kept = false;
   if (box) {
     try {
@@ -264,6 +321,31 @@ Vue.prototype.$saveTheme = function (next) {
   }
   store.state.theme = theme;
   applyTheme(theme);
+  return kept;
+};
+
+/* Write one preference group: to storage and to the store, as a new object.
+
+   `name` is 'view' or 'studio'; the value goes through the same validation as
+   a stored one, so a caller cannot put a field in the store that a reload
+   would not bring back. Answers false when the browser refused to keep it,
+   for the same reason $saveTheme does: the setting holds until the tab is
+   reloaded either way, and the dialog says so rather than leaving the
+   operator to find out tomorrow. */
+Vue.prototype.$savePrefs = function (name, value) {
+  if (!PREFS[name]) return false;
+  var clean = validatePrefs(name, value);
+  var box = browserStorage();
+  var kept = false;
+  if (box) {
+    try {
+      box.setItem(PREFS_PREFIX + name, JSON.stringify(clean));
+      kept = true;
+    } catch (err) {
+      kept = false;
+    }
+  }
+  store.state[name] = clean;
   return kept;
 };
 
@@ -315,6 +397,7 @@ const App = {
     '<div>' +
     '<tts-header></tts-header>' +
     '<tts-toaster></tts-toaster>' +
+    '<tts-settings></tts-settings>' +
     '<router-view :key="$route.path" />' +
     '</div>',
 };

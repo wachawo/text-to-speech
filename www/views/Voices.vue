@@ -20,15 +20,42 @@
                title="Letters, digits, underscore and dash, up to 48 characters" />
 
         <label for="voice-file">File</label>
-        <input id="voice-file" ref="file" type="file" class="form-control form-control-sm" style="width:340px"
-               accept=".wav,audio/wav" @change="onFile"
-               title="A PCM WAV, mono, 22050 Hz, 5-10 seconds of clean speech; ttsrec records one from the command line" />
+        <!-- Two sources of one sample, side by side: a file from disk, or a
+             take from the microphone. Only one is held at a time - a take
+             empties the file input and a chosen file discards the take -
+             because UPLOAD sends one WAV, and two controls both showing
+             something would leave the operator guessing which. -->
+        <div class="d-flex gap-1 align-items-center">
+          <input id="voice-file" ref="file" type="file" class="form-control form-control-sm" style="width:340px"
+                 accept=".wav,audio/wav" @change="onFile"
+                 title="A PCM WAV, mono, 22050 Hz, 5-10 seconds of clean speech; ttsrec records one from the command line" />
+          <button v-if="canRecord" type="button" class="btn btn-sm"
+                  :class="recording ? 'btn-danger' : 'btn-outline-danger'"
+                  :title="recording ? 'Stop recording' : 'Record a sample from the microphone (up to 30 seconds)'"
+                  :disabled="wait.length > 0" @click="toggleRecording">
+            <i class="fa" :class="recording ? 'fa-stop' : 'fa-microphone'"></i> {{ recording ? 'STOP ' + clock : 'REC' }}
+          </button>
+          <!-- A sentence rather than a disabled button: getUserMedia is only
+               there on https or localhost, and a control that can only fail
+               invites the click. Nothing at all when recorder.js did not
+               load - that is a missing script, not a browser that cannot. -->
+          <small v-else-if="hasRecorder" class="text-secondary">Recording needs a secure page (https or localhost)</small>
+        </div>
+      </div>
+
+      <div v-if="take" class="tts-player mt-1">
+        <audio controls :src="takeUrl"></audio>
+        <small :class="takeSilent ? 'tts-state-off' : 'text-secondary'">{{ takeNote }}</small>
+        <button type="button" class="btn btn-sm btn-secondary" title="Discard the recording"
+                :disabled="wait.length > 0" @click="discardTake">
+          <i class="fa fa-times"></i>
+        </button>
       </div>
 
       <div class="d-flex justify-content-end align-items-center gap-2 mt-1">
         <small v-if="note" class="text-end" :class="noteError ? 'tts-state-off' : 'text-secondary'">{{ note }}</small>
         <button type="button" class="btn btn-sm btn-success fw-bold" style="min-width:100px"
-                @click="upload" :disabled="wait.length > 0 || !file || !nameValid"
+                @click="upload" :disabled="wait.length > 0 || !(file || take) || !nameValid"
                 title="Store the WAV above as a coquitts voice sample">
           <i class="fa fa-upload"></i> UPLOAD
         </button>
@@ -127,6 +154,26 @@ var NAME_REGEX = /^[A-Za-z0-9_-]{1,48}$/;
 
 var ENGINE = 'coquitts';
 
+/* The take's format, fixed to what the sample is for: xtts_v2 conditions on
+   22050 Hz mono, and ttsrec writes the same, so a browser take and a terminal
+   take are the same file on the server. */
+var SAMPLE_RATE = 22050;
+var MAX_SECONDS = 30;
+
+/* Below this peak the take is treated as silent - the same three percent of
+   full scale ttsrec.py draws its line at (1000 of 32767). A muted microphone
+   still delivers a stream, and the server accepts a WAV of nothing without a
+   word, so this is the only place the operator hears about it before the
+   clone comes out as noise. */
+var SILENT_PEAK = 0.03;
+
+/* m:ss for the clock in the STOP label. */
+var formatClock = function (seconds) {
+  var whole = Math.floor(seconds);
+  var rest = whole % 60;
+  return Math.floor(whole / 60) + ':' + (rest < 10 ? '0' : '') + rest;
+};
+
 module.exports = {
   data: function () {
     return {
@@ -148,6 +195,16 @@ module.exports = {
       // kept off `data` (see mounted): Vue would make it reactive and walk
       // every field the browser owns.
       playing: null,
+      // The microphone take, once there is one: the Blob UPLOAD sends, the
+      // object URL the preview plays, and what the recorder measured. The
+      // recorder itself is kept off `data` for the same reason the Audio
+      // object is (see mounted).
+      recording: false,
+      clock: '0:00',
+      take: null,
+      takeUrl: '',
+      takeSeconds: 0,
+      takePeak: 0,
     };
   },
 
@@ -157,6 +214,7 @@ module.exports = {
 
   mounted: function () {
     var self = this;
+    this.recorder = null;
     this.player = new Audio();
     this.player.addEventListener('ended', function () { self.playing = null; });
     this.player.addEventListener('error', function () {
@@ -166,17 +224,48 @@ module.exports = {
   },
 
   /* Leaving the screen silences it: the Audio object is not in the DOM, so
-     nothing else would stop a sample that is still sounding. */
+     nothing else would stop a sample that is still sounding. The microphone
+     likewise - a take in progress is dropped, not kept for a screen nobody is
+     looking at, and the tab's recording indicator goes out with it. */
   beforeDestroy: function () {
     if (this.player) {
       this.player.pause();
       this.player = null;
     }
+    if (this.recorder) {
+      this.recorder.release();
+      this.recorder = null;
+    }
+    this.discardTake();
   },
 
   computed: {
     nameValid: function () {
       return NAME_REGEX.test(this.form.name);
+    },
+
+    hasRecorder: function () {
+      return typeof window !== 'undefined' && !!window.TtsRecorder;
+    },
+
+    canRecord: function () {
+      return this.hasRecorder && window.TtsRecorder.supported();
+    },
+
+    takeSilent: function () {
+      return !!this.take && this.takePeak < SILENT_PEAK;
+    },
+
+    /* "Recorded 7.3 s, 22050 Hz mono, 320 KB", and the one thing worth
+       saying about a silent take: what usually caused it. */
+    takeNote: function () {
+      if (!this.take) return '';
+      var text = 'Recorded ' + this.$fmtSeconds(this.takeSeconds) + ', ' + SAMPLE_RATE + ' Hz mono, ' +
+        this.$fmtBytes(this.take.size);
+      if (this.takeSilent) {
+        text += ' - the take is silent: the microphone is muted or the browser is listening to the wrong input device';
+      }
+      return text;
     },
   },
 
@@ -196,9 +285,90 @@ module.exports = {
       this.file = (files && files.length) ? files[0] : null;
       this.note = '';
       this.noteError = false;
+      if (this.file) this.discardTake();
       if (!this.file || this.form.name) return;
       var stem = this.file.name.replace(/\.[^.]*$/, '');
       this.form.name = stem.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 48);
+    },
+
+    /* Recording */
+    toggleRecording: function () {
+      if (this.recording) this.stopRecording();
+      else this.startRecording();
+    },
+
+    /* The button turns into STOP only once the microphone streams: while the
+       browser's permission prompt is up there is nothing to stop yet, and the
+       wait queue says what is being waited for. A refusal is the one failure
+       with a name the operator can act on; anything else is the browser's
+       own sentence. */
+    startRecording: function () {
+      var self = this;
+      if (!self.canRecord || self.recorder) return;
+      self.discardTake();
+      self.error = '';
+      var recorder = window.TtsRecorder.create({
+        sampleRate: SAMPLE_RATE,
+        maxSeconds: MAX_SECONDS,
+        onTick: function (seconds) {
+          self.clock = formatClock(seconds);
+          if (seconds >= MAX_SECONDS) self.stopRecording();
+        },
+        // The take is closed with what was really captured, and the note says
+        // why it is shorter than the clock the operator was watching.
+        onEnded: function () {
+          self.stopRecording();
+          self.warning = 'The microphone went away - the take ends here';
+        },
+      });
+      self.recorder = recorder;
+      self.clock = '0:00';
+      self.wait.push('microphone');
+      recorder.start()
+        .then(function () {
+          // The screen was left while the prompt was up: beforeDestroy has
+          // already released this recorder, and there is nothing to show.
+          if (self.recorder !== recorder) return;
+          self.recording = true;
+        })
+        .catch(function (err) {
+          if (self.recorder === recorder) self.recorder = null;
+          if (err && err.name === 'NotAllowedError') self.error = 'Microphone access was refused';
+          else self.error = (err && err.message) || 'The microphone could not be opened';
+        })
+        .finally(function () {
+          var i = self.wait.indexOf('microphone');
+          if (i !== -1) self.wait.splice(i, 1);
+        });
+    },
+
+    /* The take replaces whatever file was chosen (see the template). The
+       name is left alone: a file brings a stem to propose, a take does not. */
+    stopRecording: function () {
+      var recorder = this.recorder;
+      if (!recorder) return;
+      this.recorder = null;
+      this.recording = false;
+      var blob = recorder.stop();
+      this.take = blob;
+      this.takeUrl = URL.createObjectURL(blob);
+      this.takeSeconds = recorder.seconds;
+      this.takePeak = recorder.peak;
+      this.file = null;
+      if (this.$refs.file) this.$refs.file.value = '';
+      this.note = '';
+      this.noteError = false;
+    },
+
+    /* The object URL is revoked with the take: each one pins its Blob in
+       memory until the document goes away, and a screen used all afternoon
+       would hold every take ever discarded. */
+    discardTake: function () {
+      if (this.takeUrl) URL.revokeObjectURL(this.takeUrl);
+      this.take = null;
+      this.takeUrl = '';
+      this.takeSeconds = 0;
+      this.takePeak = 0;
     },
 
     audioUrl: function (name, download) {
@@ -242,10 +412,14 @@ module.exports = {
     /* Creating */
     upload: function () {
       var self = this;
-      if (!self.file || !self.nameValid) return;
+      if (!(self.file || self.take) || !self.nameValid) return;
       var name = self.form.name;
       var body = new FormData();
-      body.append('file', self.file);
+      // A Blob has no file name of its own; the server reads the name from
+      // the form field, but a multipart part without a filename is a text
+      // field to Flask and never reaches request.files.
+      if (self.take) body.append('file', self.take, name + '.wav');
+      else body.append('file', self.file);
       body.append('name', name);
       body.append('engine', ENGINE);
       self.note = '';
@@ -265,6 +439,7 @@ module.exports = {
           self.form.name = '';
           self.file = null;
           if (self.$refs.file) self.$refs.file.value = '';
+          self.discardTake();
           self.fetchVoices();
         })
         .catch(function (err) {

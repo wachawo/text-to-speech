@@ -276,11 +276,16 @@
    Montserrat is in `fonts/` - so it renders where the machine already has it
    and falls through to the fixed-width entries where it does not. That is the
    trade this stack accepts; the fallbacks are all fixed-width so the columns
-   still line up wherever it lands. */
+   still line up wherever it lands.
+
+   The code face is the row face without Roboto: a command the operator is
+   meant to copy wants every character the same width, so a quote and a space
+   can be told apart by eye. */
 :root {
   --tts-face: Montserrat, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
               "Helvetica Neue", Arial, "Noto Sans", sans-serif;
   --tts-face-rows: Roboto, SFMono-Regular, Menlo, Consolas, monospace;
+  --tts-face-code: SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
 
 html, body { height: 100%; margin: 0; }
@@ -343,7 +348,7 @@ h5 { font-size: 13px; font-weight: 900; }
    text, which is right on the light half's primary and 2.7:1 on the dark half's
    brighter blue - GENERATE and UPLOAD would be the least readable words on a
    dark screen. Set through Bootstrap's own four state variables rather than
-   with `color: … !important`, so the disabled and active renderings follow the
+   with `color: ... !important`, so the disabled and active renderings follow the
    normal one instead of needing three more overrides; on the light half every
    one of them resolves to the white Bootstrap already used. */
 .btn-primary {
@@ -523,32 +528,34 @@ select option:checked {
    row, so every tab to the right of the pointer slides out from under it. */
 .tts-header > ul > li.nav-item:hover { background: var(--tts-header-raised); }
 .tts-header > ul > li.active { font-weight: 700; background: var(--tts-header-sunken); }
-/* The light/dark switch. A real button, because it changes how the screens
-   look rather than going anywhere - but Bootstrap's base `.btn` takes the body
-   colour and a transparent border box of its own, which on the blue bar is a
-   dark glyph that reads as a disabled control. Pulled back to the bar's ink and
-   stripped of the chrome, so it sits with the tabs instead of on top of them.
-   The tab hover is suppressed on its item: the control inside lights on hover
-   itself, and both together read as two overlapping highlights around one
-   glyph. */
-.tts-header > ul > li.nav-theme { padding: 0 4px; }
-.tts-header > ul > li.nav-theme:hover { background: none; }
+/* The light/dark switch, and the settings gear beside it in the same reset. A
+   real button, because it changes how the screens look rather than going
+   anywhere - but Bootstrap's base `.btn` takes the body colour and a
+   transparent border box of its own, which on the blue bar is a dark glyph
+   that reads as a disabled control. Pulled back to the bar's ink and stripped
+   of the chrome, so it sits with the tabs instead of on top of them. The hover
+   is the ITEM's, exactly as on a tab: the whole band lights, bar-high, and the
+   button paints nothing of its own - a highlight sized to the glyph beside
+   tabs that light edge to edge read as two different kinds of control. */
+.tts-header > ul > li.nav-theme { padding: 0 6px; }
+.tts-header > ul > li.nav-theme:hover { background: var(--tts-header-raised); }
 .tts-header .tts-theme-toggle {
   background: none;
   border: 0;
   color: var(--tts-header-ink);
-  padding: 2px 6px;
+  padding: 0;
   line-height: 1;
 }
-/* Lightens on hover, the way a tab does. `:focus` too - the border and shadow
-   Bootstrap draws there are sized for a light background and vanish on this one,
-   which would leave a keyboard operator with no idea where they are. */
+/* `:focus` keeps a visible ring of its own: the border and shadow Bootstrap
+   draws there are sized for a light background and vanish on this one, which
+   would leave a keyboard operator with no idea where they are. */
 .tts-header .tts-theme-toggle:hover,
 .tts-header .tts-theme-toggle:focus {
   color: var(--tts-header-ink);
-  background: var(--tts-header-raised);
+  background: none;
   box-shadow: none;
 }
+.tts-header .tts-theme-toggle:focus-visible { outline: 1px solid var(--tts-header-ink); outline-offset: 2px; }
 
 /* Toasts */
 .tts-toaster {
@@ -894,6 +901,34 @@ table thead { text-transform: uppercase; font-weight: 700; }
    header. */
 .set-tabs .nav-link        { padding: 3px 12px; font-size: 12px; }
 .set-tabs .nav-link.active { font-weight: 700; }
+
+/* A checkbox on the same rhythm. Bootstrap sizes the box off 1em, which on
+   this page is a 12px target smaller than the glyphs beside it; 14px is
+   findable without standing proud of the 24px row. The label is the page size
+   said explicitly, so a checkbox inside a dialog does not inherit whatever the
+   dialog's title set. */
+.form-check { min-height: 24px; }
+.form-check-input { width: 14px; height: 14px; margin-top: 2px; }
+.form-check-label { font-size: 12px; }
+
+/* A command to copy - the curl example under the player. Wrapped rather than
+   scrolled: a command whose end is off the right edge is a command that gets
+   copied without its end. `anywhere` because a token in it can be a URL or a
+   quoted paragraph with no space to break at. One size down from the page,
+   because it is a quotation rather than the text. */
+.tts-code {
+  font-family: var(--tts-face-code);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--tts-bg);
+  border: 1px solid var(--tts-border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin: 0;
+  color: var(--tts-text-strong);
+}
 
 /* A fact shown as text rather than as a disabled field - a disabled input
    looks like a field that could be filled in later. `overflow-wrap` because

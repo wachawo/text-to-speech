@@ -34,6 +34,25 @@
           <i class="fa" :class="darkTheme ? 'fa-sun' : 'fa-moon'"></i>
         </button>
       </li>
+
+      <!-- The settings, behind a gear rather than on a tab: two blocks about
+           this browser - what the studio opens with, what the screens show -
+           and nothing about the server, so there is nothing to link to or
+           bookmark. Right of the theme switch, in the same reset, because both
+           are about this browser and the operator finds them by moving to the
+           right edge.
+
+           The gear only raises a flag in the store. The dialog itself is
+           rendered by the App root beside the toaster, not here: the bar
+           paints every link and control inside it in the bar's own ink, and a
+           dialog left in this subtree would have its labels and its selects
+           drawn white on white. -->
+      <li class="nav-item nav-theme">
+        <button type="button" class="tts-theme-toggle"
+          title="Settings" aria-label="Settings" @click="openSettings">
+          <i class="fa fa-gear"></i>
+        </button>
+      </li>
     </ul>
   </header>
 </template>
@@ -146,6 +165,12 @@ module.exports = {
         message: 'This browser would not store the setting, so it holds until the page is reloaded.',
         ttl: 12000,
       });
+    },
+
+    /* Ask for the dialog. The flag is the whole contract between the bar and
+       the dialog: it watches the flag, opens, and clears it once closed. */
+    openSettings: function () {
+      this.$store.state.settingsOpen = true;
     },
   },
 };

@@ -160,6 +160,8 @@ xdg-open http://localhost:8080      # TTS_WWW_PORT; change it if 8080 is taken
 - **Voices** - upload and delete WAV voice samples for `coquitts` voice cloning.
 - **Models** - the engines and the installed / missing models, the same table as `ttsgen --list`.
 
+The gear in the header opens the settings dialog: the default engine, language and voice for the Studio, and whether the curl example is shown; the choices are stored in the browser. The Studio shows a ready-to-copy `curl` command for the current request. The Voices screen can also record a sample from the microphone, which browsers allow only on `https` or `localhost`.
+
 There is no login. When `TTS_TOKENS` is set, put one of those tokens into `TTS_WWW_TOKEN`: nginx adds it to every proxied request, so the browser never sees it and the API stays closed to other clients. Keep that token to letters, digits, `_` and `-`: it is pasted into the nginx config, where a `$` or `"` breaks the parse and the container exits.
 
 For working with and testing the server there is a separate CLI client, `ttsapi`. It has the same main flags as `ttsgen`, but synthesis runs on the server. The server address and token are taken from `TTS_URL` and `TTS_TOKEN`.
