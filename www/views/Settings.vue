@@ -18,22 +18,18 @@
           <tts-alerts :error.sync="error"></tts-alerts>
 
           <div class="fw-bold text-primary text-uppercase border-bottom mt-2 mb-1">Studio defaults</div>
-          <small class="text-secondary d-block mb-1">
-            Studio opens with these and remembers whatever you pick there;
-            server default follows TTS_ENGINE, TTS_LANGUAGE and COQUITTS_SAMPLE.
-          </small>
           <div class="set-grid">
             <label for="set-engine">Engine</label>
             <select id="set-engine" class="form-select form-select-sm set-select" style="width: 220px"
                     v-model="form.engine" :disabled="wait.length > 0">
-              <option value="">server default ({{ serverEngine || '-' }})</option>
+              <option value="">default ({{ serverEngine || '-' }})</option>
               <option v-for="name in engines" :key="name" :value="name">{{ name }}</option>
             </select>
 
             <label for="set-language">Language</label>
             <select id="set-language" class="form-select form-select-sm set-select" style="width: 220px"
                     v-model="form.language" :disabled="wait.length > 0">
-              <option value="">server default ({{ serverLanguage || '-' }})</option>
+              <option value="">default ({{ serverLanguage || '-' }})</option>
               <option v-for="lang in languages" :key="lang.code" :value="lang.code">
                 {{ lang.code }} {{ lang.name }}
               </option>
@@ -42,7 +38,7 @@
             <label for="set-voice">Voice</label>
             <select id="set-voice" class="form-select form-select-sm set-select" style="width: 220px"
                     v-model="form.voice" :disabled="wait.length > 0 || voices.length === 0">
-              <option value="">server default ({{ serverVoice || '-' }})</option>
+              <option value="">default ({{ serverVoice || '-' }})</option>
               <option v-for="name in voices" :key="name" :value="name">{{ name }}</option>
             </select>
           </div>
@@ -59,7 +55,7 @@
           <div class="form-check">
             <input id="set-curl" class="form-check-input" type="checkbox"
                    v-model="curl" @change="saveView" />
-            <label class="form-check-label" for="set-curl">Show the curl example under the player</label>
+            <label class="form-check-label" for="set-curl">Show CURL</label>
           </div>
         </div>
 
