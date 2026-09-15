@@ -380,6 +380,9 @@ textarea:focus, input.form-control:focus, .form-control:focus, .form-select:focu
 .form-control-sm,
 .input-group-sm .form-control,
 .input-group-sm .input-group-text { min-height: 24px; line-height: 1.4; }
+/* A stand-alone small input keeps Bootstrap's .25rem/.5rem padding and lands
+   at 26px, two taller than the input-group and button beside it. */
+.form-control-sm { padding: 2px 6px; }
 /* Selects match the compact inputs (24px, 12px font); extra right padding
    keeps room for the Bootstrap arrow, redrawn smaller to fit the height. */
 .form-select-sm,
