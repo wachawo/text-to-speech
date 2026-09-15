@@ -86,7 +86,7 @@
              voice they want leaves with the command that reproduces it. -->
         <div class="tts-card mt-2" v-if="$store.state.view.curl">
           <div class="fw-bold text-primary border-bottom pb-1 mb-1 d-flex align-items-center">
-            <span>API</span>
+            <span>CURL</span>
             <span class="ms-auto"></span>
             <button type="button" class="btn btn-sm btn-secondary" title="Copy the command"
                     @click="copyCurl">
