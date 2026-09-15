@@ -9,7 +9,7 @@ from pathlib import Path
 ENGINES_DIR = Path(__file__).resolve().parent.parent / "engines"
 
 ENGINE_NOTES = {
-    "gtts": "cloud — no local models",
+    "gtts": "cloud - no local models",
     "pyttsx3": "uses system espeak voices",
 }
 
@@ -51,7 +51,7 @@ def collect_engine_rows() -> list[tuple[str, str, str]]:
     engine_names = sorted(p.stem for p in ENGINES_DIR.glob("*.py") if p.name != "__init__.py")
     model_sources = engine_model_sources()
 
-    # Silence engine-loader probe warnings — status column already reports it.
+    # Silence engine-loader probe warnings - status column already reports it.
     engines_logger = logging.getLogger("engines")
     prev_level = engines_logger.level
     engines_logger.setLevel(logging.ERROR)
@@ -88,7 +88,7 @@ def collect_engine_rows() -> list[tuple[str, str, str]]:
 
 
 def main():
-    """Module entrypoint placeholder — this file is import-only."""
+    """Module entrypoint placeholder - this file is import-only."""
     pass
 
 

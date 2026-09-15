@@ -228,7 +228,7 @@ def test_generate_creates_separate_instance_per_model(engine, monkeypatch):
     assert len(FakeTTS.instances) == 2
 
 
-# generate — voice selection via config['voice']
+# generate - voice selection via config['voice']
 
 
 def test_generate_with_voice_uses_samples_dir_file(engine, monkeypatch, tmp_path):
