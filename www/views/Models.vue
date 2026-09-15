@@ -24,7 +24,7 @@
          two facts the server holds about it - whether its dependencies are
          importable here, and whether it is warmed up at start.
 
-         A missing engine is tinted and its title says how to install it.
+         A missing engine says so in STATUS and its title says how to install it.
          Installing from the browser is deliberately not offered: it is a pip
          run plus gigabytes of model downloads inside the server container,
          and a button here would either time out or leave a half-installed
@@ -51,8 +51,11 @@
             </tr>
           </thead>
           <tbody>
+            <!-- No row tint for a missing engine: on most servers "missing" is
+                 the common case (one or two engines installed out of seven),
+                 and painting the common case turns the whole table amber. The
+                 STATUS word carries the state; the title says how to fix it. -->
             <tr v-for="row in engineRows" :key="row.name"
-                :class="{ 'row-warning': !row.installed }"
                 :title="row.installed ? null : installHint(row.name)">
               <td class="td-ellipsis" :title="row.name">{{ row.name }}</td>
               <td :class="{ 'tts-state-on': row.installed }">
@@ -91,7 +94,6 @@
           </thead>
           <tbody>
             <tr v-for="(row, index) in models" :key="row.engine + ':' + row.model + ':' + index"
-                :class="{ 'row-warning': row.status !== 'installed' }"
                 :title="row.status === 'installed' ? null : installHint(row.engine)">
               <td class="td-ellipsis" :title="row.engine">{{ row.engine || '-' }}</td>
               <td :class="{ 'tts-state-on': row.status === 'installed' }">
