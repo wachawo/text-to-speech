@@ -42,14 +42,6 @@
               <option v-for="name in voices" :key="name" :value="name">{{ name }}</option>
             </select>
           </div>
-          <!-- The report sits beside the button that produced it, not in a bar
-               at the top: whoever pressed SAVE is looking here. -->
-          <div class="d-flex justify-content-end align-items-center gap-2 mt-1 mb-2">
-            <small v-if="note" class="text-end"
-                   :class="noteFailed ? 'tts-state-off' : 'text-secondary'">{{ note }}</small>
-            <button type="button" class="btn btn-sm btn-success fw-bold" style="min-width:100px"
-                    @click="saveStudio" :disabled="wait.length > 0">SAVE</button>
-          </div>
 
           <div class="fw-bold text-primary text-uppercase border-bottom mt-2 mb-1">View</div>
           <div class="form-check">
@@ -59,9 +51,17 @@
           </div>
         </div>
 
-        <div class="modal-footer p-1 d-flex justify-content-end">
-          <button type="button" class="btn btn-sm btn-secondary fw-bold" style="min-width:100px"
-                  data-bs-dismiss="modal">CLOSE</button>
+        <!-- SAVE lives in the footer with CLOSE, the house layout for every
+             dialog; the report of the last save sits at its left. -->
+        <div class="modal-footer p-1 d-flex justify-content-between align-items-center">
+          <small v-if="note" class="ms-2" :class="noteFailed ? 'tts-state-off' : 'text-secondary'">{{ note }}</small>
+          <span v-else></span>
+          <div class="d-flex gap-1">
+            <button type="button" class="btn btn-sm btn-success fw-bold" style="min-width:100px"
+                    @click="saveStudio" :disabled="wait.length > 0">SAVE</button>
+            <button type="button" class="btn btn-sm btn-secondary fw-bold" style="min-width:100px"
+                    data-bs-dismiss="modal">CLOSE</button>
+          </div>
         </div>
 
       </div>
