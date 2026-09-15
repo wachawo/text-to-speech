@@ -26,17 +26,20 @@
              because UPLOAD sends one WAV, and two controls both showing
              something would leave the operator guessing which. -->
         <!-- The native file input is kept but hidden: its button text cannot
-             be styled, so a button of ours opens it and the chosen name is
-             printed beside it. -->
-        <div class="d-flex gap-2 align-items-center">
-          <input id="voice-file" ref="file" type="file" class="d-none"
-                 accept=".wav,audio/wav" @change="onFile" />
-          <button type="button" class="btn btn-sm btn-secondary fw-bold" style="min-width:85px"
-                  title="A PCM WAV, mono, 22050 Hz, 5-10 seconds of clean speech; ttsrec records one from the command line"
+             be styled. The visible control is the same 340px field as Name,
+             with a paperclip in place of the browser's caption; the field
+             shows the chosen name and opens the picker on click too. -->
+        <input id="voice-file" ref="file" type="file" class="d-none"
+               accept=".wav,audio/wav" @change="onFile" />
+        <div class="input-group input-group-sm" style="width:340px"
+             title="A PCM WAV, mono, 22050 Hz, 5-10 seconds of clean speech; ttsrec records one from the command line">
+          <button type="button" class="btn btn-sm btn-secondary" title="Choose a WAV file"
                   :disabled="wait.length > 0" @click="$refs.file.click()">
             <i class="fa fa-paperclip"></i>
           </button>
-          <small v-if="file" class="text-secondary">{{ file.name }}</small>
+          <input type="text" class="form-control cursor-pointer" readonly
+                 :value="file ? file.name : ''" placeholder="No file chosen"
+                 @click="$refs.file.click()" />
         </div>
 
         <label for="voice-rec">Rec</label>
