@@ -397,6 +397,10 @@ textarea:focus, input.form-control:focus, .form-control:focus, .form-select:focu
    the filter bar; equal .23rem padding made them 26.1px and left the standalone
    buttons standing proud of the row. Buttons inside an input-group keep the
    group's own padding (rule above). */
+/* The 85px button: the number is the content width, the one DevTools draws
+   in the middle of its box, so padding and border come on top of it. A
+   border-box 85 read as 71 there and was taken for a narrower button. */
+.btn-w85 { min-width: 85px; box-sizing: content-box; }
 .btn-sm {
   padding: 2px 6px;
   min-height: 24px;

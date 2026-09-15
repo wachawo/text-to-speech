@@ -44,7 +44,7 @@
 
         <label for="voice-rec">Rec</label>
         <div class="d-flex gap-2 align-items-center">
-          <button id="voice-rec" type="button" class="btn btn-sm btn-danger fw-bold" style="min-width:85px"
+          <button id="voice-rec" type="button" class="btn btn-sm btn-danger fw-bold btn-w85"
                   :title="recording ? 'Stop recording' : (canRecord ? 'Record a sample from the microphone (up to 30 seconds)' : 'REC needs https')"
                   :disabled="wait.length > 0 || !canRecord" @click="toggleRecording">
             <i class="fa" :class="recording ? 'fa-stop' : 'fa-microphone'"></i> {{ recording ? 'STOP ' + clock : 'REC' }}
@@ -60,7 +60,7 @@
       <div v-if="take" class="tts-player mt-1">
         <audio controls :src="takeUrl"></audio>
         <small :class="takeSilent ? 'tts-state-off' : 'text-secondary'">{{ takeNote }}</small>
-        <button type="button" class="btn btn-sm btn-secondary fw-bold" style="min-width:85px"
+        <button type="button" class="btn btn-sm btn-secondary fw-bold btn-w85"
                 title="Discard the recording" :disabled="wait.length > 0" @click="discardTake">
           <i class="fa fa-times"></i> DISCARD
         </button>
@@ -82,7 +82,7 @@
         <small class="text-secondary" v-if="samples.length > 0">{{ samples.length }} voices</small>
       </div>
       <div>
-        <button type="button" class="btn btn-sm btn-secondary fw-bold" style="min-width:85px" @click="fetchVoices"
+        <button type="button" class="btn btn-sm btn-secondary fw-bold btn-w85" @click="fetchVoices"
                 :disabled="wait.length > 0" title="Read the sample list again">
           <i class="fa fa-rotate"></i> RELOAD
         </button>
