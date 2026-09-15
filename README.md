@@ -1,4 +1,4 @@
-## text-to-speech — a single interface for TTS engines
+## text-to-speech - a single interface for TTS engines
 
 [![CI](https://github.com/wachawo/text-to-speech/actions/workflows/ci.yml/badge.svg)](https://github.com/wachawo/text-to-speech/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/wachawo/text-to-speech/blob/main/LICENSE)
@@ -8,7 +8,7 @@
 
 ![The Studio screen of the web UI](https://raw.githubusercontent.com/wachawo/text-to-speech/main/docs/images/studio.png)
 
-`text-to-speech` lets you work with several speech-synthesis engines through one interface. You can start with online gTTS and later switch to local Piper, Silero, Coqui, Bark, or Kokoro — without rewriting your CLI commands, Python code, or HTTP integration.
+`text-to-speech` lets you work with several speech-synthesis engines through one interface. You can start with online gTTS and later switch to local Piper, Silero, Coqui, Bark, or Kokoro - without rewriting your CLI commands, Python code, or HTTP integration.
 
 The project fits local use, automation, and running your own TTS server on the network.
 
@@ -28,7 +28,7 @@ The project fits local use, automation, and running your own TTS server on the n
 | `coquitts`  | ✅      | CPU / **GPU** | ★★★★★   | high-quality voices and voice cloning          |
 | `barktts`   | ✅      | CPU / **GPU** | ★★★★★   | expressive speech, emotions, music, and singing |
 
-`gtts`, `pyttsx3`, `pipertts`, `silerotts`, and `kokorotts` run fine on CPU. `coquitts` and `barktts` can also run without a GPU, but synthesis is noticeably slower — a CUDA-capable graphics card is recommended for them.
+`gtts`, `pyttsx3`, `pipertts`, `silerotts`, and `kokorotts` run fine on CPU. `coquitts` and `barktts` can also run without a GPU, but synthesis is noticeably slower - a CUDA-capable graphics card is recommended for them.
 
 ### Installation
 
