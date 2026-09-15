@@ -13,31 +13,35 @@ services:
     env_file:
       - ./.env
     environment:
-      TZ:                ${TZ:-America/New_York}
-      TTS_HOST:          ${TTS_HOST:-0.0.0.0}
-      TTS_PORT:          ${TTS_PORT:-5000}
-      TTS_DEBUG:         ${TTS_DEBUG:-False}
-      TTS_TOKENS:        ${TTS_TOKENS:-}
-      CORS_ORIGINS:      ${CORS_ORIGINS:-*}
-      TTS_POOL_SIZE:     ${TTS_POOL_SIZE:-1}
-      TTS_ENGINE:        ${TTS_ENGINE:-gtts}
-      TTS_ENGINES:       ${TTS_ENGINES:-}
-      TTS_LANGUAGE:      ${TTS_LANGUAGE:-en}
-      COQUITTS_MODELS:   /opt/cache/coquitts
-      COQUITTS_MODEL:    ${COQUITTS_MODEL:-tts_models/multilingual/multi-dataset/xtts_v2}
-      COQUITTS_SAMPLE:   ${COQUITTS_SAMPLE:-default.wav}
-      KOKOROTTS_MODELS:  /opt/cache/kokorotts
-      PIPERTTS_MODELS:   /opt/cache/pipertts
-      SILEROTTS_MODELS:  /opt/cache/silerotts
-      BARKTTS_MODELS:    /opt/cache/barktts
-      PYTHONUSERBASE:    /opt/data/userbase
-      PIP_CACHE_DIR:     /opt/data/pip-cache
+      TZ:                   ${TZ:-America/New_York}
+      TTS_HOST:             ${TTS_HOST:-0.0.0.0}
+      TTS_PORT:             ${TTS_PORT:-5000}
+      TTS_DEBUG:            ${TTS_DEBUG:-False}
+      TTS_TOKENS:           ${TTS_TOKENS:-}
+      CORS_ORIGINS:         ${CORS_ORIGINS:-*}
+      TTS_POOL_SIZE:        ${TTS_POOL_SIZE:-1}
+      TTS_ENGINE:           ${TTS_ENGINE:-gtts}
+      TTS_ENGINES:          ${TTS_ENGINES:-}
+      TTS_LANGUAGE:         ${TTS_LANGUAGE:-en}
+      COQUITTS_MODELS:      /opt/cache/coquitts
+      COQUITTS_MODEL:       ${COQUITTS_MODEL:-tts_models/multilingual/multi-dataset/xtts_v2}
+      COQUITTS_SAMPLE:      ${COQUITTS_SAMPLE:-default.wav}
+      COQUITTS_SAMPLES:     /opt/samples
+      TTS_HISTORY_DIR:      /opt/data/history
+      TTS_HISTORY_MAX:      ${TTS_HISTORY_MAX:-200}
+      TTS_MAX_SAMPLE_BYTES: ${TTS_MAX_SAMPLE_BYTES:-16777216}
+      KOKOROTTS_MODELS:     /opt/cache/kokorotts
+      PIPERTTS_MODELS:      /opt/cache/pipertts
+      SILEROTTS_MODELS:     /opt/cache/silerotts
+      BARKTTS_MODELS:       /opt/cache/barktts
+      PYTHONUSERBASE:       /opt/data/userbase
+      PIP_CACHE_DIR:        /opt/data/pip-cache
     ports:
       - "${TTS_PORT:-5000}:${TTS_PORT:-5000}"
     volumes:
       - ./data:/opt/data
       - ./cache:/opt/cache
-      - ./samples:/opt/samples:ro
+      - ./samples:/opt/samples
       - ./.env:/opt/.env:ro
       - ./libs:/opt/libs:ro
       - ./engines:/opt/engines:ro

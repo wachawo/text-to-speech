@@ -248,6 +248,30 @@ Coqui TTS supports voice cloning with XTTS models. This requires:
 
 See Coqui TTS documentation for voice cloning details.
 
+### Voice Samples
+
+xtts_v2 clones the voice of a reference WAV. Samples live in the directory named
+by `COQUITTS_SAMPLES` (default `samples`, `/opt/samples` in Docker). `COQUITTS_SAMPLE`
+picks the default one; a bare file name is looked up in that directory.
+
+On the server every `*.wav` in the directory is a voice: the `voice` field of a
+request is the sample's file name without `.wav`, so `samples/maria.wav` is
+`"voice": "maria"`. `GET /api/voices?engine=coquitts` lists them and
+`POST /api/voices` uploads a new one.
+
+A good sample is:
+- WAV, PCM 16-bit, mono, 22050 Hz
+- 5-10 seconds of clean speech from one speaker
+- no music, echo or background noise
+
+`ttsrec` records such a sample from the microphone (16-bit mono, 22050 Hz) and
+persists the path as `COQUITTS_SAMPLE`, so the recording becomes the default voice:
+
+```bash
+ttsrec                          # records to the current COQUITTS_SAMPLE path
+ttsrec samples/maria.wav        # records a named voice into the samples directory
+```
+
 ### Multi-Speaker Models
 
 Some models support multiple speakers/voices. Check model documentation.

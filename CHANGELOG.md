@@ -2,7 +2,29 @@
 
 ### [Unreleased]
 
+#### Added
+- `GET /api/models` returns the installed / missing model rows that `ttsgen --list`
+  prints; the table logic moved from `ttsgen.py` into `libs/models.py` so the
+  server can reach it.
+- Per-request voice for `coquitts`: `voice` in a request names a WAV in the samples
+  directory (`COQUITTS_SAMPLES`, default `samples`), and `GET /api/voices?engine=coquitts`
+  lists those samples with `COQUITTS_SAMPLE` as the default.
+- `POST /api/voices` uploads a voice sample WAV (`file`, `name`, `engine=coquitts`)
+  into the samples directory; `DELETE /api/voices/<name>?engine=coquitts` removes one.
+  Uploads are capped by `TTS_MAX_SAMPLE_BYTES` (default 16 MiB).
+- Server-side generation history: `POST /api/history` synthesizes and stores the
+  result, `GET /api/history`, `GET /api/history/<id>`,
+  `GET /api/history/<id>/audio?download=1` and `DELETE /api/history/<id>` manage it.
+  Items live as audio plus a JSON sidecar under `TTS_HISTORY_DIR` (default
+  `data/history`), and the oldest are pruned past `TTS_HISTORY_MAX` (default 200).
+
 #### Changed
+- `GET /api/engines` now also returns `language`, the server's default language.
+- `ENGINE_MODEL_SOURCES` became `libs.models.engine_model_sources()`, which reads the
+  `*_MODELS` directories at call time; `ttsgen --list` therefore reads them after the
+  config files are loaded, so values from `ttsgen.conf` are honoured.
+- The `./samples` volume in both compose files is mounted writable so that voice
+  sample uploads land on the host.
 - **Readability pass across the whole codebase, no behaviour change.** Every module
   now opens with the canonical `#!/usr/bin/env python3` / `# -*- coding: utf-8 -*-`
   header plus a one-sentence summary docstring, and every function, method, class,
@@ -34,6 +56,15 @@
   `dummy-variable-rgx` was widened so the convention is machine-checked.
 
 #### Fixed
+- `POST /api/tts` served gTTS output as `application/octet-stream` with a `.bin`
+  download name: the MP3 sniff only knew the `ID3` tag and the MPEG-1 frame sync
+  (`\xff\xfb`), while gTTS returns tagless MPEG-2 layer III (`\xff\xf3`). The sniff
+  now masks the 11-bit frame sync, and the history store shares it.
+- `GET /api/voices` went through the engine loader, which drops an engine whose
+  optional dependencies are not importable, so the coquitts sample catalogue came
+  back empty on a host without torch even though uploads to it succeeded. Voice
+  listing now imports the engine module without that gate; engines whose listing
+  genuinely needs their dependencies still raise `EngineNotAvailableError`.
 - The generated `~/.config/ttsgen.conf` template offered `TTS_TOKEN` for the HTTP
   server, but `ttssrv` reads `TTS_TOKENS` — a user who followed the template got a
   server with authentication silently disabled.

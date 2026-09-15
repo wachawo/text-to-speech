@@ -26,6 +26,10 @@ services:
       COQUITTS_MODELS:            /opt/cache/coquitts
       COQUITTS_MODEL:             ${COQUITTS_MODEL:-tts_models/multilingual/multi-dataset/xtts_v2}
       COQUITTS_SAMPLE:            ${COQUITTS_SAMPLE:-default.wav}
+      COQUITTS_SAMPLES:           /opt/samples
+      TTS_HISTORY_DIR:            /opt/data/history
+      TTS_HISTORY_MAX:            ${TTS_HISTORY_MAX:-200}
+      TTS_MAX_SAMPLE_BYTES:       ${TTS_MAX_SAMPLE_BYTES:-16777216}
       KOKOROTTS_MODELS:           /opt/cache/kokorotts
       PIPERTTS_MODELS:            /opt/cache/pipertts
       SILEROTTS_MODELS:           /opt/cache/silerotts
@@ -39,7 +43,7 @@ services:
     volumes:
       - ./data:/opt/data
       - ./cache:/opt/cache
-      - ./samples:/opt/samples:ro
+      - ./samples:/opt/samples
       - ./.env:/opt/.env:ro
       - ./libs:/opt/libs:ro
       - ./engines:/opt/engines:ro

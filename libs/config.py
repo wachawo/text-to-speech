@@ -52,6 +52,7 @@ DEFAULT_USER_CONFIG = """\
 # COQUITTS_MODELS=cache/coquitts
 # COQUITTS_MODEL=tts_models/multilingual/multi-dataset/xtts_v2
 # COQUITTS_SAMPLE=~/.config/ttsgen.wav
+# COQUITTS_SAMPLES=samples
 
 # Piper / Silero / Bark / Kokoro model directories (defaults: cache/<engine>/ in project root)
 # PIPERTTS_MODELS=cache/pipertts
@@ -69,6 +70,9 @@ DEFAULT_USER_CONFIG = """\
 # TTS_DEBUG=False
 # TTS_TOKENS=SuP3rS3cr3tK3y!
 # TTS_POOL_SIZE=1
+# TTS_HISTORY_DIR=data/history
+# TTS_HISTORY_MAX=200
+# TTS_MAX_SAMPLE_BYTES=16777216
 """
 
 

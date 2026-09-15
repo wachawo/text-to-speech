@@ -18,3 +18,29 @@ class TtsRequestSchema(Schema):
     voice = fields.Str(load_default=None, validate=validate.Length(max=64))
     # When true, stream audio chunk-by-chunk (chunked transfer) for low latency.
     stream = fields.Bool(load_default=False)
+
+
+class HistoryCreateSchema(TtsRequestSchema):
+    """JSON body for POST /api/history: a TTS request without the streaming switch."""
+
+    class Meta:
+        """Drop `stream`: history items are always synthesized in one piece."""
+
+        exclude = ("stream",)
+
+
+class HistoryListSchema(Schema):
+    """Query string for GET /api/history."""
+
+    limit = fields.Int(load_default=50, validate=validate.Range(min=1, max=200))
+    offset = fields.Int(load_default=0, validate=validate.Range(min=0))
+
+
+class VoiceUploadSchema(Schema):
+    """Form fields of POST /api/voices and DELETE /api/voices/<name> (the WAV travels as `file`)."""
+
+    # A bare file stem, the same rule as libs.sample_resolver.VOICE_NAME_REGEX:
+    # no dots or separators, so the name can never leave the samples directory.
+    name = fields.Str(required=True, validate=validate.Regexp(r"^[A-Za-z0-9_-]{1,48}\Z"))
+    # Only coquitts clones voices from samples; the other engines have nothing to upload to.
+    engine = fields.Str(required=True, validate=validate.OneOf(["coquitts"]))

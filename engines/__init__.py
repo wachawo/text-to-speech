@@ -146,9 +146,15 @@ def get_engine_voices(engine_name: str, language: str = "en") -> dict[str, objec
     Returns:
         Dict {'voices': [...], 'default': str|None}.
     """
-    module = load_engine(engine_name)
+    # Imported without the is_available() gate: a catalogue such as the coquitts
+    # sample directory is readable whether or not torch is installed, and an
+    # engine whose listing really needs its dependencies raises
+    # EngineNotAvailableError itself.
+    if not get_engine_module_path(engine_name):
+        return {"voices": [], "default": None}
+    module = importlib.import_module(f".{engine_name}", package="engines")
 
-    if module and hasattr(module, "list_voices"):
+    if hasattr(module, "list_voices"):
         voices: dict[str, object] = module.list_voices(language)
         return voices
 

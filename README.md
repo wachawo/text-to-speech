@@ -110,6 +110,38 @@ curl -X POST localhost:5000/api/tts \
   -o out.mp3
 ```
 
+Models, voices and history:
+
+```bash
+# Installed and missing models, the same table `ttsgen --list` prints
+curl localhost:5000/api/models \
+  -H "Authorization: Bearer $TTS_TOKEN"
+
+# Upload a voice sample for coquitts (WAV); the voice is then "maria"
+curl -X POST localhost:5000/api/voices \
+  -H "Authorization: Bearer $TTS_TOKEN" \
+  -F file=@voice.wav -F name=maria -F engine=coquitts
+
+curl "localhost:5000/api/voices?engine=coquitts" \
+  -H "Authorization: Bearer $TTS_TOKEN"
+
+# Synthesize into the server-side history instead of the response body
+curl -X POST localhost:5000/api/history \
+  -H "Authorization: Bearer $TTS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Hola mundo","engine":"coquitts","language":"es","voice":"maria"}'
+
+curl "localhost:5000/api/history?limit=50&offset=0" \
+  -H "Authorization: Bearer $TTS_TOKEN"
+
+# Audio of one item; without download=1 it is served inline for <audio>
+curl "localhost:5000/api/history/<id>/audio?download=1" \
+  -H "Authorization: Bearer $TTS_TOKEN" -o tts.wav
+
+curl -X DELETE localhost:5000/api/history/<id> \
+  -H "Authorization: Bearer $TTS_TOKEN"
+```
+
 For working with and testing the server there is a separate CLI client, `ttsapi`. It has the same main flags as `ttsgen`, but synthesis runs on the server. The server address and token are taken from `TTS_URL` and `TTS_TOKEN`.
 
 ```bash
