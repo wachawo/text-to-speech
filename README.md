@@ -6,6 +6,8 @@
 
 **[English](https://github.com/wachawo/text-to-speech/blob/main/README.md)** | [Español](https://github.com/wachawo/text-to-speech/blob/main/docs/README_ES.md) | [Português](https://github.com/wachawo/text-to-speech/blob/main/docs/README_PT.md) | [Français](https://github.com/wachawo/text-to-speech/blob/main/docs/README_FR.md) | [Deutsch](https://github.com/wachawo/text-to-speech/blob/main/docs/README_DE.md) | [Italiano](https://github.com/wachawo/text-to-speech/blob/main/docs/README_IT.md) | [Русский](https://github.com/wachawo/text-to-speech/blob/main/docs/README_RU.md) | [中文](https://github.com/wachawo/text-to-speech/blob/main/docs/README_ZH.md) | [日本語](https://github.com/wachawo/text-to-speech/blob/main/docs/README_JA.md) | [हिन्दी](https://github.com/wachawo/text-to-speech/blob/main/docs/README_HI.md) | [한국어](https://github.com/wachawo/text-to-speech/blob/main/docs/README_KR.md)
 
+![The Studio screen of the web UI](https://raw.githubusercontent.com/wachawo/text-to-speech/main/docs/images/studio.png)
+
 `text-to-speech` lets you work with several speech-synthesis engines through one interface. You can start with online gTTS and later switch to local Piper, Silero, Coqui, Bark, or Kokoro — without rewriting your CLI commands, Python code, or HTTP integration.
 
 The project fits local use, automation, and running your own TTS server on the network.
