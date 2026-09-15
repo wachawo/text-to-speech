@@ -96,6 +96,18 @@ server {
         return 502 '{"error": "The server is not answering; it may still be starting"}';
     }
 
+    # What the UI needs to know about this deployment and cannot ask the API:
+    # the token nginx adds to proxied requests, so the curl example on the
+    # Studio can carry it for callers that go to ttssrv directly. The UI has
+    # no login, so anyone who can open it can already use the API through
+    # this proxy; printing the token adds no reach, only convenience.
+    location = /ui-config.json {
+        access_log off;
+        default_type application/json;
+        add_header Cache-Control "no-cache";
+        return 200 '{"token":"${TTS_WWW_TOKEN}"}';
+    }
+
     # nginx-side liveness for the docker healthcheck, no round trip to the API.
     location = /nginx-healthz {
         access_log off;

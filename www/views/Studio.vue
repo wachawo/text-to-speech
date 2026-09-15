@@ -85,7 +85,7 @@
              selects and the editor live, so an operator who has found the
              voice they want leaves with the command that reproduces it. -->
         <div class="tts-card mt-2" v-if="$store.state.view.curl">
-          <div class="fw-bold text-primary border-bottom mb-1 d-flex align-items-center">
+          <div class="fw-bold text-primary border-bottom pb-1 mb-1 d-flex align-items-center">
             <span>API</span>
             <span class="ms-auto"></span>
             <button type="button" class="btn btn-sm btn-secondary" title="Copy the command"
@@ -94,7 +94,6 @@
             </button>
           </div>
           <pre class="tts-code"><code>{{ curlCommand }}</code></pre>
-          <small class="text-secondary">Through this address nginx adds the API token for you; calling ttssrv directly needs -H 'Authorization: Bearer &lt;token&gt;' when TTS_TOKENS is set.</small>
         </div>
       </div>
 
@@ -230,6 +229,8 @@ module.exports = {
       // where a saved preference goes back to "server default".
       serverEngine: '',
       serverLanguage: '',
+      // The token nginx injects, from /ui-config.json; '' when auth is off.
+      apiToken: '',
       items: [],
       total: 0,
       selected: null,
@@ -239,6 +240,7 @@ module.exports = {
   },
 
   created: function () {
+    this.fetchUiConfig();
     // Timers and the voices request counter are kept off `data`: nothing
     // renders from them, and a reactive interval handle is just noise.
     this.healthTimer = null;
@@ -309,12 +311,12 @@ module.exports = {
       if (this.form.voice) body.voice = this.form.voice;
       var json = JSON.stringify(body).split("'").join("'\\''");
       var ext = this.form.engine === 'gtts' ? 'mp3' : 'wav';
-      return [
-        'curl -sS -X POST ' + window.location.origin + '/api/tts',
-        "-H 'Content-Type: application/json'",
-        "-d '" + json + "'",
-        '-o out.' + ext,
-      ].join(' \\\n  ');
+      var lines = ['curl -sS -X POST ' + window.location.origin + '/api/tts'];
+      // The token nginx adds on the way through, spelled out so the command
+      // also works against ttssrv directly; absent when the server has none.
+      if (this.apiToken) lines.push("-H 'Authorization: Bearer " + this.apiToken.split("'").join("'\\''") + "'");
+      lines.push("-H 'Content-Type: application/json'", "-d '" + json + "'", '-o out.' + ext);
+      return lines.join(' \\\n  ');
     },
   },
 
@@ -370,6 +372,18 @@ module.exports = {
   },
 
   methods: {
+    /* Deployment facts that live in nginx rather than in the API; a missing
+       or older nginx answers 404 and the command simply carries no token. */
+    fetchUiConfig: function () {
+      var self = this;
+      this.$http.get('/ui-config.json')
+        .then(function (resp) {
+          var token = resp.data && resp.data.token;
+          self.apiToken = typeof token === 'string' ? token : '';
+        })
+        .catch(function () { self.apiToken = ''; });
+    },
+
     /* Health */
 
     /* Until the server says ok, GENERATE stays off and the info bar says why:
