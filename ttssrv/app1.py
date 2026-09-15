@@ -49,7 +49,7 @@ from libs.exceptions import (  # noqa: E402
     ValidationError,
 )
 from libs.models import collect_engine_rows  # noqa: E402
-from libs.sample_resolver import get_samples_dir, sample_path_for_voice  # noqa: E402
+from libs.sample_resolver import describe_sample_files, get_samples_dir, sample_path_for_voice  # noqa: E402
 from ttssrv import history  # noqa: E402
 from ttssrv.streaming import streaming_wav_header, wav_data, wav_params  # noqa: E402
 from ttssrv.validators import (  # noqa: E402
@@ -313,6 +313,9 @@ def voices_list():
     engine = request.args.get("engine") or TTS_ENGINE_DEFAULT
     language = request.args.get("language") or TTS_LANGUAGE_DEFAULT
     info = get_engine_voices(engine, language)
+    # Only the sample-cloning engine has files behind its voices; the web UI
+    # shows their size, rate and length in the samples table.
+    samples = describe_sample_files() if engine == "coquitts" else []
     return (
         jsonify(
             {
@@ -320,6 +323,7 @@ def voices_list():
                 "language": language,
                 "voices": info.get("voices", []),
                 "default": info.get("default"),
+                "samples": samples,
             }
         ),
         200,
@@ -340,15 +344,6 @@ def read_wav_info(audio_bytes: bytes) -> tuple[int, int, float]:
     except (wave.Error, EOFError) as exc:
         raise ValidationError(f"Upload is not a PCM WAV: {type(exc).__name__}: {exc}") from exc
     return rate, channels, seconds
-
-
-def coquitts_default_voice() -> str | None:
-    """Return the stem of the COQUITTS_SAMPLE default voice, or None when unset."""
-    # Imported lazily: the engine module probes torch on import, which the
-    # server should only pay for when a voice is actually being managed.
-    from engines import coquitts
-
-    return coquitts.list_voices()["default"]
 
 
 @app.route("/api/voices", methods=["POST"])
@@ -395,13 +390,16 @@ def voices_upload():
 @app.route("/api/voices/<name>", methods=["DELETE"])
 @token_required
 def voices_delete(name: str):
-    """Remove a coquitts voice sample; the default COQUITTS_SAMPLE voice is refused."""
+    """Remove a coquitts voice sample, the COQUITTS_SAMPLE default included.
+
+    Deleting the default is allowed on purpose: a request without `voice` then
+    fails with the engine's voice_sample_missing message, which names the file
+    to record, and the web UI warns before the click.
+    """
     form = VoiceUploadSchema().load({"name": name, "engine": request.args.get("engine")})
     target = sample_path_for_voice(form["name"])
     if not os.path.isfile(target):
         abort(404)
-    if form["name"] == coquitts_default_voice():
-        raise ValidationError(f"Voice '{form['name']}' is the default sample and cannot be deleted")
     os.remove(target)
     logger.info(f"[{get_req_id()}] Voice '{form['name']}' deleted: {target}")
     return jsonify({"result": True}), 200

@@ -12,7 +12,8 @@
   server can reach it.
 - Per-request voice for `coquitts`: `voice` in a request names a WAV in the samples
   directory (`COQUITTS_SAMPLES`, default `samples`), and `GET /api/voices?engine=coquitts`
-  lists those samples with `COQUITTS_SAMPLE` as the default.
+  lists those samples with `COQUITTS_SAMPLE` as the default, plus a `samples` list
+  with the size, rate, channels and seconds of each file.
 - `POST /api/voices` uploads a voice sample WAV (`file`, `name`, `engine=coquitts`)
   into the samples directory; `GET /api/voices/<name>/audio?engine=coquitts` serves it
   back (inline, or as a download with `?download=1`); `DELETE /api/voices/<name>?engine=coquitts`

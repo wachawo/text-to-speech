@@ -6,8 +6,10 @@ Kept in `libs/` (not `engines/coquitts.py`) so unit tests can import it
 without pulling torch / TTS at module load time.
 """
 
+import logging
 import os
 import re
+import wave
 
 from libs.exceptions import ValidationError
 
@@ -16,6 +18,9 @@ DEFAULT_COQUITTS_SAMPLES = "samples"
 # the samples directory when joined onto it. `\Z`, not `$`: `$` also matches
 # before a trailing newline, which would otherwise end up in the file name.
 VOICE_NAME_REGEX = re.compile(r"^[A-Za-z0-9_-]{1,48}\Z")
+
+
+logger = logging.getLogger(__name__)
 
 
 def get_samples_dir() -> str:
@@ -61,6 +66,32 @@ def list_sample_files() -> list[str]:
         if entry.lower().endswith(".wav") and os.path.isfile(os.path.join(samples_dir, entry)):
             names.append(entry[: -len(".wav")])
     return sorted(names)
+
+
+def describe_sample_files() -> list[dict]:
+    """Describe every sample WAV in the samples directory: name, bytes, rate, channels, seconds.
+
+    A file `wave` cannot parse still appears (it is on disk and deletable) with
+    rate, channels and seconds set to None.
+
+    Returns:
+        One dict per sample, in name order; empty when the directory does not exist.
+    """
+    samples_dir = get_samples_dir()
+    described = []
+    for name in list_sample_files():
+        path = os.path.join(samples_dir, name + ".wav")
+        info: dict = {"name": name, "bytes": os.path.getsize(path), "rate": None, "channels": None, "seconds": None}
+        try:
+            with wave.open(path, "rb") as wav_file:
+                info["rate"] = wav_file.getframerate()
+                info["channels"] = wav_file.getnchannels()
+                if info["rate"]:
+                    info["seconds"] = round(wav_file.getnframes() / info["rate"], 2)
+        except (wave.Error, EOFError) as exc:
+            logger.warning(f"Sample {path} is not a readable WAV: {type(exc).__name__}: {exc}")
+        described.append(info)
+    return described
 
 
 def sample_path_for_voice(voice: str) -> str:

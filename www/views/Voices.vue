@@ -38,7 +38,7 @@
     <div class="form-check-inline m-1 d-flex flex-wrap row-gap-1 align-items-center">
       <div style="margin-left: auto"></div>
       <div style="margin-right: 0.25rem" class="d-flex align-items-center">
-        <small class="text-secondary" v-if="voices.length > 0">{{ voices.length }} voices</small>
+        <small class="text-secondary" v-if="samples.length > 0">{{ samples.length }} voices</small>
       </div>
       <div>
         <button type="button" class="btn btn-sm btn-secondary" @click="fetchVoices"
@@ -53,43 +53,57 @@
         <table class="table table-striped table-sm table-fixed mb-0">
           <caption>VOICES</caption>
           <colgroup>
-            <col style="width:70%">
-            <col style="width:15%">
-            <col style="width:15%">
+            <col style="width:34%">
+            <col style="width:12%">
+            <col style="width:12%">
+            <col style="width:12%">
+            <col style="width:10%">
+            <col style="width:10%">
+            <col style="width:10%">
           </colgroup>
           <thead>
             <tr>
               <td>Name</td>
+              <td>Size</td>
+              <td>Rate</td>
+              <td>Channels</td>
+              <td>Seconds</td>
               <td>Default</td>
               <td></td>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="name in voices" :key="name">
-              <td class="td-ellipsis" :title="rowTitle(name)">{{ name }}</td>
+            <tr v-for="row in samples" :key="row.name">
+              <td class="td-ellipsis" :title="rowTitle(row.name)">{{ row.name }}</td>
+              <td>{{ $fmtBytes(row.bytes) }}</td>
+              <!-- A sample `wave` could not parse shows "-" in the three
+                   header columns; it is still listed because it is still on
+                   disk, and the trash glyph is how it leaves. -->
+              <td>{{ row.rate ? row.rate + ' Hz' : '-' }}</td>
+              <td>{{ row.channels || '-' }}</td>
+              <td>{{ $fmtSeconds(row.seconds) }}</td>
               <!-- A word in its own column, not a suffix on the name: the name
                    cell is ellipsised and a suffix is the part a long name
                    loses. -->
-              <td>{{ name === defaultVoice ? 'default' : '' }}</td>
+              <td>{{ row.name === defaultVoice ? 'default' : '' }}</td>
               <!-- Three glyphs, each an action on this row: play/pause the
                    sample through one shared Audio object, download it, delete
-                   it. The default sample has no trash glyph at all rather than
-                   a greyed one: the server refuses to delete it, and a control
-                   that can only fail invites the click it then refuses. -->
+                   it. The default sample is deletable too; the confirm dialog
+                   says what that costs. -->
               <td class="td-actions" @click.stop>
-                <i class="fa fa-fw text-primary" :class="playing === name ? 'fa-pause' : 'fa-play'"
-                   :title="playing === name ? 'Pause' : 'Listen to this sample'"
-                   @click="togglePlay(name)"></i>
-                <a :href="audioUrl(name, true)" download :title="'Download ' + name + '.wav'">
+                <i class="fa fa-fw text-primary" :class="playing === row.name ? 'fa-pause' : 'fa-play'"
+                   :title="playing === row.name ? 'Pause' : 'Listen to this sample'"
+                   @click="togglePlay(row.name)"></i>
+                <a :href="audioUrl(row.name, true)" download :title="'Download ' + row.name + '.wav'">
                   <i class="fa fa-fw fa-download"></i>
                 </a>
-                <i v-if="name !== defaultVoice" class="fa fa-fw fa-trash text-danger"
+                <i class="fa fa-fw fa-trash text-danger"
                    title="Delete this voice" :class="{ disabled: wait.length > 0 }"
-                   @click="remove(name)"></i>
+                   @click="remove(row.name)"></i>
               </td>
             </tr>
-            <tr v-if="voices.length === 0 && wait.length === 0">
-              <td colspan="3" class="text-center text-secondary">No samples yet - upload a WAV above</td>
+            <tr v-if="samples.length === 0 && wait.length === 0">
+              <td colspan="7" class="text-center text-secondary">No samples yet - upload a WAV above</td>
             </tr>
           </tbody>
         </table>
@@ -121,11 +135,11 @@ module.exports = {
       warning: '',
       info: '',
       success: '',
-      voices: [],
+      // One row per sample from GET /api/voices "samples": name, bytes,
+      // rate, channels, seconds. `voices` (the bare names) is what the
+      // studio's select uses; this screen shows the files behind them.
+      samples: [],
       defaultVoice: null,
-      // GET /api/voices carries bare names and nothing about the files behind
-      // them, so the table lists names only; the size, rate, channels and
-      // seconds of an upload are reported once, in the note beside UPLOAD.
       form: { name: '' },
       file: null,
       note: '',
@@ -168,7 +182,7 @@ module.exports = {
 
   methods: {
     rowTitle: function (name) {
-      if (name === this.defaultVoice) return name + ' - the COQUITTS_SAMPLE default; it cannot be deleted from here';
+      if (name === this.defaultVoice) return name + ' - the COQUITTS_SAMPLE default, used when a request names no voice';
       return name;
     },
 
@@ -213,7 +227,7 @@ module.exports = {
       self.wait.push('voices');
       self.$http.get('/api/voices', { params: { engine: ENGINE } })
         .then(function (resp) {
-          self.voices = resp.data.voices || [];
+          self.samples = resp.data.samples || [];
           self.defaultVoice = resp.data.default || null;
         })
         .catch(function (err) {
@@ -272,9 +286,15 @@ module.exports = {
     /* Deleting */
     remove: function (name) {
       var self = this;
+      var body = 'Delete the voice sample "' + name + '"?';
+      // The default is what a request without a voice falls back on; without
+      // it coquitts refuses such requests until a sample of that name is back.
+      if (name === self.defaultVoice) {
+        body += '\n\nThis is the COQUITTS_SAMPLE default: requests that name no voice will fail until it is uploaded again.';
+      }
       self.$refs.confirm.ask({
         title: 'DELETE VOICE',
-        body: 'Delete the voice sample "' + name + '"?',
+        body: body,
         label: 'DELETE',
         danger: true,
       }).then(function (ok) {
