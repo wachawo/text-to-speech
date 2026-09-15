@@ -103,10 +103,10 @@
             <table class="table table-striped table-sm table-fixed mb-0">
               <caption>HISTORY</caption>
               <colgroup>
-                <col style="width:22%">
-                <col style="width:18%">
-                <col style="width:18%">
-                <col style="width:36%">
+                <col style="width:27%">
+                <col style="width:20%">
+                <col style="width:15%">
+                <col style="width:32%">
                 <col style="width:6%">
               </colgroup>
               <thead>
@@ -529,7 +529,9 @@ module.exports = {
         String(now.getMonth() + 1).padStart(2, '0') + '-' +
         String(now.getDate()).padStart(2, '0');
       var date = stamp.slice(0, 10);
-      return date === today ? stamp.slice(11, 16) : date;
+      // Today by the clock alone; any other day as MM-DD HH:MM - the year is
+      // never the fact being looked for in a list of recent takes.
+      return date === today ? stamp.slice(11, 16) : stamp.slice(5, 16);
     },
 
     /* Generate */

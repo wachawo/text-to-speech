@@ -30,7 +30,11 @@
 - Settings dialog behind the gear in the header: a default engine, language and
   voice that the Studio remembers, and whether the curl example is shown. The
   choices live in the browser (`localStorage`), not on the server.
-- The Studio shows a `curl` example for the current request, with a COPY button.
+- The Studio shows a `curl` example for the current request, with a COPY button;
+  it carries the `TTS_WWW_TOKEN` header when the server has tokens (nginx publishes
+  the token and the https port to the UI at `/ui-config.json`).
+- The Voices table lists each sample with its size, rate, channels and length,
+  and plays, downloads or deletes it in place.
 - The Voices screen records a sample from the microphone; the browser encodes it
   as 22050 Hz 16-bit mono WAV and uploads it like a file.
 
