@@ -36,9 +36,9 @@
            so it can be middle-clicked and opened in a new tab like any other
            route. .btn keeps it on the 24px rhythm of the row. -->
       <div style="margin-right: 0.25rem" v-if="form.engine === 'coquitts'">
-        <router-link to="/voices" class="btn btn-sm btn-outline-secondary"
+        <router-link to="/voices" class="btn btn-sm btn-secondary fw-bold" style="min-width:85px"
                      title="Add a voice sample" aria-label="Add a voice sample">
-          <i class="fa fa-plus"></i>
+          <i class="fa fa-plus"></i> VOICE
         </router-link>
       </div>
 
@@ -73,7 +73,7 @@
         <div class="tts-player mt-2">
           <template v-if="selected">
             <audio ref="player" controls :src="audioUrl"></audio>
-            <a class="btn btn-sm btn-secondary fw-bold" :href="audioUrl + '?download=1'" download>
+            <a class="btn btn-sm btn-secondary fw-bold" style="min-width:85px" :href="audioUrl + '?download=1'" download>
               <i class="fa fa-download"></i> SAVE
             </a>
             <small class="text-secondary">{{ summary }}</small>
@@ -88,7 +88,7 @@
           <div class="fw-bold text-primary border-bottom pb-1 mb-1 d-flex align-items-center">
             <span>CURL</span>
             <span class="ms-auto"></span>
-            <button type="button" class="btn btn-sm btn-secondary" title="Copy the command"
+            <button type="button" class="btn btn-sm btn-secondary fw-bold" style="min-width:85px" title="Copy the command"
                     @click="copyCurl">
               <i class="fa fa-copy"></i> COPY
             </button>
@@ -139,7 +139,7 @@
           </div>
           <div class="d-flex align-items-center gap-2 px-2 py-1">
             <small class="text-secondary">{{ total }} items</small>
-            <button type="button" class="btn btn-sm btn-outline-secondary ms-auto"
+            <button type="button" class="btn btn-sm btn-secondary fw-bold ms-auto" style="min-width:85px"
                     v-if="total > items.length"
                     @click="fetchMore" :disabled="wait.length > 0">LOAD MORE</button>
           </div>

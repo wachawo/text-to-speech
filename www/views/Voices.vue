@@ -20,17 +20,18 @@
                title="Letters, digits, underscore and dash, up to 48 characters" />
 
         <label for="voice-file">File</label>
-        <!-- Two sources of one sample, side by side: a file from disk, or a
+        <!-- Two sources of one sample, one row each: a file from disk, or a
              take from the microphone. Only one is held at a time - a take
              empties the file input and a chosen file discards the take -
              because UPLOAD sends one WAV, and two controls both showing
              something would leave the operator guessing which. -->
-        <div class="d-flex gap-1 align-items-center">
-          <input id="voice-file" ref="file" type="file" class="form-control form-control-sm" style="width:340px"
-                 accept=".wav,audio/wav" @change="onFile"
-                 title="A PCM WAV, mono, 22050 Hz, 5-10 seconds of clean speech; ttsrec records one from the command line" />
-          <button type="button" class="btn btn-sm"
-                  :class="recording ? 'btn-danger' : 'btn-outline-danger'"
+        <input id="voice-file" ref="file" type="file" class="form-control form-control-sm" style="width:340px"
+               accept=".wav,audio/wav" @change="onFile"
+               title="A PCM WAV, mono, 22050 Hz, 5-10 seconds of clean speech; ttsrec records one from the command line" />
+
+        <label for="voice-rec">Rec</label>
+        <div class="d-flex gap-2 align-items-center">
+          <button id="voice-rec" type="button" class="btn btn-sm btn-danger fw-bold" style="min-width:85px"
                   :title="recording ? 'Stop recording' : (canRecord ? 'Record a sample from the microphone (up to 30 seconds)' : 'REC needs https')"
                   :disabled="wait.length > 0 || !canRecord" @click="toggleRecording">
             <i class="fa" :class="recording ? 'fa-stop' : 'fa-microphone'"></i> {{ recording ? 'STOP ' + clock : 'REC' }}
@@ -46,9 +47,9 @@
       <div v-if="take" class="tts-player mt-1">
         <audio controls :src="takeUrl"></audio>
         <small :class="takeSilent ? 'tts-state-off' : 'text-secondary'">{{ takeNote }}</small>
-        <button type="button" class="btn btn-sm btn-secondary" title="Discard the recording"
-                :disabled="wait.length > 0" @click="discardTake">
-          <i class="fa fa-times"></i>
+        <button type="button" class="btn btn-sm btn-secondary fw-bold" style="min-width:85px"
+                title="Discard the recording" :disabled="wait.length > 0" @click="discardTake">
+          <i class="fa fa-times"></i> DISCARD
         </button>
       </div>
 
@@ -68,7 +69,7 @@
         <small class="text-secondary" v-if="samples.length > 0">{{ samples.length }} voices</small>
       </div>
       <div>
-        <button type="button" class="btn btn-sm btn-secondary" @click="fetchVoices"
+        <button type="button" class="btn btn-sm btn-secondary fw-bold" style="min-width:85px" @click="fetchVoices"
                 :disabled="wait.length > 0" title="Read the sample list again">
           <i class="fa fa-rotate"></i> RELOAD
         </button>
