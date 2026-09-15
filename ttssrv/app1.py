@@ -19,13 +19,14 @@ import sys
 import time
 import traceback
 import uuid
+import wave
 from datetime import date, datetime
 from functools import wraps
 from pathlib import Path
 
 import pytz
 import werkzeug.exceptions
-from flask import Flask, Response, g, jsonify, request, send_file, stream_with_context
+from flask import Flask, Response, abort, g, jsonify, request, send_file, stream_with_context
 from flask.json.provider import DefaultJSONProvider
 from flask_cors import CORS
 from marshmallow import ValidationError as MarshmallowValidationError
@@ -47,8 +48,16 @@ from libs.exceptions import (  # noqa: E402
     TTSException,
     ValidationError,
 )
+from libs.models import collect_engine_rows  # noqa: E402
+from libs.sample_resolver import get_samples_dir, sample_path_for_voice  # noqa: E402
+from ttssrv import history  # noqa: E402
 from ttssrv.streaming import streaming_wav_header, wav_data, wav_params  # noqa: E402
-from ttssrv.validators import TtsRequestSchema  # noqa: E402
+from ttssrv.validators import (  # noqa: E402
+    HistoryCreateSchema,
+    HistoryListSchema,
+    TtsRequestSchema,
+    VoiceUploadSchema,
+)
 
 # .env via find_dotenv (walks up from cwd) → then .env.local override.
 found = find_dotenv(usecwd=True)
@@ -69,7 +78,14 @@ CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if 
 # Hard cap on request body size — Marshmallow validates `text` after parsing,
 # so without this Werkzeug would buffer arbitrarily large bodies into memory.
 TTS_MAX_BODY_BYTES = int(os.getenv("TTS_MAX_BODY_BYTES", str(2 * 1024 * 1024)))
-TTS_MAX_BODY_MB = TTS_MAX_BODY_BYTES // (1024 * 1024)
+# Voice samples are uploaded as multipart WAV and need a larger cap than JSON text.
+TTS_MAX_SAMPLE_BYTES = int(os.getenv("TTS_MAX_SAMPLE_BYTES", str(16 * 1024 * 1024)))
+# Werkzeug enforces a single body cap for every route, so it is the larger of the two.
+MAX_CONTENT_LENGTH = max(TTS_MAX_BODY_BYTES, TTS_MAX_SAMPLE_BYTES)
+MAX_CONTENT_LENGTH_MB = MAX_CONTENT_LENGTH // (1024 * 1024)
+# Generation history: audio files plus JSON sidecars, pruned to TTS_HISTORY_MAX on write.
+TTS_HISTORY_DIR = os.getenv("TTS_HISTORY_DIR", "data/history")
+TTS_HISTORY_MAX = int(os.getenv("TTS_HISTORY_MAX", "200"))
 # TTS_ENGINES is the set to install + preload at startup (comma-separated).
 # TTS_ENGINE stays the default for requests that omit `engine`. If TTS_ENGINE
 # is unset it falls back to the first preloaded engine; if TTS_ENGINES is unset
@@ -148,7 +164,7 @@ app.config.update(
     dict(
         JSON_DATETIME_FORMAT=DATETIME_FMT,
         JSON_SORT_KEYS=False,
-        MAX_CONTENT_LENGTH=TTS_MAX_BODY_BYTES,
+        MAX_CONTENT_LENGTH=MAX_CONTENT_LENGTH,
     )
 )
 CORS(app, resources={r"/api/*": {"origins": CORS_ORIGINS}})
@@ -161,7 +177,7 @@ def get_req_id() -> str:
 
 def detect_audio_mime(audio_bytes: bytes) -> tuple[str, str]:
     """Return (mimetype, extension) by sniffing audio bytes header."""
-    if audio_bytes.startswith(b"ID3") or audio_bytes[0:2] == b"\xff\xfb":
+    if history.is_mp3(audio_bytes):
         return "audio/mpeg", "mp3"
     if audio_bytes.startswith(b"RIFF"):
         return "audio/wav", "wav"
@@ -186,6 +202,23 @@ def parse_tts_payload() -> dict:
     if errors:
         raise MarshmallowValidationError(errors)
     return schema.load(payload)
+
+
+def acquire_slot() -> int | None:
+    """Take one engine-pool token, or None when the pool is unlimited.
+
+    Raises:
+        queue.Empty: No token freed up within 120 s (answered as 503 by handle_pool_busy).
+    """
+    if TTS_POOL_SIZE <= 0:
+        return None
+    return ENGINE_POOL.get(timeout=120)
+
+
+def release_slot(slot: int | None) -> None:
+    """Return a token taken by acquire_slot to the pool (no-op for None)."""
+    if slot is not None:
+        ENGINE_POOL.put(slot)
 
 
 def token_required(view):
@@ -258,10 +291,19 @@ def engines_list():
                 "available": available,
                 "preload": TTS_ENGINES,
                 "default": TTS_ENGINE_DEFAULT,
+                "language": TTS_LANGUAGE_DEFAULT,
             }
         ),
         200,
     )
+
+
+@app.route("/api/models", methods=["GET"])
+@token_required
+def models_list():
+    """List every engine with its install status and on-disk models, one row per model."""
+    rows = collect_engine_rows()
+    return jsonify({"models": [{"engine": engine, "status": status, "model": model} for engine, status, model in rows]}), 200
 
 
 @app.route("/api/voices", methods=["GET"])
@@ -284,6 +326,86 @@ def voices_list():
     )
 
 
+def read_wav_info(audio_bytes: bytes) -> tuple[int, int, float]:
+    """Return (rate, channels, seconds) of a PCM WAV.
+
+    Raises:
+        ValidationError: The bytes are not a PCM WAV that the stdlib `wave` module can open.
+    """
+    try:
+        with wave.open(io.BytesIO(audio_bytes), "rb") as wav_file:
+            rate = wav_file.getframerate()
+            channels = wav_file.getnchannels()
+            seconds = round(wav_file.getnframes() / rate, 2) if rate > 0 else 0.0
+    except (wave.Error, EOFError) as exc:
+        raise ValidationError(f"Upload is not a PCM WAV: {type(exc).__name__}: {exc}") from exc
+    return rate, channels, seconds
+
+
+def coquitts_default_voice() -> str | None:
+    """Return the stem of the COQUITTS_SAMPLE default voice, or None when unset."""
+    # Imported lazily: the engine module probes torch on import, which the
+    # server should only pay for when a voice is actually being managed.
+    from engines import coquitts
+
+    return coquitts.list_voices()["default"]
+
+
+@app.route("/api/voices", methods=["POST"])
+@token_required
+def voices_upload():
+    """Store an uploaded PCM WAV as a new coquitts voice sample (multipart: file, name, engine)."""
+    form = VoiceUploadSchema().load(request.form.to_dict())
+    upload = request.files.get("file")
+    if upload is None:
+        raise ValidationError("Missing multipart field 'file'")
+    audio_bytes = upload.read()
+    # MAX_CONTENT_LENGTH is the larger of the two body caps, so the sample cap is checked here.
+    if len(audio_bytes) > TTS_MAX_SAMPLE_BYTES:
+        abort(413)
+    rate, channels, seconds = read_wav_info(audio_bytes)
+
+    target = sample_path_for_voice(form["name"])
+    if os.path.exists(target):
+        raise ValidationError(f"Voice '{form['name']}' already exists: {target}")
+    os.makedirs(get_samples_dir(), exist_ok=True)
+    # Written through a .tmp neighbour so a half-written sample never shows up in list_voices().
+    tmp_path = f"{target}.tmp"
+    with open(tmp_path, "wb") as handle:
+        handle.write(audio_bytes)
+    os.replace(tmp_path, target)
+
+    logger.info(f"[{get_req_id()}] Voice '{form['name']}' saved: {len(audio_bytes)} bytes {rate} Hz {channels} ch {seconds}s")
+    return (
+        jsonify(
+            {
+                "engine": form["engine"],
+                "voice": form["name"],
+                "bytes": len(audio_bytes),
+                "rate": rate,
+                "channels": channels,
+                "seconds": seconds,
+            }
+        ),
+        201,
+    )
+
+
+@app.route("/api/voices/<name>", methods=["DELETE"])
+@token_required
+def voices_delete(name: str):
+    """Remove a coquitts voice sample; the default COQUITTS_SAMPLE voice is refused."""
+    form = VoiceUploadSchema().load({"name": name, "engine": request.args.get("engine")})
+    target = sample_path_for_voice(form["name"])
+    if not os.path.isfile(target):
+        abort(404)
+    if form["name"] == coquitts_default_voice():
+        raise ValidationError(f"Voice '{form['name']}' is the default sample and cannot be deleted")
+    os.remove(target)
+    logger.info(f"[{get_req_id()}] Voice '{form['name']}' deleted: {target}")
+    return jsonify({"result": True}), 200
+
+
 def stream_tts(text: str, engine: str, language: str, voice: str | None = None):
     """Synthesize per chunk and stream audio as it is ready (chunked transfer).
 
@@ -298,24 +420,17 @@ def stream_tts(text: str, engine: str, language: str, voice: str | None = None):
         voice: Engine-specific voice id, or None for the engine default.
 
     Returns:
-        A streaming Response, or a 503 JSON tuple when no pool slot frees up.
+        A streaming Response (a busy pool raises queue.Empty, answered as 503).
     """
     chunks = chunk_text(text, max_len=TTS_STREAM_MAX_CHARS) or [text]
-
-    slot = None
-    if TTS_POOL_SIZE > 0:
-        try:
-            slot = ENGINE_POOL.get(timeout=120)
-        except queue.Empty:
-            return jsonify({"error": "All engine slots busy (timeout)"}), 503
+    slot = acquire_slot()
 
     # Synthesize the first chunk up front so the audio format (and any engine
     # error) is known before the streaming response headers are committed.
     try:
         first = text_to_speech_bytes(text=chunks[0], engine=engine, language=language, voice=voice)
     except Exception:
-        if slot is not None:
-            ENGINE_POOL.put(slot)
+        release_slot(slot)
         raise
 
     mimetype, unused_ext = detect_audio_mime(first)
@@ -336,8 +451,7 @@ def stream_tts(text: str, engine: str, language: str, voice: str | None = None):
         except Exception as exc:
             logger.error(f"[{get_req_id()}] stream aborted: {type(exc).__name__}: {exc}")
         finally:
-            if slot is not None:
-                ENGINE_POOL.put(slot)
+            release_slot(slot)
 
     return Response(stream_with_context(generate()), mimetype=mimetype)
 
@@ -360,17 +474,11 @@ def tts_generate():
     if data["stream"]:
         return stream_tts(text, engine, language, voice)
 
-    slot = None
-    if TTS_POOL_SIZE > 0:
-        try:
-            slot = ENGINE_POOL.get(timeout=120)
-        except queue.Empty:
-            return jsonify({"error": "All engine slots busy (timeout)"}), 503
+    slot = acquire_slot()
     try:
         audio_bytes = text_to_speech_bytes(text=text, engine=engine, language=language, voice=voice)
     finally:
-        if slot is not None:
-            ENGINE_POOL.put(slot)
+        release_slot(slot)
 
     mimetype, ext = detect_audio_mime(audio_bytes)
     timestamp = datetime.now(TIMEZONE).strftime("%Y%m%d_%H%M%S")
@@ -380,6 +488,84 @@ def tts_generate():
         as_attachment=True,
         download_name=f"tts_{timestamp}.{ext}",
     )
+
+
+@app.route("/api/history", methods=["POST"])
+@token_required
+def history_create():
+    """Synthesize the text in one piece, store it in the history and return the item."""
+    data = HistoryCreateSchema().load(request.get_json(silent=True) or {})
+    text = data["text"]
+    engine = data.get("engine") or TTS_ENGINE_DEFAULT
+    language = data.get("language") or TTS_LANGUAGE_DEFAULT
+    voice = data.get("voice")
+    logger.info(f"[{get_req_id()}] History request: engine={engine} language={language} voice={voice} chars={len(text)}")
+
+    slot = acquire_slot()
+    start_time = time.monotonic()
+    try:
+        audio_bytes = text_to_speech_bytes(text=text, engine=engine, language=language, voice=voice)
+    finally:
+        release_slot(slot)
+    elapsed = time.monotonic() - start_time
+
+    meta = {"engine": engine, "language": language, "voice": voice, "text": text, "elapsed": elapsed}
+    item = history.save_item(TTS_HISTORY_DIR, audio_bytes, meta, datetime.now(TIMEZONE), TTS_HISTORY_MAX)
+    return jsonify(item), 201
+
+
+@app.route("/api/history", methods=["GET"])
+@token_required
+def history_list():
+    """Page through the history newest first, with `text` cut to a preview."""
+    query = HistoryListSchema().load(request.args.to_dict())
+    total, items = history.list_items(TTS_HISTORY_DIR, query["limit"], query["offset"])
+    return jsonify({"total": total, "items": items}), 200
+
+
+@app.route("/api/history/<item_id>", methods=["GET"])
+@token_required
+def history_get(item_id: str):
+    """Return one history item with its full text, or 404."""
+    item = history.get_item(TTS_HISTORY_DIR, item_id)
+    if item is None:
+        abort(404)
+    return jsonify(item), 200
+
+
+@app.route("/api/history/<item_id>/audio", methods=["GET"])
+@token_required
+def history_audio(item_id: str):
+    """Serve the stored audio inline, or as a download when ?download is truthy."""
+    path = history.audio_path(TTS_HISTORY_DIR, item_id)
+    if path is None:
+        abort(404)
+    fmt = path.rsplit(".", 1)[-1]
+    mimetype = {"wav": "audio/wav", "mp3": "audio/mpeg"}.get(fmt, "application/octet-stream")
+    download = request.args.get("download", "").lower() in TRUE_VALUES
+    # send_file resolves a relative path against the Flask root, not the cwd.
+    return send_file(
+        os.path.abspath(path),
+        mimetype=mimetype,
+        as_attachment=download,
+        download_name=f"tts_{item_id}.{fmt}",
+    )
+
+
+@app.route("/api/history/<item_id>", methods=["DELETE"])
+@token_required
+def history_delete(item_id: str):
+    """Remove one history item (audio plus sidecar), or 404."""
+    if not history.delete_item(TTS_HISTORY_DIR, item_id):
+        abort(404)
+    return jsonify({"result": True}), 200
+
+
+@app.errorhandler(queue.Empty)
+def handle_pool_busy(error):
+    """Answer 503 when acquire_slot waited out its timeout on a full engine pool."""
+    logger.warning(f"[{get_req_id()}] All engine slots busy (timeout)")
+    return jsonify({"error": "All engine slots busy (timeout)"}), 503
 
 
 @app.errorhandler(MarshmallowValidationError)
@@ -423,13 +609,13 @@ def handle_tts_exception(error):
 
 @app.errorhandler(413)
 def payload_too_large(error):
-    """Answer 413 when the body exceeds TTS_MAX_BODY_BYTES, echoing the limit."""
-    logger.warning(f"[{get_req_id()}] Payload too large (limit={TTS_MAX_BODY_MB}MB)")
+    """Answer 413 when the body exceeds MAX_CONTENT_LENGTH, echoing the limit."""
+    logger.warning(f"[{get_req_id()}] Payload too large (limit={MAX_CONTENT_LENGTH_MB}MB)")
     return (
         jsonify(
             {
                 "error": "Payload Too Large",
-                "limit_mb": TTS_MAX_BODY_MB,
+                "limit_mb": MAX_CONTENT_LENGTH_MB,
                 "request_id": get_req_id(),
             }
         ),

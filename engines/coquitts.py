@@ -12,7 +12,7 @@ import os
 import tempfile
 
 from libs.exceptions import CustomError, EngineNotAvailableError, TTSException, ValidationError
-from libs.sample_resolver import resolve_sample_path
+from libs.sample_resolver import list_sample_files, resolve_sample_path, sample_path_for_voice
 from libs.tempfiles import safe_unlink
 
 # Coqui xtts_v2 is the slowest engine but voice-cloning works on book-length text.
@@ -99,14 +99,17 @@ def generate(text: str, config: dict) -> bytes:
 
     Args:
         text: Text to synthesize.
-        config: Configuration dict with 'language'.
+        config: Configuration dict with 'language' and optional 'voice' (a bare
+            sample name under the samples directory, see
+            libs.sample_resolver.sample_path_for_voice). Without 'voice' the
+            COQUITTS_SAMPLE recording is cloned.
 
     Returns:
         Audio bytes in WAV format (22050 Hz by default).
 
     Raises:
         EngineNotAvailableError: Coqui TTS is not installed.
-        ValidationError: Text exceeds MAX_TEXT_LENGTH.
+        ValidationError: Text exceeds MAX_TEXT_LENGTH or the voice name is invalid.
         CustomError: The reference voice sample WAV is missing.
         TTSException: Model lookup or synthesis failed.
     """
@@ -116,24 +119,37 @@ def generate(text: str, config: dict) -> bytes:
         )
     if len(text) > MAX_TEXT_LENGTH:
         raise ValidationError(f"Text too long for coquitts: {len(text)} > {MAX_TEXT_LENGTH}")
-    sample_wav = resolve_sample_path(os.getenv("COQUITTS_SAMPLE", DEFAULT_COQUITTS_SAMPLE))
-    if not os.path.exists(sample_wav):
-        raise CustomError(
-            {
-                "error": "voice_sample_missing",
-                "message": (
-                    f"Voice sample WAV not found: {sample_wav}\n"
-                    f"\n"
-                    f"xtts_v2 needs a 5-10s recording of a target voice. Create one with:\n"
-                    f"    ttsrec                           # record into the configured path\n"
-                    f"    ttsrec {sample_wav}\n"
-                    f"    ttsrec /path/to/your_voice.wav\n"
-                    f"\n"
-                    f"Or set COQUITTS_SAMPLE in .env / .env.local to an existing recording."
-                ),
-                "path": sample_wav,
-            }
-        )
+    voice = config.get("voice")
+    if voice:
+        sample_wav = sample_path_for_voice(voice)
+        if not os.path.exists(sample_wav):
+            raise CustomError(
+                {
+                    "error": "voice_sample_missing",
+                    "message": f"Voice sample WAV not found for voice '{voice}': {sample_wav}",
+                    "voice": voice,
+                    "path": sample_wav,
+                }
+            )
+    else:
+        sample_wav = resolve_sample_path(os.getenv("COQUITTS_SAMPLE", DEFAULT_COQUITTS_SAMPLE))
+        if not os.path.exists(sample_wav):
+            raise CustomError(
+                {
+                    "error": "voice_sample_missing",
+                    "message": (
+                        f"Voice sample WAV not found: {sample_wav}\n"
+                        f"\n"
+                        f"xtts_v2 needs a 5-10s recording of a target voice. Create one with:\n"
+                        f"    ttsrec                           # record into the configured path\n"
+                        f"    ttsrec {sample_wav}\n"
+                        f"    ttsrec /path/to/your_voice.wav\n"
+                        f"\n"
+                        f"Or set COQUITTS_SAMPLE in .env / .env.local to an existing recording."
+                    ),
+                    "path": sample_wav,
+                }
+            )
     try:
         language = config.get("language", "en")
         model_name = os.getenv("COQUITTS_MODEL", DEFAULT_COQUITTS_MODEL)
@@ -177,6 +193,27 @@ def generate(text: str, config: dict) -> bytes:
         if "model" in str(exc).lower() and "not found" in str(exc).lower():
             raise TTSException(f"Coqui TTS model not found.\nError: {exc}") from exc
         raise TTSException(f"Coqui TTS generation failed: {exc}") from exc
+
+
+def list_voices(language: str = "en") -> dict:
+    """List the sample WAV names selectable as `voice`, plus the default sample.
+
+    Cheap on purpose: only a directory listing, no torch and no model load.
+
+    Args:
+        language: Ignored; cloned samples are not language-specific.
+
+    Returns:
+        Dict with 'voices' (sorted `*.wav` stems from the samples directory)
+        and 'default' (stem of COQUITTS_SAMPLE, or None when it is unset).
+    """
+    default_sample = os.getenv("COQUITTS_SAMPLE")
+    default = None
+    if default_sample:
+        default = os.path.basename(default_sample)
+        if default.lower().endswith(".wav"):
+            default = default[: -len(".wav")]
+    return {"voices": list_sample_files(), "default": default}
 
 
 def main():

@@ -11,7 +11,6 @@ import shutil
 import sys
 import threading
 import traceback
-from pathlib import Path
 from typing import Any, cast
 
 from dotenv import find_dotenv, load_dotenv
@@ -39,6 +38,7 @@ try:
         text_to_speech_bytes,
     )
     from libs.config import load_config
+    from libs.models import collect_engine_rows
     from libs.tempfiles import safe_unlink
     from libs.tools import ensure_audio_directory, generate_timestamp_filename
 except ImportError as exc:
@@ -273,78 +273,6 @@ def to_file(args: argparse.Namespace, config: dict[str, Any], engine: str) -> st
         ensure_audio_directory(parent_dir)
     filename: str = args.file
     return filename
-
-
-ENGINE_MODEL_SOURCES = {
-    "pipertts": (os.getenv("PIPERTTS_MODELS", "cache/pipertts"), ["*.onnx"]),
-    "silerotts": (os.getenv("SILEROTTS_MODELS", "cache/silerotts"), ["**/*.pt", "**/*.jit"]),
-    "coquitts": (os.getenv("COQUITTS_MODELS", "cache/coquitts"), ["tts/*"]),
-    "barktts": (os.getenv("BARKTTS_MODELS", "cache/barktts"), ["**/*.pt"]),
-    "kokorotts": (os.getenv("KOKOROTTS_MODELS", "cache/kokorotts"), ["*.onnx", "*.bin"]),
-}
-
-ENGINE_NOTES = {
-    "gtts": "cloud — no local models",
-    "pyttsx3": "uses system espeak voices",
-}
-
-
-def model_display_name(engine: str, rel: Path) -> str:
-    """Render a glob match into a grep-friendly model identifier.
-
-    coqui caches models as tts/tts_models--multilingual--multi-dataset--xtts_v2/.
-    We strip the tts/ prefix and restore '/' so the displayed name matches the
-    string users put in COQUITTS_MODEL.
-    """
-    display = str(rel)
-    if engine == "coquitts":
-        display = display.removeprefix("tts/").replace("--", "/")
-    return display
-
-
-def collect_engine_rows() -> list[tuple[str, str, str]]:
-    """Build the (engine, status, model) rows shown by --list, one row per model."""
-    # Imported lazily: loading the engine package probes every optional dependency,
-    # which is wasted work for runs that never reach --list.
-    from engines import is_engine_available
-
-    engines_dir = Path(__file__).resolve().parent / "engines"
-    engine_names = sorted(p.stem for p in engines_dir.glob("*.py") if p.name != "__init__.py")
-
-    # Silence engine-loader probe warnings — status column already reports it.
-    engines_logger = logging.getLogger("engines")
-    prev_level = engines_logger.level
-    engines_logger.setLevel(logging.ERROR)
-
-    rows: list[tuple[str, str, str]] = []
-    for name in engine_names:
-        status = "installed" if is_engine_available(name) else "missing"
-
-        # Cloud / system-voice engines have no on-disk model files.
-        if name in ENGINE_NOTES:
-            rows.append((name, status, ENGINE_NOTES[name]))
-            continue
-
-        # Engine deps not present → no point looking for models.
-        if status == "missing" or name not in ENGINE_MODEL_SOURCES:
-            rows.append((name, status, "-"))
-            continue
-
-        model_dir, patterns = ENGINE_MODEL_SOURCES[name]
-        models_path = Path(model_dir)
-        files: list[Path] = []
-        if models_path.exists():
-            for pattern in patterns:
-                files.extend(sorted(models_path.glob(pattern)))
-        if not files:
-            rows.append((name, status, "-"))
-        else:
-            for model_file in files:
-                rel = model_file.relative_to(models_path) if model_file.is_relative_to(models_path) else model_file
-                rows.append((name, status, model_display_name(name, rel)))
-
-    engines_logger.setLevel(prev_level)
-    return rows
 
 
 def list_engines_and_models() -> None:

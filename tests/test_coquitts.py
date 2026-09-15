@@ -15,7 +15,7 @@ import types
 import pytest
 
 # Local imports
-from libs.exceptions import CustomError, EngineNotAvailableError, TTSException
+from libs.exceptions import CustomError, EngineNotAvailableError, TTSException, ValidationError
 
 
 def install_fake_torch(monkeypatch):
@@ -226,6 +226,84 @@ def test_generate_creates_separate_instance_per_model(engine, monkeypatch):
     monkeypatch.setenv("COQUITTS_MODEL", "tts_models/en/ljspeech/tacotron2-DDC")
     engine.generate("b", {"language": "en"})
     assert len(FakeTTS.instances) == 2
+
+
+# generate - voice selection via config['voice']
+
+
+def test_generate_with_voice_uses_samples_dir_file(engine, monkeypatch, tmp_path):
+    """config['voice'] selects <COQUITTS_SAMPLES>/<voice>.wav as the cloned sample instead of COQUITTS_SAMPLE."""
+    samples = tmp_path / "samples"
+    samples.mkdir()
+    maria = samples / "maria.wav"
+    maria.write_bytes(b"RIFF")
+    monkeypatch.setenv("COQUITTS_SAMPLES", str(samples))
+    monkeypatch.setenv("COQUITTS_MODEL", "tts_models/multilingual/multi-dataset/xtts_v2")
+
+    audio = engine.generate("hello", {"language": "en", "voice": "maria"})
+    assert audio == b"RIFFFAKECOQUI"
+    last = FakeTTS.instances[-1].calls[-1]
+    assert last["speaker"] == str(maria)
+
+
+def test_generate_unknown_voice_raises_custom_error(engine, monkeypatch, tmp_path):
+    """A voice with no sample file is reported as voice_sample_missing naming the voice and the expected path."""
+    samples = tmp_path / "samples"
+    samples.mkdir()
+    monkeypatch.setenv("COQUITTS_SAMPLES", str(samples))
+
+    with pytest.raises(CustomError) as excinfo:
+        engine.generate("hi", {"language": "en", "voice": "ghost"})
+    payload = excinfo.value.payload
+    assert payload["error"] == "voice_sample_missing"
+    assert payload["voice"] == "ghost"
+    assert payload["path"] == str(samples / "ghost.wav")
+    assert "ghost" in payload["message"]
+    assert excinfo.value.status == 422
+    assert FakeTTS.instances == []
+
+
+def test_generate_invalid_voice_name_raises_validation_error(engine, monkeypatch, tmp_path):
+    """A voice name with a path separator is refused by the traversal guard before any file access."""
+    monkeypatch.setenv("COQUITTS_SAMPLES", str(tmp_path))
+    with pytest.raises(ValidationError, match="Invalid voice name"):
+        engine.generate("hi", {"language": "en", "voice": "../voice"})
+
+
+# list_voices
+
+
+def test_list_voices_returns_stems_and_default(engine, monkeypatch, tmp_path):
+    """list_voices reports the sorted sample stems and the stem of COQUITTS_SAMPLE as default."""
+    samples = tmp_path / "samples"
+    samples.mkdir()
+    for name in ("zoe.wav", "adam.wav"):
+        (samples / name).write_bytes(b"RIFF")
+    (samples / "readme.txt").write_text("skip")
+    monkeypatch.setenv("COQUITTS_SAMPLES", str(samples))
+    monkeypatch.setenv("COQUITTS_SAMPLE", str(tmp_path / "voice.wav"))
+
+    assert engine.list_voices("en") == {"voices": ["adam", "zoe"], "default": "voice"}
+
+
+def test_list_voices_default_none_when_sample_unset(engine, monkeypatch, tmp_path):
+    """Without COQUITTS_SAMPLE the default is None and a missing samples dir lists nothing."""
+    monkeypatch.delenv("COQUITTS_SAMPLE", raising=False)
+    monkeypatch.setenv("COQUITTS_SAMPLES", str(tmp_path / "nowhere"))
+
+    assert engine.list_voices() == {"voices": [], "default": None}
+
+
+def test_list_voices_does_not_need_engine_available(engine, monkeypatch, tmp_path):
+    """Listing voices is a directory scan: it works with AVAILABLE off and never constructs a TTS model."""
+    samples = tmp_path / "samples"
+    samples.mkdir()
+    (samples / "maria.wav").write_bytes(b"RIFF")
+    monkeypatch.setenv("COQUITTS_SAMPLES", str(samples))
+    monkeypatch.setattr(engine, "AVAILABLE", False)
+
+    assert engine.list_voices("en")["voices"] == ["maria"]
+    assert FakeTTS.instances == []
 
 
 # generate — error translation
