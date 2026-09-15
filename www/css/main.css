@@ -325,6 +325,9 @@ input, select, textarea, button { font-family: inherit; }
 
 a { color: var(--tts-primary); text-decoration: none; }
 a:hover { color: var(--tts-primary-dark); text-decoration: underline; }
+/* A link dressed as a button (router-link, download) is a button: no
+   underline on hover, and the button's own ink rather than the link's. */
+a.btn, a.btn:hover, a.btn:focus { text-decoration: none; }
 
 h1 { font-size: 22px; font-weight: 900; }
 h2 { font-size: 18px; font-weight: 900; }
