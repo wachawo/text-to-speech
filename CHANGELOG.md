@@ -14,8 +14,9 @@
   directory (`COQUITTS_SAMPLES`, default `samples`), and `GET /api/voices?engine=coquitts`
   lists those samples with `COQUITTS_SAMPLE` as the default.
 - `POST /api/voices` uploads a voice sample WAV (`file`, `name`, `engine=coquitts`)
-  into the samples directory; `DELETE /api/voices/<name>?engine=coquitts` removes one.
-  Uploads are capped by `TTS_MAX_SAMPLE_BYTES` (default 16 MiB).
+  into the samples directory; `GET /api/voices/<name>/audio?engine=coquitts` serves it
+  back (inline, or as a download with `?download=1`); `DELETE /api/voices/<name>?engine=coquitts`
+  removes one. Uploads are capped by `TTS_MAX_SAMPLE_BYTES` (default 16 MiB).
 - Server-side generation history: `POST /api/history` synthesizes and stores the
   result, `GET /api/history`, `GET /api/history/<id>`,
   `GET /api/history/<id>/audio?download=1` and `DELETE /api/history/<id>` manage it.

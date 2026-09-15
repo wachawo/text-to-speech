@@ -34,12 +34,15 @@
       <div class="table-responsive">
         <table class="table table-striped table-sm table-fixed mb-0">
           <caption>ENGINES</caption>
+          <!-- The first two columns are the same width as the first two of
+               MODELS below, and the last three add up to its MODEL column, so
+               the two tables line up as one sheet. -->
           <colgroup>
-            <col style="width:30%">
+            <col style="width:25%">
+            <col style="width:15%">
             <col style="width:20%">
             <col style="width:20%">
-            <col style="width:15%">
-            <col style="width:15%">
+            <col style="width:20%">
           </colgroup>
           <thead>
             <tr>
@@ -58,8 +61,15 @@
             <tr v-for="row in engineRows" :key="row.name"
                 :title="row.installed ? null : installHint(row.name)">
               <td class="td-ellipsis" :title="row.name">{{ row.name }}</td>
+              <!-- "missing" links to the engine's install guide on GitHub:
+                   the row title says the command, the guide says the rest
+                   (models, GPU, licences). A link, not a button - it is a
+                   navigation, and it opens in its own tab so the server view
+                   stays where it was. -->
               <td :class="{ 'tts-state-on': row.installed }">
-                {{ row.installed ? 'installed' : 'missing' }}
+                <span v-if="row.installed">installed</span>
+                <a v-else :href="installGuide(row.name)" target="_blank" rel="noopener"
+                   :title="'How to install ' + row.name">missing</a>
               </td>
               <td>{{ row.preloaded ? 'yes' : '-' }}</td>
               <td>{{ row.isDefault ? 'yes' : '-' }}</td>
@@ -97,7 +107,9 @@
                 :title="row.status === 'installed' ? null : installHint(row.engine)">
               <td class="td-ellipsis" :title="row.engine">{{ row.engine || '-' }}</td>
               <td :class="{ 'tts-state-on': row.status === 'installed' }">
-                {{ row.status || '-' }}
+                <a v-if="row.status === 'missing'" :href="installGuide(row.engine)" target="_blank" rel="noopener"
+                   :title="'How to install ' + row.engine">missing</a>
+                <span v-else>{{ row.status || '-' }}</span>
               </td>
               <td class="td-ellipsis" :title="row.model">{{ row.model || '-' }}</td>
             </tr>
@@ -117,6 +129,15 @@
    the model files each one has on disk. Read-only - both lists are facts
    about the container, and the only things that change them are a pip run
    and a download, neither of which belongs behind a button in a browser. */
+
+/* Where "missing" points. Every optional engine has a guide under docs/;
+   the two that ship with the server (gtts, pyttsx3) have none, and the
+   overview covers them. */
+var DOCS_URL = 'https://github.com/wachawo/text-to-speech/blob/main/docs/';
+var ENGINE_GUIDES = {
+  barktts: 'BARKTTS.md', coquitts: 'COQUITTS.md', kokorotts: 'KOKOROTTS.md',
+  pipertts: 'PIPERTTS.md', silerotts: 'SILEROTTS.md',
+};
 
 module.exports = {
   data: function () {
@@ -165,6 +186,10 @@ module.exports = {
     installHint: function (name) {
       return 'Install with: ttsgen --install ' + name +
         ' or add it to TTS_ENGINES in the compose file';
+    },
+
+    installGuide: function (name) {
+      return DOCS_URL + (ENGINE_GUIDES[name] || 'ENGINES.md');
     },
 
     reload: function () {

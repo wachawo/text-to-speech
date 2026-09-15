@@ -407,6 +407,23 @@ def voices_delete(name: str):
     return jsonify({"result": True}), 200
 
 
+@app.route("/api/voices/<name>/audio", methods=["GET"])
+@token_required
+def voices_audio(name: str):
+    """Serve a coquitts voice sample WAV inline, or as a download when ?download is truthy."""
+    form = VoiceUploadSchema().load({"name": name, "engine": request.args.get("engine")})
+    target = sample_path_for_voice(form["name"])
+    if not os.path.isfile(target):
+        abort(404)
+    download = request.args.get("download", "").lower() in TRUE_VALUES
+    return send_file(
+        target,
+        mimetype="audio/wav",
+        as_attachment=download,
+        download_name=f"{form['name']}.wav",
+    )
+
+
 def stream_tts(text: str, engine: str, language: str, voice: str | None = None):
     """Synthesize per chunk and stream audio as it is ready (chunked transfer).
 

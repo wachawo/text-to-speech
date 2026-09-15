@@ -125,6 +125,9 @@ curl -X POST localhost:5000/api/voices \
 curl "localhost:5000/api/voices?engine=coquitts" \
   -H "Authorization: Bearer $TTS_TOKEN"
 
+curl "localhost:5000/api/voices/maria/audio?engine=coquitts&download=1" \
+  -H "Authorization: Bearer $TTS_TOKEN" -o maria.wav
+
 # Synthesize into the server-side history instead of the response body
 curl -X POST localhost:5000/api/history \
   -H "Authorization: Bearer $TTS_TOKEN" \

@@ -8,16 +8,13 @@
     <tts-alerts :error.sync="error" :warning.sync="warning"
                 :info.sync="info" :success.sync="success"></tts-alerts>
 
-    <small class="text-secondary d-block mb-2">
-      Samples are used by coquitts (xtts_v2) voice cloning; the other engines
-      ship fixed voices - pick them in the studio.
-    </small>
-
     <div class="tts-card mb-2">
       <div class="fw-bold text-primary border-bottom mb-1">VOICE SAMPLES (coquitts)</div>
       <div class="set-grid">
         <label for="voice-name">Name</label>
-        <input id="voice-name" type="text" class="form-control form-control-sm" style="width:220px"
+        <!-- Both fields share one width: two controls of different lengths in
+             a two-column grid read as a ragged edge, not as a form. -->
+        <input id="voice-name" type="text" class="form-control form-control-sm" style="width:340px"
                v-model="form.name" placeholder="maria"
                pattern="[A-Za-z0-9_-]{1,48}"
                title="Letters, digits, underscore and dash, up to 48 characters" />
@@ -57,8 +54,8 @@
           <caption>VOICES</caption>
           <colgroup>
             <col style="width:70%">
-            <col style="width:20%">
-            <col style="width:10%">
+            <col style="width:15%">
+            <col style="width:15%">
           </colgroup>
           <thead>
             <tr>
@@ -74,11 +71,19 @@
                    cell is ellipsised and a suffix is the part a long name
                    loses. -->
               <td>{{ name === defaultVoice ? 'default' : '' }}</td>
-              <!-- The default sample has no trash glyph at all rather than a
-                   greyed one: the server refuses to delete it, and a control
+              <!-- Three glyphs, each an action on this row: play/pause the
+                   sample through one shared Audio object, download it, delete
+                   it. The default sample has no trash glyph at all rather than
+                   a greyed one: the server refuses to delete it, and a control
                    that can only fail invites the click it then refuses. -->
               <td class="td-actions" @click.stop>
-                <i v-if="name !== defaultVoice" class="fa fa-trash text-danger"
+                <i class="fa fa-fw text-primary" :class="playing === name ? 'fa-pause' : 'fa-play'"
+                   :title="playing === name ? 'Pause' : 'Listen to this sample'"
+                   @click="togglePlay(name)"></i>
+                <a :href="audioUrl(name, true)" download :title="'Download ' + name + '.wav'">
+                  <i class="fa fa-fw fa-download"></i>
+                </a>
+                <i v-if="name !== defaultVoice" class="fa fa-fw fa-trash text-danger"
                    title="Delete this voice" :class="{ disabled: wait.length > 0 }"
                    @click="remove(name)"></i>
               </td>
@@ -125,11 +130,34 @@ module.exports = {
       file: null,
       note: '',
       noteError: false,
+      // The name whose sample is sounding, or null. The Audio object itself is
+      // kept off `data` (see mounted): Vue would make it reactive and walk
+      // every field the browser owns.
+      playing: null,
     };
   },
 
   created: function () {
     this.fetchVoices();
+  },
+
+  mounted: function () {
+    var self = this;
+    this.player = new Audio();
+    this.player.addEventListener('ended', function () { self.playing = null; });
+    this.player.addEventListener('error', function () {
+      self.playing = null;
+      self.error = 'The sample could not be played';
+    });
+  },
+
+  /* Leaving the screen silences it: the Audio object is not in the DOM, so
+     nothing else would stop a sample that is still sounding. */
+  beforeDestroy: function () {
+    if (this.player) {
+      this.player.pause();
+      this.player = null;
+    }
   },
 
   computed: {
@@ -157,6 +185,26 @@ module.exports = {
       if (!this.file || this.form.name) return;
       var stem = this.file.name.replace(/\.[^.]*$/, '');
       this.form.name = stem.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 48);
+    },
+
+    audioUrl: function (name, download) {
+      return '/api/voices/' + encodeURIComponent(name) + '/audio?engine=' + ENGINE +
+        (download ? '&download=1' : '');
+    },
+
+    /* One sample sounds at a time. A second click on the same row pauses it;
+       a click on another row switches to that one, with no pause step. */
+    togglePlay: function (name) {
+      if (!this.player) return;
+      if (this.playing === name) {
+        this.player.pause();
+        this.playing = null;
+        return;
+      }
+      this.player.src = this.audioUrl(name);
+      this.playing = name;
+      var started = this.player.play();
+      if (started && started.catch) started.catch(function () {});
     },
 
     /* Reading */
@@ -234,6 +282,7 @@ module.exports = {
         self.wait.push('deleting ' + name);
         self.$http.delete('/api/voices/' + encodeURIComponent(name), { params: { engine: ENGINE } })
           .then(function () {
+            if (self.playing === name) self.togglePlay(name);
             self.$store.dispatch('push_toast', { level: 'success', message: 'Voice "' + name + '" deleted' });
             self.fetchVoices();
           })

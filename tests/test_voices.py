@@ -135,3 +135,30 @@ def test_delete_bad_name_400_without_touching_disk(client, samples_dir):
     assert resp.status_code == 400
     resp = client.delete("/api/voices/maria")
     assert resp.status_code == 400
+
+
+def test_voice_audio_inline_and_download(client, make_wav, samples_dir):
+    """The sample is served as WAV inline by default and as an attachment with ?download=1."""
+    wav = make_wav(duration_ms=200)
+    assert upload(client, wav).status_code == 201
+
+    resp = client.get("/api/voices/maria/audio?engine=coquitts")
+    assert resp.status_code == 200
+    assert resp.mimetype == "audio/wav"
+    assert resp.data == wav
+    assert "attachment" not in resp.headers.get("Content-Disposition", "")
+
+    resp = client.get("/api/voices/maria/audio?engine=coquitts&download=1")
+    assert resp.status_code == 200
+    assert resp.headers["Content-Disposition"] == "attachment; filename=maria.wav"
+
+
+def test_voice_audio_missing_404_and_bad_name_400(client, samples_dir):
+    """An unknown voice answers 404; a name outside the regexp is refused before any disk access."""
+    resp = client.get("/api/voices/maria/audio?engine=coquitts")
+    assert resp.status_code == 404
+    assert set(resp.get_json().keys()) == {"error", "request_id"}
+
+    resp = client.get("/api/voices/..%2Fetc/audio?engine=coquitts")
+    assert resp.status_code in (400, 404)
+    assert not samples_dir.exists()

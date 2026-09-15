@@ -722,6 +722,12 @@ table thead { text-transform: uppercase; font-weight: 700; }
   transition: transform .1s ease-out;
 }
 .td-actions i:last-child { margin-right: 0; }
+/* A download is a link around a glyph, not a glyph with a handler: the
+   browser saves the file itself. The link takes the glyph's spacing so the
+   row keeps one rhythm, and the glyph inside it gives its own up. */
+.td-actions a { margin-right: .5rem; text-decoration: none; }
+.td-actions a:last-child { margin-right: 0; }
+.td-actions a > i { margin-right: 0; }
 .td-actions i:hover { color: var(--tts-primary-dark); transform: scale(1.2); }
 
 /* Colour, and why some of it is !important and the base above is not.
