@@ -103,10 +103,10 @@
             <table class="table table-striped table-sm table-fixed mb-0">
               <caption>HISTORY</caption>
               <colgroup>
-                <col style="width:27%">
-                <col style="width:20%">
-                <col style="width:15%">
-                <col style="width:32%">
+                <col style="width:28%">
+                <col style="width:22%">
+                <col style="width:14%">
+                <col style="width:30%">
                 <col style="width:6%">
               </colgroup>
               <thead>
