@@ -57,7 +57,9 @@ def test_upload_duplicate_name_400(client, make_wav, samples_dir):
     before = (samples_dir / "maria.wav").read_bytes()
     resp = upload(client, make_wav(duration_ms=300))
     assert resp.status_code == 400
-    assert set(resp.get_json().keys()) == {"error", "request_id"}
+    body = resp.get_json()
+    assert set(body.keys()) == {"error", "message", "request_id"}
+    assert body["message"] == "Voice 'maria' already exists"
     assert (samples_dir / "maria.wav").read_bytes() == before
 
 

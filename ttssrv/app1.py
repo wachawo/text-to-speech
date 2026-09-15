@@ -367,7 +367,8 @@ def voices_upload():
 
     target = sample_path_for_voice(form["name"])
     if os.path.exists(target):
-        raise ValidationError(f"Voice '{form['name']}' already exists: {target}")
+        logger.warning(f"[{get_req_id()}] Voice '{form['name']}' already exists: {target}")
+        raise ValidationError(f"Voice '{form['name']}' already exists")
     os.makedirs(get_samples_dir(), exist_ok=True)
     # Written through a .tmp neighbour so a half-written sample never shows up in list_voices().
     tmp_path = f"{target}.tmp"
@@ -577,9 +578,15 @@ def handle_marshmallow_validation_error(error):
 
 @app.errorhandler(ValidationError)
 def handle_tts_validation_error(error):
-    """Answer 400 when the TTS layer rejects the text, language or voice."""
+    """Answer 400 when the TTS layer rejects the text, language, voice or upload.
+
+    The reason travels as `message`: the web UI shows it beside the control the
+    operator just used (a duplicate voice name, a file that is not a WAV), where
+    a bare "Bad Request" would read as a button that did nothing. These messages
+    are written without filesystem paths, unlike the ones logged.
+    """
     logger.warning(f"[{get_req_id()}] {type(error).__name__}: {str(error)}")
-    return jsonify({"error": "Bad Request", "request_id": get_req_id()}), 400
+    return jsonify({"error": "Bad Request", "message": str(error), "request_id": get_req_id()}), 400
 
 
 @app.errorhandler(EngineNotAvailableError)
@@ -659,6 +666,9 @@ def main() -> int:
             port=TTS_PORT,
             log_config=None,  # always None: keep our LOGGING, never run uvicorn's own dictConfig
             access_log=False,  # after_request logs every request line; only /api/health is demoted to debug
+            # send_file responses already carry a Date header from Werkzeug; uvicorn's
+            # own copy made every audio fetch a duplicate-header warning in nginx.
+            date_header=False,
         )
     return 0
 
