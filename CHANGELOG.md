@@ -3,6 +3,10 @@
 ### [Unreleased]
 
 #### Added
+- `ttswww` also listens on https (`TTS_WWW_TLS_PORT`, default 8443) with a
+  self-signed certificate minted into `./data/certs` on first start, so the
+  microphone recording on the Voices screen works over the LAN, not only on
+  localhost.
 - Web UI in a new `ttswww` service (both compose files, `http://localhost:8080`,
   `TTS_WWW_PORT`): the Studio, Voices and Models screens, Vue 2 without a build
   step, served by nginx with the API proxied under `/api/`. It has no

@@ -154,13 +154,14 @@ Both compose files also start `ttswww`, an nginx container that serves the web U
 ```bash
 docker compose up --build -d
 xdg-open http://localhost:8080      # TTS_WWW_PORT; change it if 8080 is taken
+xdg-open https://localhost:8443     # TTS_WWW_TLS_PORT; self-signed certificate, accept it once
 ```
 
 - **Studio** - type text, pick engine / language / voice, generate, listen, save; every result lands in a history list.
 - **Voices** - upload and delete WAV voice samples for `coquitts` voice cloning.
 - **Models** - the engines and the installed / missing models, the same table as `ttsgen --list`.
 
-The gear in the header opens the settings dialog: the default engine, language and voice for the Studio, and whether the curl example is shown; the choices are stored in the browser. The Studio shows a ready-to-copy `curl` command for the current request. The Voices screen can also record a sample from the microphone, which browsers allow only on `https` or `localhost`.
+The gear in the header opens the settings dialog: the default engine, language and voice for the Studio, and whether the curl example is shown; the choices are stored in the browser. The Studio shows a ready-to-copy `curl` command for the current request. The Voices screen can also record a sample from the microphone, which browsers allow only on `https` or `localhost` - over the LAN open the UI through the https port. A self-signed certificate is generated into `./data/certs` on the first start; mount a real one under the same names (`tts.crt`, `tts.key`) to replace it.
 
 There is no login. When `TTS_TOKENS` is set, put one of those tokens into `TTS_WWW_TOKEN`: nginx adds it to every proxied request, so the browser never sees it and the API stays closed to other clients. Keep that token to letters, digits, `_` and `-`: it is pasted into the nginx config, where a `$` or `"` breaks the parse and the container exits.
 

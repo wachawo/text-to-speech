@@ -85,8 +85,10 @@ services:
       TTS_WWW_TOKEN:        ${TTS_WWW_TOKEN:-}
     ports:
       - "${TTS_WWW_PORT:-8080}:80"
+      - "${TTS_WWW_TLS_PORT:-8443}:443"
     volumes:
       - ./www:/usr/share/nginx/html:ro
+      - ./data/certs:/etc/nginx/certs
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     # service_started, not service_healthy: ttssrv has a 600 s start_period for

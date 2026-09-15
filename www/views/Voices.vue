@@ -39,7 +39,7 @@
                there on https or localhost, and a control that can only fail
                invites the click. Nothing at all when recorder.js did not
                load - that is a missing script, not a browser that cannot. -->
-          <small v-else-if="hasRecorder" class="text-secondary">Recording needs a secure page (https or localhost)</small>
+          <small v-else-if="hasRecorder" class="text-secondary">Recording needs a secure page: open this UI over https (port 8443 unless TTS_WWW_TLS_PORT says otherwise) or on localhost</small>
         </div>
       </div>
 

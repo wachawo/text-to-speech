@@ -28,6 +28,14 @@ upstream ttssrv_upstream {
 
 server {
     listen 80;
+    # https on the same server block: browsers allow the microphone (the
+    # Voices screen's REC) only on a secure page or on localhost, so over the
+    # LAN the UI must be opened through this listener. The certificate is
+    # self-signed by 30-selfsigned-cert.sh unless a real pair is mounted.
+    listen 443 ssl;
+    ssl_certificate     /etc/nginx/certs/tts.crt;
+    ssl_certificate_key /etc/nginx/certs/tts.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
     server_name _;
     access_log /var/log/nginx/access.log unified;
 
