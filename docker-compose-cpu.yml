@@ -68,6 +68,52 @@ services:
         soft: 65535
         hard: 65535
 
+  ttswww:
+    build:
+      context: .
+      dockerfile: docker/www/Dockerfile
+    image: ttswww
+    pull_policy: build
+    container_name: ttswww
+    hostname: ttswww
+    restart: unless-stopped
+    networks:
+      - tts_network
+    environment:
+      TZ:                   ${TZ:-America/New_York}
+      TTS_UPSTREAM:         ttssrv:${TTS_PORT:-5000}
+      TTS_WWW_TOKEN:        ${TTS_WWW_TOKEN:-}
+      TTS_WWW_TLS_PORT:     ${TTS_WWW_TLS_PORT:-8443}
+    ports:
+      - "${TTS_WWW_PORT:-8080}:80"
+      - "${TTS_WWW_TLS_PORT:-8443}:443"
+    volumes:
+      - ./www:/usr/share/nginx/html:ro
+      - ./data/certs:/etc/nginx/certs
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    # service_started, not service_healthy: ttssrv has a 600 s start_period for
+    # model warmup, and the UI shows the warmup itself while polling /api/health.
+    depends_on:
+      ttssrv:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/nginx-healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "128m"
+        max-file: "3"
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=1
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+
 networks:
   tts_network:
     name: tts_network

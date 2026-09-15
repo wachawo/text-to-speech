@@ -1,0 +1,128 @@
+# Rendered by the official nginx image entrypoint (envsubst) into
+# /etc/nginx/conf.d/default.conf. Only the names present in the container
+# environment are substituted, so nginx's own $remote_addr, $uri, $host and the
+# rest survive untouched. The substituted names are ${TTS_UPSTREAM},
+# ${TTS_WWW_TOKEN} and ${TTS_WWW_TLS_PORT}; all are set by docker-compose.
+
+# The access log mirrors the Python log line of ttssrv:
+#   YYYY-MM-DD HH:MM:SS.mmm [INFO]: (nginx) client METHOD /path: status
+# $time_iso8601 carries a "T" and no milliseconds, $msec is unix seconds with
+# three decimals; the two maps splice them together. map is an http-context
+# directive, and conf.d is included inside http {}, so it is allowed here.
+map $time_iso8601 $unified_date {
+    "~^(?<d>\d{4}-\d{2}-\d{2})T(?<t>\d{2}:\d{2}:\d{2})" "$d $t";
+    default                                              "$time_iso8601";
+}
+map $msec $unified_ms {
+    "~\.(?<ms>\d{3})$" "$ms";
+    default            "000";
+}
+
+log_format unified '$unified_date.$unified_ms [INFO]: (nginx) '
+                   '$remote_addr $request_method $uri: $status';
+
+upstream ttssrv_upstream {
+    server ${TTS_UPSTREAM};
+    keepalive 32;
+}
+
+server {
+    listen 80;
+    # https on the same server block: browsers allow the microphone (the
+    # Voices screen's REC) only on a secure page or on localhost, so over the
+    # LAN the UI must be opened through this listener. The certificate is
+    # self-signed by 30-selfsigned-cert.sh unless a real pair is mounted.
+    listen 443 ssl;
+    ssl_certificate     /etc/nginx/certs/tts.crt;
+    ssl_certificate_key /etc/nginx/certs/tts.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    server_name _;
+    access_log /var/log/nginx/access.log unified;
+
+    root  /usr/share/nginx/html;
+    index index.html;
+
+    location /api/ {
+        proxy_pass http://ttssrv_upstream;
+
+        # Every proxy_set_header lives in this one location, and none at the
+        # server level: nginx inherits the server-level set only into a
+        # location that defines none of its own, and the Authorization header
+        # below would have dropped the whole block. The X-Forwarded-* headers
+        # are what ttssrv's ProxyFix reads back as the client address and
+        # host; HTTP/1.1 plus an empty Connection header is what lets the
+        # upstream keepalive above actually be reused.
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host  $host;
+        proxy_set_header X-Forwarded-Port  $server_port;
+        proxy_set_header Connection        "";
+
+        # The web UI has no login of its own. nginx adds the API token to every
+        # proxied request, so the browser never sees it and the API stays
+        # closed to everyone else. An empty TTS_WWW_TOKEN yields "Bearer ",
+        # which ttssrv ignores when TTS_TOKENS is empty and rejects with 401
+        # when it is set.
+        proxy_set_header Authorization "Bearer ${TTS_WWW_TOKEN}";
+
+        # xtts_v2 on CPU takes minutes for a long text; the default 60 s would
+        # cut the response with a 504 while ttssrv is still synthesizing.
+        proxy_connect_timeout 5s;
+        proxy_send_timeout    600s;
+        proxy_read_timeout    600s;
+
+        # No buffering either way: streamed audio reaches <audio> as it is
+        # produced, and a voice sample upload goes straight through instead of
+        # being spooled to disk first. The body cap covers TTS_MAX_SAMPLE_BYTES
+        # (16 MiB by default) with headroom.
+        proxy_buffering         off;
+        proxy_request_buffering off;
+        client_max_body_size    64m;
+
+        # ttssrv answers JSON, so nginx does the same when ttssrv is not there
+        # to answer at all - which is every cold start, since it warms its
+        # engines before it listens. The UI reads `error` off every failure,
+        # and the stock 502 page would land in its error bar as HTML. Only
+        # nginx's own 502: proxy_intercept_errors stays off, so a 503 from a
+        # busy pool reaches the browser as ttssrv wrote it.
+        error_page 502 = @api_down;
+    }
+
+    location @api_down {
+        default_type application/json;
+        return 502 '{"error": "The server is not answering; it may still be starting"}';
+    }
+
+    # What the UI needs to know about this deployment and cannot ask the API:
+    # the token nginx adds to proxied requests, so the curl example on the
+    # Studio can carry it for callers that go to ttssrv directly. The UI has
+    # no login, so anyone who can open it can already use the API through
+    # this proxy; printing the token adds no reach, only convenience.
+    location = /ui-config.json {
+        access_log off;
+        default_type application/json;
+        add_header Cache-Control "no-cache";
+        return 200 '{"token":"${TTS_WWW_TOKEN}","tls_port":"${TTS_WWW_TLS_PORT}"}';
+    }
+
+    # nginx-side liveness for the docker healthcheck, no round trip to the API.
+    location = /nginx-healthz {
+        access_log off;
+        # default_type, not add_header: a return already carries the
+        # Content-Type from nginx.conf, and add_header would append a second.
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
+    # The static UI. no-cache means revalidate, not "do not cache": the browser
+    # keeps the file but asks first, and ETag / Last-Modified answer 304 when
+    # nothing changed. Without it browsers cache heuristically and a deploy
+    # lands half way: a stale Studio.vue next to a fresh app.js.
+    location / {
+        try_files $uri $uri/ =404;
+        add_header Cache-Control "no-cache";
+    }
+}

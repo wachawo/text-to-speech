@@ -57,7 +57,9 @@ def test_upload_duplicate_name_400(client, make_wav, samples_dir):
     before = (samples_dir / "maria.wav").read_bytes()
     resp = upload(client, make_wav(duration_ms=300))
     assert resp.status_code == 400
-    assert set(resp.get_json().keys()) == {"error", "request_id"}
+    body = resp.get_json()
+    assert set(body.keys()) == {"error", "message", "request_id"}
+    assert body["message"] == "Voice 'maria' already exists"
     assert (samples_dir / "maria.wav").read_bytes() == before
 
 
@@ -114,13 +116,28 @@ def test_delete_voice_then_404(client, make_wav, samples_dir):
     assert set(resp.get_json().keys()) == {"error", "request_id"}
 
 
-def test_delete_default_voice_400(client, make_wav, samples_dir, monkeypatch):
-    """The voice named by COQUITTS_SAMPLE is the fallback for every request and stays."""
+def test_delete_default_voice_allowed(client, make_wav, samples_dir, monkeypatch):
+    """The voice named by COQUITTS_SAMPLE can be deleted like any other sample."""
     assert upload(client, make_wav()).status_code == 201
     monkeypatch.setenv("COQUITTS_SAMPLE", str(samples_dir / "maria.wav"))
     resp = client.delete("/api/voices/maria?engine=coquitts")
-    assert resp.status_code == 400
-    assert (samples_dir / "maria.wav").is_file()
+    assert resp.status_code == 200
+    assert not (samples_dir / "maria.wav").exists()
+
+
+def test_voices_list_describes_samples(client, make_wav, samples_dir, monkeypatch):
+    """GET /api/voices for coquitts carries size, rate, channels and seconds per sample."""
+    monkeypatch.setattr(coquitts, "AVAILABLE", False)
+    wav = make_wav(duration_ms=500, rate=22050)
+    assert upload(client, wav).status_code == 201
+    (samples_dir / "broken.wav").write_bytes(b"RIFF" + b"\x00" * 8)
+
+    body = client.get("/api/voices?engine=coquitts").get_json()
+    assert body["voices"] == ["broken", "maria"]
+    assert body["samples"] == [
+        {"name": "broken", "bytes": 12, "rate": None, "channels": None, "seconds": None},
+        {"name": "maria", "bytes": len(wav), "rate": 22050, "channels": 1, "seconds": 0.5},
+    ]
 
 
 def test_delete_bad_name_400_without_touching_disk(client, samples_dir):
@@ -133,3 +150,30 @@ def test_delete_bad_name_400_without_touching_disk(client, samples_dir):
     assert resp.status_code == 400
     resp = client.delete("/api/voices/maria")
     assert resp.status_code == 400
+
+
+def test_voice_audio_inline_and_download(client, make_wav, samples_dir):
+    """The sample is served as WAV inline by default and as an attachment with ?download=1."""
+    wav = make_wav(duration_ms=200)
+    assert upload(client, wav).status_code == 201
+
+    resp = client.get("/api/voices/maria/audio?engine=coquitts")
+    assert resp.status_code == 200
+    assert resp.mimetype == "audio/wav"
+    assert resp.data == wav
+    assert "attachment" not in resp.headers.get("Content-Disposition", "")
+
+    resp = client.get("/api/voices/maria/audio?engine=coquitts&download=1")
+    assert resp.status_code == 200
+    assert resp.headers["Content-Disposition"] == "attachment; filename=maria.wav"
+
+
+def test_voice_audio_missing_404_and_bad_name_400(client, samples_dir):
+    """An unknown voice answers 404; a name outside the regexp is refused before any disk access."""
+    resp = client.get("/api/voices/maria/audio?engine=coquitts")
+    assert resp.status_code == 404
+    assert set(resp.get_json().keys()) == {"error", "request_id"}
+
+    resp = client.get("/api/voices/..%2Fetc/audio?engine=coquitts")
+    assert resp.status_code in (400, 404)
+    assert not samples_dir.exists()

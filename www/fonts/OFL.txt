@@ -1,0 +1,33 @@
+Montserrat
+=========
+
+The four .woff2 files beside this one are the Montserrat typeface, converted
+from the upstream TrueType releases with no other change.
+
+    Copyright 2011 The Montserrat Project Authors
+    https://github.com/JulietaUla/Montserrat
+
+Licensed under the SIL Open Font License, Version 1.1, which is the licence
+recorded in each font's own name table (nameID 13) and reproduced with its FAQ
+at http://scripts.sil.org/OFL.
+
+The OFL asks that the font travel with its copyright notice and licence, which
+is what this file is for: this gateway vendors every asset it serves, so the
+fonts ship inside the wheel rather than being fetched, and nothing else in the
+package would carry the notice.
+
+It is named OFL.txt rather than LICENSE.md deliberately. The repository's
+.gitignore denies *.md outside a short allow-list, to keep working notes out of
+the tree - which silently swallowed this file when it was called LICENSE.md, so
+the fonts were tracked and their notice was not. A test below the fonts now
+holds the pair together.
+
+Two conditions of that licence are worth stating plainly for anyone changing
+these files:
+
+* the fonts may be bundled, redistributed and sold with other software, but not
+  sold on their own;
+* a modified version may not use the reserved name "Montserrat".
+
+Neither is a constraint on lmgateway, which is MIT and only redistributes the
+fonts unchanged. Converting the format is explicitly allowed.

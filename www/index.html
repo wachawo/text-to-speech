@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+  <title>TTS</title>
+
+  <!-- The theme, before anything is painted.
+
+       css/main.css keys its dark palette on `data-theme` and Bootstrap keys
+       its own on `data-bs-theme`; both go on <html> here, inline and ahead of
+       the stylesheets, so a page loading for somebody who picked dark is dark
+       from the first frame. Set from js/app.js instead - which also does it,
+       for the running app - the stylesheets would have painted the light half
+       first and flipped, and that flash is on every page load all day.
+
+       The same key and the same two spellings as app.js: the stored text is
+       hand-editable, and anything else falls through to the operating system's
+       preference. A browser that throws on storage still renders, in the
+       system theme. -->
+  <script>
+    (function () {
+      var theme = 'light';
+      try {
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+          theme = 'dark';
+        }
+        var saved = window.localStorage.getItem('tts.theme');
+        if (saved === 'dark' || saved === 'light') theme = saved;
+      } catch (err) {
+        // A browser with site data switched off: the system preference stands.
+      }
+      document.documentElement.setAttribute('data-theme', theme);
+      document.documentElement.setAttribute('data-bs-theme', theme);
+    })();
+  </script>
+
+  <!-- Every asset is served from this host - third-party libraries under
+       /vendor, the four Montserrat faces css/main.css asks for under /fonts.
+       The server is often run on a machine with no route to the internet, so
+       a CDN <link> would be a UI that renders unstyled exactly where it
+       matters most.
+
+       Nothing is listed here that no screen uses: with no build step every
+       tag is a byte served on every page load, and vendoring is a reason to
+       keep the list short rather than an excuse to grow it. -->
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="stylesheet" href="/vendor/bootstrap.min.css" />
+  <link rel="stylesheet" href="/vendor/fontawesome.min.css" />
+  <link rel="stylesheet" href="/css/main.css" />
+</head>
+<body>
+  <div id="app"></div>
+
+  <script src="/vendor/bootstrap.bundle.min.js"></script>
+  <script src="/vendor/vue.min.js"></script>
+  <script src="/vendor/vue-router.min.js"></script>
+  <script src="/vendor/vuex.min.js"></script>
+  <script src="/vendor/httpVueLoader.min.js"></script>
+  <script src="/vendor/axios.min.js"></script>
+  <!-- The microphone recorder, before the app: it publishes window.TtsRecorder
+       for the Voices screen and has no dependency of its own. -->
+  <script src="/js/recorder.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

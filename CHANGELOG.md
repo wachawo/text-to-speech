@@ -3,22 +3,43 @@
 ### [Unreleased]
 
 #### Added
+- `ttswww` also listens on https (`TTS_WWW_TLS_PORT`, default 8443) with a
+  self-signed certificate minted into `./data/certs` on first start, so the
+  microphone recording on the Voices screen works over the LAN, not only on
+  localhost.
+- Web UI in a new `ttswww` service (both compose files, `http://localhost:8080`,
+  `TTS_WWW_PORT`): the Studio, Voices and Models screens, Vue 2 without a build
+  step, served by nginx with the API proxied under `/api/`. It has no
+  authentication of its own; nginx adds `TTS_WWW_TOKEN` to every proxied request.
 - `GET /api/models` returns the installed / missing model rows that `ttsgen --list`
   prints; the table logic moved from `ttsgen.py` into `libs/models.py` so the
   server can reach it.
 - Per-request voice for `coquitts`: `voice` in a request names a WAV in the samples
   directory (`COQUITTS_SAMPLES`, default `samples`), and `GET /api/voices?engine=coquitts`
-  lists those samples with `COQUITTS_SAMPLE` as the default.
+  lists those samples with `COQUITTS_SAMPLE` as the default, plus a `samples` list
+  with the size, rate, channels and seconds of each file.
 - `POST /api/voices` uploads a voice sample WAV (`file`, `name`, `engine=coquitts`)
-  into the samples directory; `DELETE /api/voices/<name>?engine=coquitts` removes one.
-  Uploads are capped by `TTS_MAX_SAMPLE_BYTES` (default 16 MiB).
+  into the samples directory; `GET /api/voices/<name>/audio?engine=coquitts` serves it
+  back (inline, or as a download with `?download=1`); `DELETE /api/voices/<name>?engine=coquitts`
+  removes one. Uploads are capped by `TTS_MAX_SAMPLE_BYTES` (default 16 MiB).
 - Server-side generation history: `POST /api/history` synthesizes and stores the
   result, `GET /api/history`, `GET /api/history/<id>`,
   `GET /api/history/<id>/audio?download=1` and `DELETE /api/history/<id>` manage it.
   Items live as audio plus a JSON sidecar under `TTS_HISTORY_DIR` (default
   `data/history`), and the oldest are pruned past `TTS_HISTORY_MAX` (default 200).
+- Settings dialog behind the gear in the header: a default engine, language and
+  voice that the Studio remembers, and whether the curl example is shown. The
+  choices live in the browser (`localStorage`), not on the server.
+- The Studio shows a `curl` example for the current request, with a COPY button;
+  it carries the `TTS_WWW_TOKEN` header when the server has tokens (nginx publishes
+  the token and the https port to the UI at `/ui-config.json`).
+- The Voices table lists each sample with its size, rate, channels and length,
+  and plays, downloads or deletes it in place.
+- The Voices screen records a sample from the microphone; the browser encodes it
+  as 22050 Hz 16-bit mono WAV and uploads it like a file.
 
 #### Changed
+- The Studio summary line prints the format in upper case.
 - `GET /api/engines` now also returns `language`, the server's default language.
 - `ENGINE_MODEL_SOURCES` became `libs.models.engine_model_sources()`, which reads the
   `*_MODELS` directories at call time; `ttsgen --list` therefore reads them after the

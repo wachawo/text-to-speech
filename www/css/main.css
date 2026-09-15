@@ -1,0 +1,1019 @@
+/* TTS - palette and component overrides. */
+
+/* Montserrat, served from this host - the server is frequently run on a
+   machine with no route to the internet, so a face fetched from Google would
+   be the one asset that never arrives and the whole UI would fall back to
+   whatever the workstation happens to have.
+
+   Four faces: regular and extra-bold, upright and italic. Declaring extra-bold
+   as `bold` is deliberate rather than sloppy - the app asks for 700 and 900 in
+   places, and CSS font matching resolves each of them to the nearest declared
+   weight, so every heavier-than-normal request lands on the one heavy face we
+   ship instead of the browser synthesising a smeared bold.
+
+   woff2 rather than ttf: the same outlines compress to a third of the bytes,
+   it renders identically, and every browser that can run this UI has
+   supported it since 2016. One format and no `local()` - a workstation's own
+   Montserrat may be a different cut, and half the app in one cut and half in
+   another is worse than either. */
+@font-face {
+  font-family: Montserrat;
+  src: url(/fonts/Montserrat-Regular.woff2) format("woff2");
+  font-style: normal;
+  font-weight: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: Montserrat;
+  src: url(/fonts/Montserrat-Italic.woff2) format("woff2");
+  font-style: italic;
+  font-weight: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: Montserrat;
+  src: url(/fonts/Montserrat-ExtraBold.woff2) format("woff2");
+  font-style: normal;
+  font-weight: bold;
+  font-display: swap;
+}
+@font-face {
+  font-family: Montserrat;
+  src: url(/fonts/Montserrat-ExtraBoldItalic.woff2) format("woff2");
+  font-style: italic;
+  font-weight: bold;
+  font-display: swap;
+}
+
+/* The palette, in two halves.
+
+   Every colour this application paints is named here and nowhere else, and the
+   reason is the dark half below: a rule that reaches for a literal is a rule
+   that stays light when the operator asks for dark, and the way that fails is
+   not a page that looks odd - it is one panel of grey text on a grey card that
+   nobody notices until somebody has to read it at three in the morning. So the
+   literals that would otherwise sit in the header, the toasts and the alert
+   bars are variables, including the ones that never change between the two.
+
+   The light half is the default and is declared on `:root` alone, so a document
+   with no attribute on it renders exactly as it would with no theme at all. The
+   dark half is declared on `:root[data-theme="dark"]`, which outranks it on
+   specificity rather than on source order - the two blocks can be read in the
+   order they are written.
+
+   index.html puts that attribute on the document element before the
+   stylesheets load, and js/app.js again as it loads, from the choice stored in
+   this browser or, where there is none, from the operator's own
+   `prefers-color-scheme`. Set before the app mounts on purpose: applied from a
+   mounted hook, every load would paint the light palette first and flip, and
+   that flash is on every page an operator opens all day. */
+:root {
+  /* The widest the content goes. Past it the window gets margins rather than
+     wider cards. */
+  --tts-page-width: 1600px;
+  /* How far off the left edge everything starts - the brand in the bar and the
+     first card of every screen under it. ONE number for both, because they are
+     the same line: set apart they drift, once with the word six pixels left of
+     the cards and once with it hard against the window. */
+  --tts-edge: 10px;
+  --tts-primary:       #3b89ca;
+  /* The emphatic step of the primary - a hovered link, the page you are on, a
+     pressed button. Darker than the primary on this half and LIGHTER than it on
+     the dark half: the name records what it does on the palette it was named
+     for, and what it has to mean on both is "further from the background". A
+     dark half that kept it literally darker would dim a hovered link towards
+     the page instead of lifting it off, and the one word under the pointer
+     would be the hardest one on the screen to read. */
+  --tts-primary-dark:  #3376ae;
+  --tts-primary-light: #aecae0;
+  /* One step paler than -light, for surfaces that carry text of their own:
+     table headers read at #58666e on this and are muddy on -light. */
+  --tts-primary-pale:  #bbcfe0;
+  --tts-bg:            #f5f5f5;
+  --tts-card:          #ffffff;
+  --tts-text:          #58666e;
+  --tts-text-strong:   #4a5056;
+  /* A row or a control that is present but switched off. A colour rather than
+     an opacity, and the rows use it too: opacity on a <tr> makes a stacking
+     context, so a dimmed icon inside a dimmed row composites twice and lands
+     at 2.13:1 - under the 3:1 a non-text control needs. Measured 3.55:1 on the
+     card and 3.26:1 on the striped background. */
+  --tts-muted:         #7d8a91;
+  --tts-border:        #e5e7eb;
+  --tts-success:       #009259;
+  --tts-success-light: #89d69a;
+  --tts-danger:        #9c1753;
+  --tts-danger-light:  #f5bad4;
+  --tts-warning:       #fad974;
+
+  /* The ink on a saturated fill - a primary button, a red or green utility
+     background, a toast, a table caption, the page you are on.
+
+     One variable for all of them because the three accents move together: on
+     this half they are dark colours carrying white, on the dark half they are
+     bright colours carrying near-black. Written as `#ffffff` rather than `#fff`
+     so the palette can be read out of this file by a tool that expects six
+     digits.
+
+     The amber is the exception and has its own: it is a pale yellow on BOTH
+     halves - a warning that changes colour between themes is one an operator
+     has to learn twice - so the ink on it is the same dark grey either way. */
+  --tts-on-accent:     #ffffff;
+  --tts-on-warning:    #4a5056;
+
+  /* The deep end of the danger family: the hover on a delete glyph, and the
+     text of the error bar. Distinct from --tts-danger, which is the fill. */
+  --tts-danger-deep:   #7d1242;
+  /* The same end of the success family, and it exists for the same reason the
+     line above does: --tts-success is a FILL. As 12px text on the card it
+     measures 4.00:1 and on a striped row 3.83:1, both under the 4.5:1 body
+     text needs, so a word painted with it is a word that fails to be read by
+     the people most likely to need it. This one is 5.79:1 on the card and
+     5.17:1 on a stripe. */
+  --tts-success-deep:  #007544;
+
+  /* Chrome that is not a palette colour but is still a colour, and so still has
+     to have a dark answer. The field border is Bootstrap's own `#ced4da`, named
+     here because a rule of ours draws an edge that has to meet a Bootstrap
+     input exactly; the shadow is a single alpha because a drop shadow has no
+     hue to keep in step. */
+  --tts-field-border:  #ced4da;
+  --tts-shadow:        rgba(0, 0, 0, .2);
+
+  /* The top bar. Its own surface rather than `--tts-primary`, because a band of
+     the primary blue is right on a light page and wrong on a dark one - a
+     saturated stripe across the top of an otherwise dark screen is the one thing
+     on it that glares. The two washes are what the brand cell, the current tab
+     and a hovered tab are tinted with, and they are alphas so they work over
+     whichever surface the bar is. */
+  --tts-header-bg:     var(--tts-primary);
+  --tts-header-ink:    #ffffff;
+  --tts-header-sunken: rgba(0, 0, 0, .14);
+  --tts-header-raised: rgba(255, 255, 255, .12);
+
+  /* Table row states, as alphas painted OVER whatever colour a row carries - see
+     the note on --bs-table-bg-state further down. Black on the light half and
+     white on the dark one: a black wash on a dark row is invisible, so the
+     hovered row would stop being tellable from the rest of the list. */
+  --tts-row-hover:     rgba(0, 0, 0, .09);
+  --tts-row-active:    rgba(0, 0, 0, .17);
+
+  /* The four message bars. Each is a pale wash of its family with the text in
+     the deep end of the same family; the error bar's ink is --tts-danger-deep,
+     which is the same colour the delete glyph hovers to. Measured ratios and the
+     reasoning behind the set are with the .tts-alert rules at the foot of this
+     file. */
+  --tts-alert-error-bg:     #fbe4ed;
+  --tts-alert-warning-bg:   #fdf3d6;
+  --tts-alert-warning-ink:  #6b4e00;
+  --tts-alert-info-bg:      #e4eff9;
+  --tts-alert-info-ink:     #235d8f;
+  --tts-alert-success-bg:   #dff2e8;
+  --tts-alert-success-ink:  #00663f;
+}
+
+/* The dark half.
+
+   Every variable above is answered here - a palette with a hole in it is not a
+   theme with one odd colour, it is one surface still painting light text on a
+   light background in a screen where everything around it changed, and the hole
+   is always in the panel the person reporting it was the first to open.
+
+   The accents are BRIGHTER here rather than darker, and the ink on them
+   correspondingly dark. A blue that reads as a link on white is 4.28:1 on the
+   dark card - under the 4.5:1 a 12px line needs - so the primary is lifted to a
+   brighter blue (5.84:1 on the card, 6.59:1 on the page) and the near-black
+   `--tts-on-accent` carries 6.7:1 on the button it fills. The pale washes
+   invert with them: `-light` and `-deep` swap ends, so a tinted row is a dark
+   wash with bright text instead of a pale wash with dark text.
+
+   Ratios quoted are against `--tts-card` unless they say otherwise, and every
+   text pair in this half was measured rather than eyeballed - the point of a
+   dark theme is to be easier to read, and a set of colours chosen by eye on a
+   bright monitor is reliably not. */
+:root[data-theme="dark"] {
+  /* Native chrome - scrollbars, the caret, the <audio> player's own controls -
+     is drawn by the browser and not by this file. Told which way the page goes,
+     it draws them dark; left alone it draws a white scrollbar down the side of
+     a dark screen and a white player under a dark textarea. Bootstrap sets this
+     too, on its own attribute; declared here as well so the palette does not
+     depend on the other attribute being applied. */
+  color-scheme: dark;
+
+  --tts-primary:       #5ba3dd;
+  --tts-primary-dark:  #8fc3ef;
+  --tts-primary-light: #1b3242;
+  --tts-primary-pale:  #223b4c;
+  --tts-bg:            #14181c;
+  --tts-card:          #1d2328;
+  --tts-text:          #b6c0c7;
+  --tts-text-strong:   #e8edf1;
+  /* 5.12:1 on the card - still clearly quieter than --tts-text at 8.58:1, which
+     is the distinction this colour exists to draw, and well past the 3:1 the
+     switched-off row icons need. */
+  --tts-muted:         #8794a0;
+  --tts-border:        #2f383f;
+  --tts-success:       #35b481;
+  --tts-success-light: #14382a;
+  --tts-danger:        #e8709d;
+  --tts-danger-light:  #3d1a27;
+  /* The one accent that does not invert. Amber means the same thing on both
+     halves and there is no darker amber that still reads as amber. */
+  --tts-warning:       #fad974;
+
+  --tts-on-accent:     #10161b;
+  --tts-on-warning:    #4a5056;
+  --tts-danger-deep:   #f59ec0;
+  /* Lighter than --tts-success rather than darker, the way every ink on this
+     half is: 7.14:1 on the card and 6.18:1 on a striped row. */
+  --tts-success-deep:  #4cc294;
+
+  --tts-field-border:  #3a444c;
+  /* Deeper than the light half's. A drop shadow separates by darkening what is
+     behind it, and there is much less headroom to darken on a dark page. */
+  --tts-shadow:        rgba(0, 0, 0, .6);
+
+  --tts-header-bg:     #182028;
+  --tts-header-ink:    #dfe6ec;
+  --tts-header-sunken: rgba(0, 0, 0, .4);
+  --tts-header-raised: rgba(255, 255, 255, .08);
+
+  --tts-row-hover:     rgba(255, 255, 255, .07);
+  --tts-row-active:    rgba(255, 255, 255, .13);
+
+  --tts-alert-error-bg:     #35161f;
+  --tts-alert-warning-bg:   #33290f;
+  --tts-alert-warning-ink:  #f2cf85;
+  --tts-alert-info-bg:      #16273a;
+  --tts-alert-info-ink:     #a8cdec;
+  --tts-alert-success-bg:   #123024;
+  --tts-alert-success-ink:  #7fd6ab;
+
+  /* What Bootstrap paints that this file does not.
+
+     Every dialog, every input, every pagination edge and every close glyph on
+     these screens is Bootstrap's, and Bootstrap reads its own attribute rather
+     than ours - app.js sets both on the document element for exactly that
+     reason. Pointing its surface variables at ours is what stops the result
+     from being two dark themes side by side: without this the modals come out
+     at Bootstrap's #212529 and the cards at ours, which is close enough to
+     look like a mistake and far enough to see.
+
+     `--bs-emphasis-color-rgb` is deliberately NOT redirected: it is what the
+     striped rows are an alpha of, and Bootstrap's white is what a stripe on a
+     dark row should be. */
+  --bs-body-bg:         var(--tts-card);
+  --bs-body-color:      var(--tts-text);
+  --bs-border-color:    var(--tts-border);
+  --bs-emphasis-color:  var(--tts-text-strong);
+}
+
+/* THE FACES, written down once. Which one a string gets is decided by WHERE it
+   sits, not by a class somebody remembered - see the table rule further down.
+
+   The row face leads with Roboto by choice, and Roboto is proportional: it is
+   a face for reading a table in. It does not ship with the application - only
+   Montserrat is in `fonts/` - so it renders where the machine already has it
+   and falls through to the fixed-width entries where it does not. That is the
+   trade this stack accepts; the fallbacks are all fixed-width so the columns
+   still line up wherever it lands.
+
+   The code face is the row face without Roboto: a command the operator is
+   meant to copy wants every character the same width, so a quote and a space
+   can be told apart by eye. */
+:root {
+  --tts-face: Montserrat, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+              "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --tts-face-rows: Roboto, SFMono-Regular, Menlo, Consolas, monospace;
+  --tts-face-code: SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+html, body { height: 100%; margin: 0; }
+body {
+  font-family: var(--tts-face);
+  font-size: 12px;
+  background: var(--tts-bg);
+  color: var(--tts-text);
+  line-height: 1.4;
+}
+/* Form controls do not inherit the page face - every browser draws them in its
+   own UI font unless told otherwise, which would leave the filter bars and the
+   modals in a different typeface from the tables they sit above. */
+input, select, textarea, button { font-family: inherit; }
+
+/* WHICH FACE A STRING GETS IS DECIDED BY WHERE IT SITS, NOT BY A CLASS.
+
+   THE CHROME KEEPS THE PAGE FACE. Table captions and `thead` are outside
+   `tbody` and so are untouched by the rule below; buttons, filter bars and
+   the header sit outside tables entirely.
+
+   THE ROWS TAKE THE ROW FACE, all of them, whether or not the markup asked.
+   That is what makes a row read as one row: a table of names, rates and
+   figures wants one face across it, and mixing two is jarring exactly when
+   half a row has it.
+
+   Both carry `!important` because Bootstrap's utility does
+   (`.font-monospace{font-family:var(--bs-font-monospace)!important}`), so
+   there is no winning against it without one. Between the two, specificity
+   decides and the more specific one is the row - which is the intended
+   order: inside a table body, position wins over class. */
+.font-monospace { font-family: inherit !important; }
+.table tbody td,
+.table tbody th { font-family: var(--tts-face-rows) !important; }
+
+#app { min-height: 100vh; display: flex; flex-direction: column; }
+
+a { color: var(--tts-primary); text-decoration: none; }
+a:hover { color: var(--tts-primary-dark); text-decoration: underline; }
+/* A link dressed as a button (router-link, download) is a button: no
+   underline on hover, and the button's own ink rather than the link's. */
+a.btn, a.btn:hover, a.btn:focus { text-decoration: none; }
+
+h1 { font-size: 22px; font-weight: 900; }
+h2 { font-size: 18px; font-weight: 900; }
+h3 { font-size: 15px; font-weight: 900; }
+h5 { font-size: 13px; font-weight: 900; }
+
+/* Utilities */
+.bg-blue        { background: var(--tts-primary) !important; color: var(--tts-on-accent) !important; }
+.bg-light-blue  { background: var(--tts-primary-light) !important; color: var(--tts-text); }
+.bg-red         { background: var(--tts-danger) !important; color: var(--tts-on-accent); }
+.bg-light-red   { background: var(--tts-danger-light); color: var(--tts-text-strong); }
+.bg-green       { background: var(--tts-success) !important; color: var(--tts-on-accent); }
+.bg-light-green { background: var(--tts-success-light); color: var(--tts-text-strong); }
+.text-primary   { color: var(--tts-primary) !important; }
+.text-strong    { color: var(--tts-text-strong); }
+.cursor-pointer { cursor: pointer; }
+.editable       { color: var(--tts-primary-dark); border-bottom: 1px dotted var(--tts-primary-dark); cursor: pointer; }
+
+/* Bootstrap overrides */
+/* The label as well as the fill. Bootstrap's `.btn-primary` hardcodes white
+   text, which is right on the light half's primary and 2.7:1 on the dark half's
+   brighter blue - GENERATE and UPLOAD would be the least readable words on a
+   dark screen. Set through Bootstrap's own four state variables rather than
+   with `color: ... !important`, so the disabled and active renderings follow the
+   normal one instead of needing three more overrides; on the light half every
+   one of them resolves to the white Bootstrap already used. */
+.btn-primary {
+  border-color: var(--tts-primary) !important;
+  background-color: var(--tts-primary) !important;
+  --bs-btn-color:          var(--tts-on-accent);
+  --bs-btn-hover-color:    var(--tts-on-accent);
+  --bs-btn-active-color:   var(--tts-on-accent);
+  --bs-btn-disabled-color: var(--tts-on-accent);
+}
+.btn-primary:hover:not([disabled]) { background-color: var(--tts-primary-dark) !important; border-color: var(--tts-primary-dark) !important; }
+textarea:focus, input.form-control:focus, .form-control:focus, .form-select:focus { box-shadow: none; border-color: var(--tts-primary); }
+.disabled, :disabled { opacity: .5 !important; pointer-events: none !important; }
+
+/* Control metrics.
+
+   Bootstrap sizes every control off 1rem - 16px - while this page is set in
+   12px, so a control came out half again as tall as the text beside it, and a
+   `.form-select` taller still than the `.form-control` sharing its
+   `.input-group`: the select's line-height and the arrow's background box are
+   computed from a different font size than the input's. One height for
+   everything instead, 24px, which is also the smallest target WCAG accepts. */
+.form-control,
+.input-group-text,
+.btn { font-size: 12px; }
+.input-group-sm > .form-control,
+.input-group-sm > .input-group-text,
+.input-group-sm > .btn { font-size: 12px; padding: 2px 6px; }
+.form-control-sm,
+.input-group-sm .form-control,
+.input-group-sm .input-group-text { min-height: 24px; line-height: 1.4; }
+/* A stand-alone small input keeps Bootstrap's .25rem/.5rem padding and lands
+   at 26px, two taller than the input-group and button beside it. */
+.form-control-sm { padding: 2px 6px; }
+/* Selects match the compact inputs (24px, 12px font); extra right padding
+   keeps room for the Bootstrap arrow, redrawn smaller to fit the height. */
+.form-select-sm,
+.input-group-sm > .form-select,
+.input-group-sm .form-select {
+  min-height: 24px;
+  height: 24px;
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 2px 22px 2px 6px;
+  background-position: right 6px center;
+  background-size: 10px 8px;
+}
+/* Icon-only buttons must sit on the same 24px rhythm as every input-group in
+   the filter bar; equal .23rem padding made them 26.1px and left the standalone
+   buttons standing proud of the row. Buttons inside an input-group keep the
+   group's own padding (rule above). */
+/* The 85px button: 85 is the content width, the one DevTools draws in the
+   middle of its box, so the 6px paddings and 1px borders of .btn-sm are
+   added on top. Kept border-box: content-box would also add them to the
+   24px min-height and make the button taller than the row. */
+.btn-w85 { min-width: calc(85px + 12px + 2px); }
+.btn-sm {
+  padding: 2px 6px;
+  min-height: 24px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+/* Pagination and alerts sit on the same rhythm; otherwise they are the only
+   controls left at Bootstrap's 14px. */
+.page-link,
+.pagination-sm .page-link { font-size: 12px; padding: 2px 8px; }
+.alert { font-size: 12px; }
+
+/* The dropdown that opens is drawn by the browser, not by this stylesheet, and
+   its rows come out 24px tall - as tall as the whole closed control - because
+   the UA reserves a touch-sized minimum for every option. base-select hands the
+   popup back to the page, so its rows can carry the same 12px rhythm as the rest
+   of the interface. The closed control is deliberately left alone: it stays 24px
+   and keeps matching the inputs it sits beside. A browser without the feature
+   ignores all of this and keeps the native popup, which is the current
+   behaviour.
+
+   The class is in every selector on purpose. Bootstrap sets
+   .form-select { appearance: none } to hide the native arrow, which is a class
+   and outranks a bare element selector - a rule written for `select` alone loses
+   to it, the control stays in the UA's rendering, and the popup goes back to the
+   touch-sized rows this whole block exists to replace. */
+select,
+select.form-select,
+select::picker(select),
+select.form-select::picker(select) {
+  appearance: base-select;
+}
+/* The background is stated as well as the ink. Taking the popup over leaves its
+   surface to whatever the UA would have drawn, and a list of --tts-text on the
+   browser's own white is a menu of pale grey on white the moment the dark
+   palette is in force. */
+select::picker(select) {
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--tts-text);
+  background: var(--tts-card);
+  padding: 0;
+  border: 1px solid var(--tts-field-border);
+  border-radius: 4px;
+}
+select option {
+  min-block-size: auto;
+  padding: 2px 6px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+/* The tick reserves a column the native popup never had, indenting every row. */
+select option::checkmark {
+  display: none;
+}
+/* base-select also hands back the arrow, as a real ::picker-icon element.
+   Every select this application writes carries .form-select, and Bootstrap's
+   chevron is a background image, which leaves nothing for the icon to sit in -
+   so it is hidden outright rather than left to render one chevron beside
+   another the day Bootstrap's padding changes. */
+select.form-select::picker-icon {
+  display: none;
+}
+/* The native popup marks the hovered and the current option; taking the popup
+   over means drawing both again, in the same blues the rest of the app uses. */
+select option:hover {
+  background: var(--tts-primary-light);
+  color: var(--tts-primary);
+}
+select option:checked {
+  background: var(--tts-primary);
+  color: var(--tts-bg);
+}
+
+/* Top bar */
+
+/* How tall the bar is, declared once because two things need it: the bar sets it
+   as a floor, and every dialog opens below it by exactly this much. Two numbers
+   would drift, and the drift shows as a dialog overlapping the tabs or floating
+   a few pixels under them.
+
+   28px is the brand cell - 16px of uppercase on `line-height: 1` inside 6px of
+   padding - which is the tallest thing in the row and therefore what the row
+   already measured before this was written down. A row that wraps to two lines
+   is taller than the floor, which is why the floor is a min-height and the bar
+   publishes its real height (see Header.vue). */
+:root { --tts-header-height: 28px; }
+
+.tts-header { background: var(--tts-header-bg); color: var(--tts-header-ink); line-height: 1; }
+/* The blue band runs the full width of the window; the tabs inside it stop
+   where the page does. Constraining the band itself would leave a coloured
+   stripe down the middle of the screen; leaving the tabs unconstrained would
+   put STUDIO at the far left edge and the first card of the screen it opens
+   two hundred pixels to its right, and the two would stop reading as one
+   column. */
+.tts-header > ul {
+  max-width: var(--tts-page-width);
+  width: 100%;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  min-height: var(--tts-header-height);
+  flex-wrap: wrap;
+  list-style-type: none;
+  /* `0 auto`, not `0`: the auto pair is what centres the tabs under the page
+     below them. */
+  margin: 0 auto;
+  padding: 0 20px 0 0;
+}
+.tts-header a, .tts-header a:hover { color: var(--tts-header-ink); text-decoration: none; }
+.tts-header > ul > li { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.tts-header > ul > li.navbar-brand {
+  background: var(--tts-header-sunken);
+  color: var(--tts-header-ink);
+  font-size: 16px;
+  font-weight: 700;
+  text-transform: uppercase;
+  /* The page's own inset, applied to the TINT rather than to the word inside
+     it: the block then begins on the same vertical as the first card below,
+     and the two read as one column edge. Its own padding stays symmetric, so
+     the word sits centred in the block instead of pinned to its left wall. */
+  margin-left: var(--tts-edge);
+  padding: 6px 10px;
+  margin-right: 8px;
+}
+.tts-header > ul > li.nav-item { padding: 0 8px; text-align: center; }
+.tts-header > ul > li.nav-item a { display: inline-block; line-height: 1; }
+/* A hovered tab lightens rather than grows. Changing the font size reflows the
+   row, so every tab to the right of the pointer slides out from under it. */
+.tts-header > ul > li.nav-item:hover { background: var(--tts-header-raised); }
+.tts-header > ul > li.active { font-weight: 700; background: var(--tts-header-sunken); }
+/* The light/dark switch, and the settings gear beside it in the same reset. A
+   real button, because it changes how the screens look rather than going
+   anywhere - but Bootstrap's base `.btn` takes the body colour and a
+   transparent border box of its own, which on the blue bar is a dark glyph
+   that reads as a disabled control. Pulled back to the bar's ink and stripped
+   of the chrome, so it sits with the tabs instead of on top of them. The hover
+   is the ITEM's, exactly as on a tab: the whole band lights, bar-high, and the
+   button paints nothing of its own - a highlight sized to the glyph beside
+   tabs that light edge to edge read as two different kinds of control. */
+.tts-header > ul > li.nav-theme { padding: 0 6px; }
+.tts-header > ul > li.nav-theme:hover { background: var(--tts-header-raised); }
+.tts-header .tts-theme-toggle {
+  background: none;
+  border: 0;
+  color: var(--tts-header-ink);
+  padding: 0;
+  line-height: 1;
+}
+/* `:focus` keeps a visible ring of its own: the border and shadow Bootstrap
+   draws there are sized for a light background and vanish on this one, which
+   would leave a keyboard operator with no idea where they are. */
+.tts-header .tts-theme-toggle:hover,
+.tts-header .tts-theme-toggle:focus {
+  color: var(--tts-header-ink);
+  background: none;
+  box-shadow: none;
+}
+.tts-header .tts-theme-toggle:focus-visible { outline: 1px solid var(--tts-header-ink); outline-offset: 2px; }
+
+/* Toasts */
+.tts-toaster {
+  position: fixed;
+  top: 36px; right: 16px;
+  display: flex; flex-direction: column; gap: 8px;
+  z-index: 1080;
+  max-width: 380px;
+}
+.tts-toast {
+  display: flex; align-items: center;
+  padding: 10px 12px;
+  border-radius: 8px;
+  box-shadow: 0 12px 30px -10px var(--tts-shadow);
+  cursor: pointer;
+  font-size: 12px;
+  animation: tts-toast-in .25s ease-out;
+  color: var(--tts-on-accent);
+}
+.tts-toast-msg { flex: 1; }
+.tts-toast-x   { opacity: .6; font-size: 10px; }
+.tts-toast:hover .tts-toast-x { opacity: 1; }
+.tts-toast-danger  { background: var(--tts-danger); }
+/* The amber toast keeps a dark label on both halves: the amber itself does not
+   invert, so --tts-text-strong here would put the dark half's near-white text
+   on a pale yellow. */
+.tts-toast-warning { background: var(--tts-warning); color: var(--tts-on-warning); }
+.tts-toast-success { background: var(--tts-success); }
+.tts-toast-info    { background: var(--tts-primary); }
+@keyframes tts-toast-in {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* Page container */
+/* The readable width. Every screen is a set of cards, and a card a quarter of
+   a metre wide holding a label and a number makes the eye travel the whole desk
+   to read one row of a table. Centred, with the page background carrying on to
+   the edges. */
+.tts-page { max-width: var(--tts-page-width); margin: 0 auto;
+            padding: 12px 16px 12px var(--tts-edge); }
+
+/* The filter row at the top of every screen carries `m-1` for the air above
+   and below it. Its horizontal half was putting that row four pixels right of
+   the cards beneath it and of the brand above them - too small to read as a
+   measurement and just enough to read as a screen that does not line up with
+   its own header.
+
+   The page owns the left edge; a row inside it keeps only the space it needs
+   vertically. `!important` because the Bootstrap utility it overrides carries
+   one, and one rule rather than an edit in every template because a screen
+   added tomorrow gets it for nothing. */
+.tts-page > .m-1 { margin-left: 0 !important; margin-right: 0 !important; }
+
+/* Cards */
+.tts-card {
+  background: var(--tts-card);
+  border: 1px solid var(--tts-border);
+  border-radius: 8px;
+  padding: 14px;
+}
+.tts-card .label { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--tts-text); }
+.tts-card .value { font-size: 22px; font-weight: 900; color: var(--tts-text-strong); margin-top: 4px; }
+.tts-card .sub   { font-size: 11px; color: var(--tts-text); margin-top: 6px; }
+
+/* Bento grid - the cards of a screen, four columns wide, each card spanning
+   what it needs. */
+.bento {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-auto-rows: minmax(110px, auto);
+  gap: 10px;
+}
+.bento .span-2 { grid-column: span 2; }
+.bento .span-3 { grid-column: span 3; }
+.bento .span-4 { grid-column: span 4; }
+.bento .row-2  { grid-row: span 2; }
+/* A card that ends where its content does, rather than being stretched to the
+   height of whatever else shares its row. Grid items stretch by default, which
+   is right for two tables side by side and wrong for a figure beside a list. */
+.bento .self-start { align-self: start; }
+
+@media (max-width: 992px) {
+  .bento { grid-template-columns: repeat(2, 1fr); }
+  .bento .span-3, .bento .span-4 { grid-column: span 2; }
+}
+
+/* Tables */
+.table { font-size: 12px; margin-bottom: .25rem; }
+.table > caption {
+  text-transform: uppercase;
+  text-align: center;
+  background: var(--tts-primary);
+  color: var(--tts-on-accent);
+  font-size: 14px;
+  font-weight: 700;
+  caption-side: top;
+  padding: 2px 0;
+  border-radius: 4px 4px 0 0;
+}
+table thead { text-transform: uppercase; font-weight: 700; }
+/* Bluish header band. Bootstrap leaves thead the same white as the body, which
+   on a striped table makes the header read as one more row. The strong ink
+   rather than --tts-text: on the pale band the soft ink measures 3.70:1, and
+   12px bold is not large text. The strong ink is 5.10:1 light, 9.91:1 dark. */
+.table thead td, .table thead th {
+  background-color: var(--tts-primary-pale);
+  color: var(--tts-text-strong);
+}
+/* Bootstrap's own padding is .5rem - nearly 7px at this font size, and the
+   screens here are dense lists an operator scans rather than reads. */
+.table > :not(caption) > * > * { padding: 4px 6px; }
+.table-sm > :not(caption) > * > * { padding: 2px 6px; }
+/* Bootstrap paints this variable as an inset shadow OVER the row's own
+   background, so a translucent black darkens whatever colour is there while an
+   opaque one replaces it. That is the difference that matters here: a
+   `filter: brightness(95%)` would dim the whole row including its text, and a
+   flat hover colour would turn a tinted row grey - losing, under the pointer,
+   the one thing that marks it. The alphas reproduce the greys they replace on
+   a plain row and stay clearly darker than the 5% stripe, which this layer
+   supersedes rather than stacks on.
+
+   Which is also why the two alphas are palette variables: on the dark half a
+   black wash over a dark row is no wash at all, and the hovered row - the one
+   the operator is pointing at - would be the one row in the list with nothing to
+   say it is under the pointer. White at a lower alpha there, same job. */
+.table tbody tr:hover > * { --bs-table-bg-state: var(--tts-row-hover); }
+.table tbody tr.table-active > * { --bs-table-bg-state: var(--tts-row-active); }
+/* Not a Bootstrap class in any version. Without it the `<colgroup>`
+   percentages are only hints to an auto-layout table, which is free to widen
+   any column whose content does not fit and take that width off its
+   neighbours. */
+.table-fixed { table-layout: fixed; width: 100%; }
+/* A SCROLLBAR ONLY WHERE THERE IS SOMEWHERE TO SCROLL TO.
+
+   A `.table-fixed` is `width: 100%` and its `<colgroup>` percentages add up to
+   100, so it is exactly as wide as the `.table-responsive` around it and can
+   never need a horizontal bar. One appears anyway, on every such table: the
+   percentages are resolved against a container whose width is rarely a whole
+   number, each column rounds up, and the sum lands a fraction of a pixel over.
+   `overflow-x: auto` draws a full-width bar for that fraction - a control that
+   moves nothing, under every table.
+
+   `clip` rather than `hidden`, because `hidden` on one axis forces the other
+   to `auto` and would make each of these a scroll container in the direction
+   nobody asked about. `clip` throws the fraction away and creates nothing. */
+.table-responsive:has(> .table-fixed) { overflow-x: clip; }
+.td-ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.td-actions  { white-space: nowrap; }
+
+/* Row actions.
+   The glyph itself is the control - a bare <i>, no <button> and no wrapper.
+   A `btn` carries padding, a border and a min-height, so the column holding
+   one comes out wider than its content and the row taller than every other
+   row in the table, and the list loses the even rhythm an operator scans it
+   by. Nothing here may grow that chrome back: two glyphs in a cell are held
+   apart by margin and never by a btn-group, which would return the same
+   borders and the same height under a different name.
+
+   The scale on hover is the only thing left that says a glyph can be clicked,
+   now that there is no button edge to see. It is painted, not laid out, so
+   nothing in the row moves.
+
+   An <i> takes no focus, so there is no `:focus-visible` rule here. The
+   keyboard reaches a destructive action through the Confirm dialog it opens,
+   whose buttons are real ones. */
+.td-actions i {
+  cursor: pointer;
+  margin-right: .5rem;
+  color: var(--tts-primary);
+  transition: transform .1s ease-out;
+}
+.td-actions i:last-child { margin-right: 0; }
+/* A download is a link around a glyph, not a glyph with a handler: the
+   browser saves the file itself. The link takes the glyph's spacing so the
+   row keeps one rhythm, and the glyph inside it gives its own up. */
+.td-actions a { margin-right: .5rem; text-decoration: none; }
+.td-actions a:last-child { margin-right: 0; }
+.td-actions a > i { margin-right: 0; }
+.td-actions i:hover { color: var(--tts-primary-dark); transform: scale(1.2); }
+
+/* Colour, and why some of it is !important and the base above is not.
+   The base is deliberately weak so that a glyph painting itself keeps its own
+   colour. The two rules below have to beat Bootstrap's `.text-danger`, which
+   is `!important` in its own stylesheet, so nothing weaker lands at all;
+   between two `!important` declarations the more specific one wins, which is
+   why they are written against the class. Bootstrap's red is not this app's
+   red and appears on no other mark on these screens. */
+.td-actions i.text-primary:hover { color: var(--tts-primary-dark) !important; }
+.td-actions i.text-danger { color: var(--tts-danger) !important; }
+.td-actions i.text-danger:hover { color: var(--tts-danger-deep) !important; }
+
+/* A cell that prints a WORD for a state rather than a glyph - `installed`
+   against `missing`, say.
+
+   Its own classes rather than Bootstrap's `.text-success` / `.text-danger`,
+   because those are two literals this bundle never redefines: Bootstrap's dark
+   block overrides neither, so both paint the same two values
+   on a dark page and measure 3.50:1 there - under the 4.5:1 body text needs.
+   The inks below are this app's own and pass on both halves and on a striped
+   row.
+
+   --bs-table-color-state as well as color: Bootstrap paints every cell with
+   `.table > :not(caption) > * > *`, one attribute more specific than a bare
+   class, and reads that variable first - so `color` alone never reached a
+   <td>. Not on a tinted row: a missing engine already sits on the amber
+   .row-warning fill, where this red measures under 2:1 on the dark half, so
+   Models.vue leaves the cell in the row's own ink there. */
+.tts-state-on  { --bs-table-color-state: var(--tts-success-deep); color: var(--tts-success-deep); }
+.tts-state-off { --bs-table-color-state: var(--tts-danger);       color: var(--tts-danger); }
+
+/* Blocked, marked with `aria-disabled` rather than with the .disabled class.
+   That class carries `pointer-events: none`, and with no pointer events there
+   is no `title` tooltip - which on a refused delete is the only place the
+   reason the row cannot go is written down. So the glyph stays hoverable, says
+   `aria-disabled` to assistive technology, and the click handler is what
+   refuses. Screens that have no reason to explain use the .disabled class
+   instead; its opacity and pointer-events are already global and are not
+   repeated here.
+
+   Dimmed with a colour, not with opacity: two opacities multiply, and a dimmed
+   icon inside a dimmed row lands under half the 3:1 a non-text control needs.
+   A flat muted colour does not compound.
+
+   Last in this group on purpose: it ties on specificity with the danger rules
+   above and the later of two equals wins, so a blocked glyph stays muted and
+   still under the pointer instead of lighting up as if it were live. */
+.td-actions i[aria-disabled="true"],
+.td-actions i[aria-disabled="true"]:hover {
+  color: var(--tts-muted) !important;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Row state, from the palette rather than from Bootstrap's contextual classes.
+
+   `.table-warning` and its siblings are literals in every Bootstrap build -
+   a pastel wash behind black ink - and on a dark page that is a light patch
+   that reads as a layout fault rather than as a mark. Worse, their
+   `--bs-table-striped-bg` is opaque, so every second tinted row on a striped
+   table goes back to pastel whatever is done to `--bs-table-bg`. These three
+   name tokens instead, and the `-light` tokens are already dark washes on the
+   dark half, so one declaration serves both themes. No hover rule of their
+   own: the table's --bs-table-bg-state darkens whatever colour a row already
+   carries, so a tinted row deepens under the pointer by itself.
+
+   Set on the cells rather than on the row, because that is where Bootstrap
+   reads `--bs-table-bg`. This build (5.3.3) already stripes with an alpha of
+   the emphasis colour, so the tint shows through on every second row; only
+   the stripe's INK has to be pointed back at the row's own, or the odd rows
+   would print the emphasis colour - near-white on the dark half - on amber. */
+.row-warning > *,
+.row-danger > *,
+.row-info > * {
+  --bs-table-striped-color: var(--bs-table-color);
+}
+.row-warning > * { --bs-table-bg: var(--tts-warning);       --bs-table-color: var(--tts-on-warning); }
+.row-danger  > * { --bs-table-bg: var(--tts-danger-light);  --bs-table-color: var(--tts-text-strong); }
+.row-info    > * { --bs-table-bg: var(--tts-primary-light); --bs-table-color: var(--tts-text); }
+
+/* Pagination.
+
+   The active page needs its own colour, not just its own background. The rule
+   below it paints every page link in the primary blue, and an active rule that
+   set the background to that same blue and said nothing about the text would
+   leave the page you are on the one number on the row that cannot be read.
+
+   The pair is primary-DARK behind white, measured rather than picked: white on
+   the plain primary is 3.74:1 and the app background on it is 3.43:1, both
+   under the 4.5:1 a 12px figure needs. White on primary-dark is 4.83:1. It
+   also puts the current page a shade darker than the one under the cursor,
+   which is the difference doing the work when both are blue. */
+.pagination .page-link { color: var(--tts-primary); }
+.pagination .page-item.active .page-link {
+  background-color: var(--tts-primary-dark);
+  border-color: var(--tts-primary-dark);
+  color: var(--tts-on-accent);
+}
+
+/* Wait banner */
+.wait-banner { background: var(--tts-border); border-radius: 4px; padding: 4px 8px; text-align: center; font-size: 11px; }
+
+/* Modal.
+   Every dialog carries `py-1 px-3` on its header, `py-2` on its body and `p-1`
+   on its footer, and a Bootstrap spacing utility is !important - so padding
+   rules here would never apply to anything. The spacing lives in the markup;
+   only the title needs saying, because there is no utility for it. */
+.modal-header.bg-blue .modal-title { font-weight: 700; font-size: 14px; margin: 0; }
+/* The close control, at the far right where a close control belongs.
+   Bootstrap 5 does not put `justify-content: space-between` on .modal-header -
+   it leans on `.btn-close` carrying its own `margin-left: auto`. Every dialog
+   here uses a plain button with an icon instead of `.btn-close`, so nothing
+   pushes it anywhere and it would sit against the title. Keyed on the dismiss
+   attribute rather than on a class, so a dialog that adds a second header
+   control still gets this one pushed right; `ms-auto` in the markup says the
+   same thing where the attribute is missing. */
+.modal-header > [data-bs-dismiss="modal"] { margin-left: auto; }
+
+/* Every dialog opens UNDER the bar rather than over it.
+
+   Centred or floated near the top, a dialog covers the tabs and whichever
+   control opened it - including the tab whose screen the operator is changing
+   while they change it, which is the one thing they want to keep in view. Pushed
+   down by the bar's own height, a dialog reads as a panel belonging to the screen
+   it came from.
+
+   The offset is on the scroll container, not a margin on the dialog: `.modal` is
+   what scrolls, so a margin here would be scrolled away with the content and the
+   dialog would slide under the bar on a short screen.
+
+   The height is published by the bar itself (Header.vue) onto the document
+   element, because the bar is the only thing that knows it and it changes when
+   the tabs wrap onto a second line on a narrow window. The floor declared above
+   is what applies before the bar has been measured. */
+.modal {
+  padding-top: var(--tts-header-height);
+}
+.modal .modal-dialog {
+  margin-top: 0;
+}
+
+/* Settings blocks: a label column of fixed width, controls in one column
+   beside it, so every control in a block starts on the same x whatever the
+   word beside it is. Fixed rather than max-content - otherwise each grid
+   measures its own label column and two blocks do not share a left edge.
+
+   2px between rows against 10px between a label and its control: the
+   horizontal gap separates a label from the thing it names, the vertical one
+   separates settings that have nothing to do with each other. */
+.set-grid {
+  display: grid;
+  grid-template-columns: 152px minmax(max-content, 1fr);
+  gap: 2px 10px;
+  align-items: center;
+}
+.set-grid > label { margin: 0; }
+.set-select { width: 140px; }
+
+/* Tabs inside a dialog or a settings screen, on the page's rhythm. Bootstrap
+   computes `.nav-link` off 1rem with .5rem of padding and the strip comes out
+   half again as tall as everything else around it. Colours are left alone -
+   they already follow `data-bs-theme`. Bold only on the open tab, as in the
+   header. */
+.set-tabs .nav-link        { padding: 3px 12px; font-size: 12px; }
+.set-tabs .nav-link.active { font-weight: 700; }
+
+/* A checkbox on the same rhythm. Bootstrap sizes the box off 1em, which on
+   this page is a 12px target smaller than the glyphs beside it; 14px is
+   findable without standing proud of the 24px row. The label is the page size
+   said explicitly, so a checkbox inside a dialog does not inherit whatever the
+   dialog's title set. */
+.form-check { min-height: 24px; }
+.form-check-input { width: 14px; height: 14px; margin-top: 2px; }
+.form-check-label { font-size: 12px; }
+
+/* A command to copy - the curl example under the player. Wrapped rather than
+   scrolled: a command whose end is off the right edge is a command that gets
+   copied without its end. `anywhere` because a token in it can be a URL or a
+   quoted paragraph with no space to break at. One size down from the page,
+   because it is a quotation rather than the text. */
+.tts-code {
+  font-family: var(--tts-face-code);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--tts-bg);
+  border: 1px solid var(--tts-border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin: 0;
+  color: var(--tts-text-strong);
+}
+
+/* A fact shown as text rather than as a disabled field - a disabled input
+   looks like a field that could be filled in later. `overflow-wrap` because
+   an id is longer than its cell and half an id is useless; `min-width: 0`
+   because a flex item refuses to shrink below its longest word and pushes the
+   value past the right edge. */
+.detail-value { overflow-wrap: anywhere; min-width: 0; }
+
+/* The four message bars (views/Alerts.vue), above every screen's table.
+
+   Not Bootstrap's own .alert-danger / -warning / -info / -success. Those are a
+   different set of hues from the palette at the top of this file, so a warning
+   bar would sit above an amber row in a colour close enough to read as the
+   same thing and far enough to look like a mistake.
+
+   Each bar is a pale wash of its family with the text in the dark end of the
+   same family. Measured against the 4.5:1 body text needs: error 8.5:1,
+   warning 7.0:1, info 5.9:1, success 6.1:1 - comfortably clear, which matters
+   because these carry the only account of what the last write did.
+
+   On the dark half the two ends swap - a deep wash carrying bright text - and
+   the eight colours are palette variables for that reason alone. Measured the
+   same way: error 8.2:1, warning 9.6:1, info 9.1:1, success 8.2:1. The wash
+   inverts rather than darkening a little, because a pale pink bar left standing
+   in a dark screen is brighter than anything around it and drags the eye off
+   whatever the operator was reading.
+
+   Colour is not the only signal. The 3px rule down the left edge and the icon
+   both say which bar this is, so the four stay tellable apart on a monochrome
+   display and to an operator who cannot separate the reds from the greens. */
+.tts-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  border-radius: 4px;
+  border-left: 3px solid transparent;
+  font-size: 12px;
+}
+/* min-width: 0 so a long unbroken token - a model id, a file name, a URL -
+   wraps inside the bar instead of stretching the flex line and pushing the
+   dismiss control off the right edge of the page. */
+.tts-alert-msg { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+/* 24px square, the WCAG minimum. Bootstrap's .btn-close is 1em plus .25em of
+   padding - 18px at this font size - and it is the one control every bar
+   carries. `box-sizing: content-box` comes from Bootstrap, so 12 + 6 + 6. */
+.tts-alert .btn-close {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  padding: 6px;
+  background-size: 12px;
+  opacity: .55;
+}
+.tts-alert .btn-close:hover { opacity: 1; }
+/* The error bar's ink is --tts-danger-deep rather than a variable of its own:
+   it is the same colour the delete glyph hovers to, and two variables holding
+   one colour is how the two stop matching. */
+.tts-alert-error   { background: var(--tts-alert-error-bg);   color: var(--tts-danger-deep);        border-left-color: var(--tts-danger); }
+.tts-alert-warning { background: var(--tts-alert-warning-bg); color: var(--tts-alert-warning-ink); border-left-color: var(--tts-warning); }
+.tts-alert-info    { background: var(--tts-alert-info-bg);    color: var(--tts-alert-info-ink);    border-left-color: var(--tts-primary); }
+.tts-alert-success { background: var(--tts-alert-success-bg); color: var(--tts-alert-success-ink); border-left-color: var(--tts-success); }
+
+/* The studio.
+
+   The text box is the screen's main surface and is sized as one: tall enough
+   for a paragraph without scrolling, resizable downwards by the operator, and
+   on the page's 12px rather than Bootstrap's 16px. The player row holds the
+   native <audio> element beside the SAVE button and the figures about the
+   take; Bootstrap has no rule for <audio>, so its height is set here to sit
+   with the 24px controls beside it, and its colours follow the theme through
+   `color-scheme` on the palette rather than through anything a stylesheet can
+   reach. */
+.tts-studio textarea { min-height: 320px; resize: vertical; font-size: 12px; }
+.tts-player { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.tts-player audio { height: 32px; }

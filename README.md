@@ -1,4 +1,4 @@
-## text-to-speech — a single interface for TTS engines
+## text-to-speech - a single interface for TTS engines
 
 [![CI](https://github.com/wachawo/text-to-speech/actions/workflows/ci.yml/badge.svg)](https://github.com/wachawo/text-to-speech/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/wachawo/text-to-speech/blob/main/LICENSE)
@@ -6,7 +6,9 @@
 
 **[English](https://github.com/wachawo/text-to-speech/blob/main/README.md)** | [Español](https://github.com/wachawo/text-to-speech/blob/main/docs/README_ES.md) | [Português](https://github.com/wachawo/text-to-speech/blob/main/docs/README_PT.md) | [Français](https://github.com/wachawo/text-to-speech/blob/main/docs/README_FR.md) | [Deutsch](https://github.com/wachawo/text-to-speech/blob/main/docs/README_DE.md) | [Italiano](https://github.com/wachawo/text-to-speech/blob/main/docs/README_IT.md) | [Русский](https://github.com/wachawo/text-to-speech/blob/main/docs/README_RU.md) | [中文](https://github.com/wachawo/text-to-speech/blob/main/docs/README_ZH.md) | [日本語](https://github.com/wachawo/text-to-speech/blob/main/docs/README_JA.md) | [हिन्दी](https://github.com/wachawo/text-to-speech/blob/main/docs/README_HI.md) | [한국어](https://github.com/wachawo/text-to-speech/blob/main/docs/README_KR.md)
 
-`text-to-speech` lets you work with several speech-synthesis engines through one interface. You can start with online gTTS and later switch to local Piper, Silero, Coqui, Bark, or Kokoro — without rewriting your CLI commands, Python code, or HTTP integration.
+![The Studio screen of the web UI](https://raw.githubusercontent.com/wachawo/text-to-speech/main/docs/images/studio.png)
+
+`text-to-speech` lets you work with several speech-synthesis engines through one interface. You can start with online gTTS and later switch to local Piper, Silero, Coqui, Bark, or Kokoro - without rewriting your CLI commands, Python code, or HTTP integration.
 
 The project fits local use, automation, and running your own TTS server on the network.
 
@@ -26,7 +28,7 @@ The project fits local use, automation, and running your own TTS server on the n
 | `coquitts`  | ✅      | CPU / **GPU** | ★★★★★   | high-quality voices and voice cloning          |
 | `barktts`   | ✅      | CPU / **GPU** | ★★★★★   | expressive speech, emotions, music, and singing |
 
-`gtts`, `pyttsx3`, `pipertts`, `silerotts`, and `kokorotts` run fine on CPU. `coquitts` and `barktts` can also run without a GPU, but synthesis is noticeably slower — a CUDA-capable graphics card is recommended for them.
+`gtts`, `pyttsx3`, `pipertts`, `silerotts`, and `kokorotts` run fine on CPU. `coquitts` and `barktts` can also run without a GPU, but synthesis is noticeably slower - a CUDA-capable graphics card is recommended for them.
 
 ### Installation
 
@@ -125,6 +127,9 @@ curl -X POST localhost:5000/api/voices \
 curl "localhost:5000/api/voices?engine=coquitts" \
   -H "Authorization: Bearer $TTS_TOKEN"
 
+curl "localhost:5000/api/voices/maria/audio?engine=coquitts&download=1" \
+  -H "Authorization: Bearer $TTS_TOKEN" -o maria.wav
+
 # Synthesize into the server-side history instead of the response body
 curl -X POST localhost:5000/api/history \
   -H "Authorization: Bearer $TTS_TOKEN" \
@@ -142,6 +147,24 @@ curl -X DELETE localhost:5000/api/history/<id> \
   -H "Authorization: Bearer $TTS_TOKEN"
 ```
 
+#### Web UI
+
+Both compose files also start `ttswww`, an nginx container that serves the web UI and proxies `/api/` to `ttssrv`:
+
+```bash
+docker compose up --build -d
+xdg-open http://localhost:8080      # TTS_WWW_PORT; change it if 8080 is taken
+xdg-open https://localhost:8443     # TTS_WWW_TLS_PORT; self-signed certificate, accept it once
+```
+
+- **Studio** - type text, pick engine / language / voice, generate, listen, save; every result lands in a history list.
+- **Voices** - upload or record WAV voice samples for `coquitts` voice cloning; play, download and delete them.
+- **Models** - the engines and the installed / missing models, the same table as `ttsgen --list`.
+
+The gear in the header opens the settings dialog: the default engine, language and voice for the Studio, and whether the curl example is shown; the choices are stored in the browser. The Studio shows a ready-to-copy `curl` command for the current request, with the `TTS_WWW_TOKEN` header when the server has tokens enabled (the UI reads it from nginx at `/ui-config.json`). The Voices screen can also record a sample from the microphone, which browsers allow only on `https` or `localhost` - over the LAN open the UI through the https port. A self-signed certificate is generated into `./data/certs` on the first start; mount a real one under the same names (`tts.crt`, `tts.key`) to replace it.
+
+There is no login. When `TTS_TOKENS` is set, put one of those tokens into `TTS_WWW_TOKEN`: nginx adds it to every proxied request, so the API stays closed to clients that do not go through the UI (the UI itself shows the token in its `curl` example). Keep `$` and `"` out of that token: it is pasted into the nginx config, where either breaks the parse and the container exits.
+
 For working with and testing the server there is a separate CLI client, `ttsapi`. It has the same main flags as `ttsgen`, but synthesis runs on the server. The server address and token are taken from `TTS_URL` and `TTS_TOKEN`.
 
 ```bash
@@ -158,7 +181,9 @@ text-to-speech/
 ├── libs/           # shared core: API, tools, playback, exceptions
 ├── install/        # installers for ttsgen --install <engine>
 ├── ttssrv/         # Flask HTTP server
-├── docker/         # Docker builds for GPU and CPU
+├── www/            # web UI: Vue 2 without a build step, served by nginx
+├── nginx/          # nginx main config and the conf.d template for ttswww
+├── docker/         # Docker builds for GPU, CPU and the web UI
 ├── docs/           # per-engine docs and README translations
 └── tests/          # pytest tests, no model downloads and no GPU
 ```

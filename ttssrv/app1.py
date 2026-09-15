@@ -49,7 +49,7 @@ from libs.exceptions import (  # noqa: E402
     ValidationError,
 )
 from libs.models import collect_engine_rows  # noqa: E402
-from libs.sample_resolver import get_samples_dir, sample_path_for_voice  # noqa: E402
+from libs.sample_resolver import describe_sample_files, get_samples_dir, sample_path_for_voice  # noqa: E402
 from ttssrv import history  # noqa: E402
 from ttssrv.streaming import streaming_wav_header, wav_data, wav_params  # noqa: E402
 from ttssrv.validators import (  # noqa: E402
@@ -313,6 +313,9 @@ def voices_list():
     engine = request.args.get("engine") or TTS_ENGINE_DEFAULT
     language = request.args.get("language") or TTS_LANGUAGE_DEFAULT
     info = get_engine_voices(engine, language)
+    # Only the sample-cloning engine has files behind its voices; the web UI
+    # shows their size, rate and length in the samples table.
+    samples = describe_sample_files() if engine == "coquitts" else []
     return (
         jsonify(
             {
@@ -320,6 +323,7 @@ def voices_list():
                 "language": language,
                 "voices": info.get("voices", []),
                 "default": info.get("default"),
+                "samples": samples,
             }
         ),
         200,
@@ -342,15 +346,6 @@ def read_wav_info(audio_bytes: bytes) -> tuple[int, int, float]:
     return rate, channels, seconds
 
 
-def coquitts_default_voice() -> str | None:
-    """Return the stem of the COQUITTS_SAMPLE default voice, or None when unset."""
-    # Imported lazily: the engine module probes torch on import, which the
-    # server should only pay for when a voice is actually being managed.
-    from engines import coquitts
-
-    return coquitts.list_voices()["default"]
-
-
 @app.route("/api/voices", methods=["POST"])
 @token_required
 def voices_upload():
@@ -367,7 +362,8 @@ def voices_upload():
 
     target = sample_path_for_voice(form["name"])
     if os.path.exists(target):
-        raise ValidationError(f"Voice '{form['name']}' already exists: {target}")
+        logger.warning(f"[{get_req_id()}] Voice '{form['name']}' already exists: {target}")
+        raise ValidationError(f"Voice '{form['name']}' already exists")
     os.makedirs(get_samples_dir(), exist_ok=True)
     # Written through a .tmp neighbour so a half-written sample never shows up in list_voices().
     tmp_path = f"{target}.tmp"
@@ -394,16 +390,36 @@ def voices_upload():
 @app.route("/api/voices/<name>", methods=["DELETE"])
 @token_required
 def voices_delete(name: str):
-    """Remove a coquitts voice sample; the default COQUITTS_SAMPLE voice is refused."""
+    """Remove a coquitts voice sample, the COQUITTS_SAMPLE default included.
+
+    Deleting the default is allowed on purpose: a request without `voice` then
+    fails with the engine's voice_sample_missing message, which names the file
+    to record, and the web UI warns before the click.
+    """
     form = VoiceUploadSchema().load({"name": name, "engine": request.args.get("engine")})
     target = sample_path_for_voice(form["name"])
     if not os.path.isfile(target):
         abort(404)
-    if form["name"] == coquitts_default_voice():
-        raise ValidationError(f"Voice '{form['name']}' is the default sample and cannot be deleted")
     os.remove(target)
     logger.info(f"[{get_req_id()}] Voice '{form['name']}' deleted: {target}")
     return jsonify({"result": True}), 200
+
+
+@app.route("/api/voices/<name>/audio", methods=["GET"])
+@token_required
+def voices_audio(name: str):
+    """Serve a coquitts voice sample WAV inline, or as a download when ?download is truthy."""
+    form = VoiceUploadSchema().load({"name": name, "engine": request.args.get("engine")})
+    target = sample_path_for_voice(form["name"])
+    if not os.path.isfile(target):
+        abort(404)
+    download = request.args.get("download", "").lower() in TRUE_VALUES
+    return send_file(
+        target,
+        mimetype="audio/wav",
+        as_attachment=download,
+        download_name=f"{form['name']}.wav",
+    )
 
 
 def stream_tts(text: str, engine: str, language: str, voice: str | None = None):
@@ -577,9 +593,15 @@ def handle_marshmallow_validation_error(error):
 
 @app.errorhandler(ValidationError)
 def handle_tts_validation_error(error):
-    """Answer 400 when the TTS layer rejects the text, language or voice."""
+    """Answer 400 when the TTS layer rejects the text, language, voice or upload.
+
+    The reason travels as `message`: the web UI shows it beside the control the
+    operator just used (a duplicate voice name, a file that is not a WAV), where
+    a bare "Bad Request" would read as a button that did nothing. These messages
+    are written without filesystem paths, unlike the ones logged.
+    """
     logger.warning(f"[{get_req_id()}] {type(error).__name__}: {str(error)}")
-    return jsonify({"error": "Bad Request", "request_id": get_req_id()}), 400
+    return jsonify({"error": "Bad Request", "message": str(error), "request_id": get_req_id()}), 400
 
 
 @app.errorhandler(EngineNotAvailableError)
@@ -659,6 +681,9 @@ def main() -> int:
             port=TTS_PORT,
             log_config=None,  # always None: keep our LOGGING, never run uvicorn's own dictConfig
             access_log=False,  # after_request logs every request line; only /api/health is demoted to debug
+            # send_file responses already carry a Date header from Werkzeug; uvicorn's
+            # own copy made every audio fetch a duplicate-header warning in nginx.
+            date_header=False,
         )
     return 0
 
