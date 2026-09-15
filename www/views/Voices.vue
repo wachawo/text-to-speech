@@ -29,17 +29,17 @@
           <input id="voice-file" ref="file" type="file" class="form-control form-control-sm" style="width:340px"
                  accept=".wav,audio/wav" @change="onFile"
                  title="A PCM WAV, mono, 22050 Hz, 5-10 seconds of clean speech; ttsrec records one from the command line" />
-          <button v-if="canRecord" type="button" class="btn btn-sm"
+          <button type="button" class="btn btn-sm"
                   :class="recording ? 'btn-danger' : 'btn-outline-danger'"
-                  :title="recording ? 'Stop recording' : 'Record a sample from the microphone (up to 30 seconds)'"
-                  :disabled="wait.length > 0" @click="toggleRecording">
+                  :title="recording ? 'Stop recording' : (canRecord ? 'Record a sample from the microphone (up to 30 seconds)' : 'REC needs https')"
+                  :disabled="wait.length > 0 || !canRecord" @click="toggleRecording">
             <i class="fa" :class="recording ? 'fa-stop' : 'fa-microphone'"></i> {{ recording ? 'STOP ' + clock : 'REC' }}
           </button>
-          <!-- A sentence rather than a disabled button: getUserMedia is only
-               there on https or localhost, and a control that can only fail
-               invites the click. Nothing at all when recorder.js did not
-               load - that is a missing script, not a browser that cannot. -->
-          <small v-else-if="hasRecorder" class="text-secondary">REC needs https</small>
+          <!-- getUserMedia exists only on https or localhost. The button stays,
+               greyed, so the feature is visibly there; the glyph beside it
+               says what to do about it, on click rather than as a paragraph. -->
+          <i v-if="!canRecord" class="fa fa-circle-info text-primary cursor-pointer"
+             title="Why REC is off" @click="explainRec"></i>
         </div>
       </div>
 
@@ -195,6 +195,7 @@ module.exports = {
       // kept off `data` (see mounted): Vue would make it reactive and walk
       // every field the browser owns.
       playing: null,
+      tlsPort: '',
       // The microphone take, once there is one: the Blob UPLOAD sends, the
       // object URL the preview plays, and what the recorder measured. The
       // recorder itself is kept off `data` for the same reason the Audio
@@ -210,6 +211,7 @@ module.exports = {
 
   created: function () {
     this.fetchVoices();
+    this.fetchUiConfig();
   },
 
   mounted: function () {
@@ -250,6 +252,12 @@ module.exports = {
 
     canRecord: function () {
       return this.hasRecorder && window.TtsRecorder.supported();
+    },
+
+    /* The https address of this same UI, for the REC explanation. The port
+       comes from nginx (/ui-config.json); 8443 until it has answered. */
+    httpsUrl: function () {
+      return 'https://' + window.location.hostname + ':' + (this.tlsPort || '8443');
     },
 
     takeSilent: function () {
@@ -369,6 +377,27 @@ module.exports = {
       this.takeUrl = '';
       this.takeSeconds = 0;
       this.takePeak = 0;
+    },
+
+    fetchUiConfig: function () {
+      var self = this;
+      this.$http.get('/ui-config.json')
+        .then(function (resp) {
+          var port = resp.data && resp.data.tls_port;
+          self.tlsPort = /^\d+$/.test(String(port)) ? String(port) : '';
+        })
+        .catch(function () { self.tlsPort = ''; });
+    },
+
+    /* What blocks REC and the two ways out, in the info bar on demand. */
+    explainRec: function () {
+      if (!this.hasRecorder) {
+        this.info = 'recorder.js did not load - reload the page';
+        return;
+      }
+      this.info = 'The browser gives the microphone only to https or localhost. ' +
+        'Open ' + this.httpsUrl + ' (accept the certificate once), ' +
+        'or add ' + window.location.origin + ' to chrome://flags/#unsafely-treat-insecure-origin-as-secure';
     },
 
     audioUrl: function (name, download) {

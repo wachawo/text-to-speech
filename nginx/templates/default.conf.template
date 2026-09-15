@@ -1,8 +1,8 @@
 # Rendered by the official nginx image entrypoint (envsubst) into
 # /etc/nginx/conf.d/default.conf. Only the names present in the container
 # environment are substituted, so nginx's own $remote_addr, $uri, $host and the
-# rest survive untouched. The two substituted names are ${TTS_UPSTREAM} and
-# ${TTS_WWW_TOKEN}; both are set by docker-compose.
+# rest survive untouched. The substituted names are ${TTS_UPSTREAM},
+# ${TTS_WWW_TOKEN} and ${TTS_WWW_TLS_PORT}; all are set by docker-compose.
 
 # The access log mirrors the Python log line of ttssrv:
 #   YYYY-MM-DD HH:MM:SS.mmm [INFO]: (nginx) client METHOD /path: status
@@ -105,7 +105,7 @@ server {
         access_log off;
         default_type application/json;
         add_header Cache-Control "no-cache";
-        return 200 '{"token":"${TTS_WWW_TOKEN}"}';
+        return 200 '{"token":"${TTS_WWW_TOKEN}","tls_port":"${TTS_WWW_TLS_PORT}"}';
     }
 
     # nginx-side liveness for the docker healthcheck, no round trip to the API.
