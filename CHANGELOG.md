@@ -3,6 +3,10 @@
 ### [Unreleased]
 
 #### Added
+- Web UI in a new `ttswww` service (both compose files, `http://localhost:8080`,
+  `TTS_WWW_PORT`): the Studio, Voices and Models screens, Vue 2 without a build
+  step, served by nginx with the API proxied under `/api/`. It has no
+  authentication of its own; nginx adds `TTS_WWW_TOKEN` to every proxied request.
 - `GET /api/models` returns the installed / missing model rows that `ttsgen --list`
   prints; the table logic moved from `ttsgen.py` into `libs/models.py` so the
   server can reach it.

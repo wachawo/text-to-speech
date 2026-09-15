@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="TTS">
+  <title>TTS</title>
+  <!-- A speaker and two sound waves, in the palette primary from css/main.css
+       and nothing else.
+
+       Strokes rather than <text>: a favicon is set in whatever the browser
+       resolves `sans-serif` to, which is a different width on every platform,
+       and three letters that have to sit inside 32 pixels cannot be laid out
+       by something that changes underneath them. A speaker outline and two
+       arcs keep their shape all the way down to 16px, where a letter's apex
+       lands between two pixel centres and rounds to a grey smudge.
+
+       Nothing is filled. On a light tab the mark is blue on white; on a dark
+       one it is blue on dark, which the palette primary has the weight for
+       either way. -->
+  <g fill="none" stroke="#3b89ca" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <!-- The speaker: a short box for the driver and a flared cone in front
+         of it, one path so the joins are corners and not two strokes meeting
+         at a seam. -->
+    <path d="M4 12.5 H8.5 L15 7 V25 L8.5 19.5 H4 Z" />
+    <!-- Two waves leaving the cone, the outer one longer than the inner. -->
+    <path d="M20 12 A6 6 0 0 1 20 20" />
+    <path d="M24 8.5 A11 11 0 0 1 24 23.5" />
+  </g>
+</svg>

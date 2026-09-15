@@ -142,6 +142,21 @@ curl -X DELETE localhost:5000/api/history/<id> \
   -H "Authorization: Bearer $TTS_TOKEN"
 ```
 
+#### Web UI
+
+Both compose files also start `ttswww`, an nginx container that serves the web UI and proxies `/api/` to `ttssrv`:
+
+```bash
+docker compose up --build -d
+xdg-open http://localhost:8080      # TTS_WWW_PORT; change it if 8080 is taken
+```
+
+- **Studio** - type text, pick engine / language / voice, generate, listen, save; every result lands in a history list.
+- **Voices** - upload and delete WAV voice samples for `coquitts` voice cloning.
+- **Models** - the engines and the installed / missing models, the same table as `ttsgen --list`.
+
+There is no login. When `TTS_TOKENS` is set, put one of those tokens into `TTS_WWW_TOKEN`: nginx adds it to every proxied request, so the browser never sees it and the API stays closed to other clients. Keep that token to letters, digits, `_` and `-`: it is pasted into the nginx config, where a `$` or `"` breaks the parse and the container exits.
+
 For working with and testing the server there is a separate CLI client, `ttsapi`. It has the same main flags as `ttsgen`, but synthesis runs on the server. The server address and token are taken from `TTS_URL` and `TTS_TOKEN`.
 
 ```bash
@@ -158,7 +173,9 @@ text-to-speech/
 ├── libs/           # shared core: API, tools, playback, exceptions
 ├── install/        # installers for ttsgen --install <engine>
 ├── ttssrv/         # Flask HTTP server
-├── docker/         # Docker builds for GPU and CPU
+├── www/            # web UI: Vue 2 without a build step, served by nginx
+├── nginx/          # nginx main config and the conf.d template for ttswww
+├── docker/         # Docker builds for GPU, CPU and the web UI
 ├── docs/           # per-engine docs and README translations
 └── tests/          # pytest tests, no model downloads and no GPU
 ```
