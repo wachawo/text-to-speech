@@ -1,5 +1,17 @@
 ## Changelog
 
+### [Unreleased]
+
+#### Fixed
+- `ttssrv` served the Flask app through asgiref's `WsgiToAsgi`, which runs every
+  request on one shared thread and guards it with a contextvar that a keep-alive
+  connection could carry into the next request: that request then failed with
+  `Single thread executor already being used, would deadlock` before reaching
+  Flask, as a plain-text 500. A long synthesis also blocked `/api/health`, and
+  `TTS_POOL_SIZE` above 1 never allowed parallel synthesis. The server now uses
+  uvicorn's own WSGI bridge (`interface="wsgi"`, a thread pool); the engine pool
+  still bounds concurrency, and `asgiref` is no longer a dependency.
+
 ### [1.0.6] - 2026-09-16
 
 #### Added

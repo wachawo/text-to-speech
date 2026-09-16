@@ -19,6 +19,7 @@ import sys
 import time
 import traceback
 import uuid
+import warnings
 import wave
 from datetime import date, datetime
 from functools import wraps
@@ -667,6 +668,29 @@ def handle_exception(exc):
     return jsonify({"error": "Internal Server Error", "request_id": get_req_id()}), 500
 
 
+def close_wsgi_responses(wsgi_app):
+    """Wrap a WSGI app so every response iterable gets its close() call.
+
+    uvicorn's WSGI bridge iterates the response and drops it without calling
+    close(), which is what releases the file behind a send_file response. CPython
+    closes it on the next garbage collection anyway, but the WSGI contract says
+    close() is called, and the streaming generator relies on it to return its
+    pool slot on a client disconnect.
+    """
+
+    def wrapper(environ, start_response):
+        """Yield the wrapped app's response and close it afterwards, whatever happened."""
+        response = wsgi_app(environ, start_response)
+        try:
+            yield from response
+        finally:
+            close = getattr(response, "close", None)
+            if close is not None:
+                close()
+
+    return wrapper
+
+
 def main() -> int:
     """Warm the engine pool and serve the app via Flask (debug) or uvicorn.
 
@@ -682,13 +706,25 @@ def main() -> int:
     if TTS_DEBUG:
         app.run(host=TTS_HOST, port=TTS_PORT, debug=True)
     else:
-        # Imported lazily: the ASGI stack is only needed for production serving,
-        # so a debug-only install does not have to provide uvicorn/asgiref.
+        # Imported lazily: uvicorn is only needed for production serving, so a
+        # debug-only install does not have to provide it.
         import uvicorn
-        from asgiref.wsgi import WsgiToAsgi
 
+        # uvicorn's own WSGI bridge (interface="wsgi"), not asgiref's WsgiToAsgi.
+        # asgiref ran every WSGI call on one shared thread, so a synthesis blocked
+        # /api/health and TTS_POOL_SIZE above 1 never meant anything, and its
+        # deadlock guard is a contextvar that a keep-alive connection can carry
+        # into the next request: that request then died with "Single thread
+        # executor already being used, would deadlock" before Flask saw it,
+        # answered as a plain-text 500. uvicorn's bridge runs requests on a
+        # thread pool and has no such guard; the engine pool keeps synthesis
+        # concurrency bounded as before. uvicorn warns that this bridge is
+        # deprecated in favour of a2wsgi; that warning is silenced here rather
+        # than adding a dependency to the image for the same behaviour.
+        warnings.filterwarnings("ignore", message="Uvicorn's native WSGI implementation is deprecated")
         uvicorn.run(
-            WsgiToAsgi(app),
+            close_wsgi_responses(app),
+            interface="wsgi",
             host=TTS_HOST,
             port=TTS_PORT,
             log_config=None,  # always None: keep our LOGGING, never run uvicorn's own dictConfig
