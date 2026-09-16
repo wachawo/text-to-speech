@@ -39,11 +39,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from dotenv import find_dotenv, load_dotenv  # noqa: E402
-
 from engines import get_available_engines, get_engine_voices, get_supported_engines  # noqa: E402
 from libs.api import text_to_speech_bytes  # noqa: E402
+from libs.audio import audio_format, audio_mime  # noqa: E402
 from libs.cli import chunk_text  # noqa: E402
+from libs.config import load_config  # noqa: E402
 from libs.exceptions import (  # noqa: E402
     CustomError,
     EngineNotAvailableError,
@@ -58,21 +58,25 @@ from libs.sample_resolver import (  # noqa: E402
     sample_path_for_voice,
 )
 from ttssrv import history  # noqa: E402
+from ttssrv.openai_compat import (  # noqa: E402
+    OpenAIRequestError,
+    error_body,
+    map_model_name,
+    map_voice_name,
+    prepare_audio,
+    validation_error_body,
+)
 from ttssrv.streaming import streaming_wav_header, wav_data, wav_params  # noqa: E402
 from ttssrv.validators import (  # noqa: E402
     HistoryCreateSchema,
     HistoryListSchema,
+    SpeechRequestSchema,
     TtsRequestSchema,
     VoiceUploadSchema,
 )
 
-# .env via find_dotenv (walks up from cwd) → then .env.local override.
-found = find_dotenv(usecwd=True)
-if found:
-    load_dotenv(found)
-local_env = PROJECT_ROOT / ".env.local"
-if local_env.exists():
-    load_dotenv(local_env, override=True)
+# Shell env > ./ttsgen.conf > ~/.config/ttsgen.conf > ./.env.local > ./.env, cwd only.
+load_config()
 
 # Config
 TRUE_VALUES = ("1", "true", "yes", "on", "enabled")
@@ -184,7 +188,7 @@ app.config.update(
         MAX_CONTENT_LENGTH=MAX_CONTENT_LENGTH,
     )
 )
-CORS(app, resources={r"/api/*": {"origins": CORS_ORIGINS}})
+CORS(app, resources={r"/api/*": {"origins": CORS_ORIGINS}, r"/v1/*": {"origins": CORS_ORIGINS}})
 
 
 def get_req_id() -> str:
@@ -194,11 +198,7 @@ def get_req_id() -> str:
 
 def detect_audio_mime(audio_bytes: bytes) -> tuple[str, str]:
     """Return (mimetype, extension) by sniffing audio bytes header."""
-    if history.is_mp3(audio_bytes):
-        return "audio/mpeg", "mp3"
-    if audio_bytes.startswith(b"RIFF"):
-        return "audio/wav", "wav"
-    return "application/octet-stream", "bin"
+    return audio_mime(audio_bytes), audio_format(audio_bytes)
 
 
 def parse_tts_payload() -> dict:
@@ -494,7 +494,7 @@ def stream_tts(text: str, engine: str, language: str, voice: str | None = None):
                 blob = text_to_speech_bytes(text=chunk, engine=engine, language=language, voice=voice)
                 yield wav_data(blob) if is_wav else blob
         except Exception as exc:
-            logger.error(f"[{get_req_id()}] stream aborted: {type(exc).__name__}: {exc}")
+            logger.error(f"[{get_req_id()}] stream aborted: {type(exc).__name__}: {exc}\n{traceback.format_exc()}")
         finally:
             release_slot(slot)
 
@@ -604,6 +604,79 @@ def history_delete(item_id: str):
     if not history.delete_item(TTS_HISTORY_DIR, item_id):
         abort(404)
     return jsonify({"result": True}), 200
+
+
+def openai_errors(view):
+    """Answer the failures of a /v1 route in the OpenAI error shape instead of the /api one."""
+
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        """Map validation errors to 400 and a busy pool to 503, both as {"error": {...}}."""
+        try:
+            return view(*args, **kwargs)
+        except MarshmallowValidationError as exc:
+            logger.warning(f"[{get_req_id()}] Validation error: {exc.messages}")
+            return jsonify(validation_error_body(exc.messages)), 400
+        except ValidationError as exc:
+            logger.warning(f"[{get_req_id()}] {type(exc).__name__}: {exc}")
+            return jsonify(error_body(str(exc))), 400
+        except OpenAIRequestError as exc:
+            logger.warning(f"[{get_req_id()}] {type(exc).__name__}: {exc.message}")
+            return jsonify(error_body(exc.message, exc.param, exc.error_type)), exc.status
+        except queue.Empty:
+            logger.warning(f"[{get_req_id()}] All engine slots busy")
+            return jsonify(error_body("All engine slots busy", error_type="server_error")), 503
+
+    return wrapper
+
+
+@app.route("/v1/audio/speech", methods=["POST"])
+@token_required
+@openai_errors
+def openai_speech():
+    """Synthesize `input` the way OpenAI's POST /v1/audio/speech does and return the audio body."""
+    data = SpeechRequestSchema().load(request.get_json(silent=True) or {})
+    engine = map_model_name(data["model"], TTS_ENGINE_DEFAULT)
+    if engine not in get_available_engines():
+        raise OpenAIRequestError(f"Model '{data['model']}' is not an installed engine", param="model")
+    text = data["input"]
+    voice = map_voice_name(data["voice"])
+    language = data["language"] or TTS_LANGUAGE_DEFAULT
+    response_format = data["response_format"]
+    speed = data["speed"]
+    logger.info(
+        f"[{get_req_id()}] OpenAI speech: engine={engine} language={language} "
+        f"voice={voice} chars={len(text)} format={response_format} speed={speed}"
+    )
+
+    slot = acquire_slot()
+    try:
+        audio_bytes = text_to_speech_bytes(text=text, engine=engine, language=language, voice=voice)
+    finally:
+        release_slot(slot)
+
+    unused_mime, native_format = detect_audio_mime(audio_bytes)
+    body, mimetype = prepare_audio(audio_bytes, native_format, response_format, speed)
+    return Response(body, mimetype=mimetype)
+
+
+@app.route("/v1/models", methods=["GET"])
+@token_required
+def openai_models():
+    """List the installed engines as OpenAI models, plus `tts-1` for clients that default to it."""
+    names = sorted(get_available_engines().keys()) + ["tts-1"]
+    data = [{"id": name, "object": "model", "created": 0, "owned_by": "text-to-speech"} for name in names]
+    return jsonify({"object": "list", "data": data}), 200
+
+
+@app.route("/v1/audio/voices", methods=["GET"])
+@token_required
+def openai_voices():
+    """List the voices of the engine behind ?model= (default engine when omitted), as {"voices": [...]}."""
+    engine = map_model_name(request.args.get("model"), TTS_ENGINE_DEFAULT)
+    language = request.args.get("language") or TTS_LANGUAGE_DEFAULT
+    info = get_engine_voices(engine, language)
+    return jsonify({"voices": info.get("voices", [])}), 200
 
 
 @app.errorhandler(queue.Empty)

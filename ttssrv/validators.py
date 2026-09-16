@@ -2,7 +2,10 @@
 # -*- coding: utf-8 -*-
 """Marshmallow validation schemas for TTS API."""
 
-from marshmallow import Schema, fields, validate
+from marshmallow import EXCLUDE, Schema, fields, validate
+
+# Local imports
+from ttssrv.openai_compat import RESPONSE_FORMATS
 
 
 class TtsRequestSchema(Schema):
@@ -44,3 +47,22 @@ class VoiceUploadSchema(Schema):
     name = fields.Str(required=True, validate=validate.Regexp(r"^[A-Za-z0-9_-]{1,48}\Z"))
     # Only coquitts clones voices from samples; the other engines have nothing to upload to.
     engine = fields.Str(required=True, validate=validate.OneOf(["coquitts"]))
+
+
+class SpeechRequestSchema(Schema):
+    """JSON body for POST /v1/audio/speech, the OpenAI audio API shape plus a `language` extension."""
+
+    class Meta:
+        """Ignore the fields OpenAI clients send that have no meaning here (instructions, stream_format, ...)."""
+
+        unknown = EXCLUDE
+
+    # An engine name, or an OpenAI model name that stands for the default engine.
+    model = fields.Str(load_default=None, validate=validate.Length(min=1, max=64))
+    # OpenAI's own limit; the engines accept up to 5000 characters in one call.
+    input = fields.Str(required=True, validate=validate.Length(min=1, max=4096))
+    # An OpenAI voice name means the engine default; anything else is the engine voice id.
+    voice = fields.Str(load_default=None, validate=validate.Length(max=64))
+    response_format = fields.Str(load_default="mp3", validate=validate.OneOf(sorted(RESPONSE_FORMATS)))
+    speed = fields.Float(load_default=1.0, validate=validate.Range(min=0.25, max=4.0))
+    language = fields.Str(load_default=None, validate=validate.Length(equal=2))
