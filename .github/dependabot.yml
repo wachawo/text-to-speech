@@ -23,3 +23,10 @@ updates:
     groups:
       npm-minor-and-patch:
         update-types: ["minor", "patch"]
+    ignore:
+      # The web UI runs on the Vue 2.7 build vendored under www/vendor, and
+      # vue-template-compiler must match it exactly; a Vue 3 bump is never right.
+      - dependency-name: "vue"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vue-template-compiler"
+        update-types: ["version-update:semver-major"]

@@ -27,6 +27,10 @@
   `cp env.example .env` step and the CDI prerequisite for the GPU compose file.
 
 #### Changed
+- Frontend lint moved to eslint 10 with a flat config (`eslint.config.js`) and
+  eslint-plugin-vue 10 in its Vue 2 preset; Dependabot no longer proposes a
+  Vue 3 bump, the UI runs on the vendored Vue 2.7 and `vue-template-compiler`
+  must match it.
 - Config precedence is now, strongest first: CLI flags, shell environment,
   `./ttsgen.conf`, `~/.config/ttsgen.conf`, `./.env.local`, `./.env`. Every
   file loads with `override=False`, so no file beats the shell or a flag, and
