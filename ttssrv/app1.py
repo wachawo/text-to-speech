@@ -244,6 +244,44 @@ def release_slot(slot: int | None) -> None:
         ENGINE_POOL.put(slot)
 
 
+def synthesize(text: str, engine: str, language: str, voice: str | None = None, label: str = "") -> bytes:
+    """Run text_to_speech_bytes and log one Synthesis line with the engine time.
+
+    The request line in after_request carries the whole request time, which
+    includes the wait for a pool slot. This line measures only the engine call,
+    so an operator can tell a slow engine from a request that waited for a slot.
+    The exception, if any, is re-raised unchanged for the error handlers.
+
+    Args:
+        text: Text to synthesize.
+        engine: Engine name to synthesize with.
+        language: Two-letter language code passed to the engine.
+        voice: Engine-specific voice id, or None for the engine default.
+        label: Optional qualifier after "Synthesis", such as "chunk 2/5".
+
+    Returns:
+        The audio bytes produced by the engine.
+    """
+    start_time = time.monotonic()
+    size_part = ""
+    status = "failed"
+    try:
+        audio = text_to_speech_bytes(text=text, engine=engine, language=language, voice=voice)
+        size_part = f"bytes={len(audio)} "
+        status = "ok"
+        return audio
+    except Exception as exc:
+        status = f"failed {type(exc).__name__}"
+        raise
+    finally:
+        elapsed_ms = int((time.monotonic() - start_time) * 1000)
+        name = f"Synthesis {label}" if label else "Synthesis"
+        logger.info(
+            f"[{get_req_id()}] {name}: engine={engine} language={language} "
+            f"voice={voice} chars={len(text)} {size_part}ms={elapsed_ms} {status}"
+        )
+
+
 def token_required(view):
     """Require Authorization: Bearer <token> when TTS_TOKENS is non-empty."""
 
@@ -473,7 +511,7 @@ def stream_tts(text: str, engine: str, language: str, voice: str | None = None):
     # Synthesize the first chunk up front so the audio format (and any engine
     # error) is known before the streaming response headers are committed.
     try:
-        first = text_to_speech_bytes(text=chunks[0], engine=engine, language=language, voice=voice)
+        first = synthesize(text=chunks[0], engine=engine, language=language, voice=voice, label=f"chunk 1/{len(chunks)}")
     except Exception:
         release_slot(slot)
         raise
@@ -490,8 +528,10 @@ def stream_tts(text: str, engine: str, language: str, voice: str | None = None):
                 yield wav_data(first)
             else:
                 yield first
-            for chunk in chunks[1:]:
-                blob = text_to_speech_bytes(text=chunk, engine=engine, language=language, voice=voice)
+            for index, chunk in enumerate(chunks[1:], start=2):
+                blob = synthesize(
+                    text=chunk, engine=engine, language=language, voice=voice, label=f"chunk {index}/{len(chunks)}"
+                )
                 yield wav_data(blob) if is_wav else blob
         except Exception as exc:
             logger.error(f"[{get_req_id()}] stream aborted: {type(exc).__name__}: {exc}\n{traceback.format_exc()}")
@@ -521,7 +561,7 @@ def tts_generate():
 
     slot = acquire_slot()
     try:
-        audio_bytes = text_to_speech_bytes(text=text, engine=engine, language=language, voice=voice)
+        audio_bytes = synthesize(text=text, engine=engine, language=language, voice=voice)
     finally:
         release_slot(slot)
 
@@ -549,7 +589,7 @@ def history_create():
     slot = acquire_slot()
     start_time = time.monotonic()
     try:
-        audio_bytes = text_to_speech_bytes(text=text, engine=engine, language=language, voice=voice)
+        audio_bytes = synthesize(text=text, engine=engine, language=language, voice=voice)
     finally:
         release_slot(slot)
     elapsed = time.monotonic() - start_time
@@ -651,7 +691,7 @@ def openai_speech():
 
     slot = acquire_slot()
     try:
-        audio_bytes = text_to_speech_bytes(text=text, engine=engine, language=language, voice=voice)
+        audio_bytes = synthesize(text=text, engine=engine, language=language, voice=voice)
     finally:
         release_slot(slot)
 

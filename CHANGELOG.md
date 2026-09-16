@@ -3,6 +3,10 @@
 ### [Unreleased]
 
 #### Added
+- `ttssrv` logs one line per engine call (`Synthesis: engine= language= voice=
+  chars= bytes= ms= ok`, or `failed <Exception>`), including one per chunk of a
+  streamed response, so a slow engine can be told apart from a request that
+  waited for a pool slot; the request line still carries the total time.
 - OpenAI-compatible audio API: `POST /v1/audio/speech` (`model` is an engine
   name or `tts-1`, `voice`, `response_format` mp3/wav/pcm/opus/flac/aac with
   ffmpeg transcoding, `speed`, and a `language` extension), `GET /v1/models`
