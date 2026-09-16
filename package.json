@@ -1,0 +1,15 @@
+{
+  "name": "text-to-speech-www",
+  "private": true,
+  "description": "Dev-only lint and tests for the web UI under www/ (no build step)",
+  "scripts": {
+    "lint": "eslint www/js www/views --ext .js,.vue",
+    "test": "node --test tests/www/"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.1",
+    "eslint-plugin-vue": "^9.33.0",
+    "vue": "2.7.16",
+    "vue-template-compiler": "2.7.16"
+  }
+}

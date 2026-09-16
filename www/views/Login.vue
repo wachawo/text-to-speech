@@ -10,8 +10,8 @@
                    :disabled="wait.length > 0" />
           </div>
 
-          <div class="input-group input-group-sm mb-1">
-            <button class="form-control form-control-sm btn btn-sm btn-primary fw-bold"
+          <div class="mb-1">
+            <button class="btn btn-sm btn-primary w-100 fw-bold"
                     type="submit" :disabled="wait.length > 0">
               <i class="fa fa-spinner fa-pulse me-1" v-if="wait.length > 0"></i>
               <i class="fa fa-right-to-bracket me-1" v-else></i>
@@ -37,6 +37,8 @@
    server has accepted it, so a typo never becomes a stored credential that
    401s on every screen. */
 module.exports = {
+  mixins: [TtsWait],
+
   data: function () {
     return {
       token: '',
@@ -57,7 +59,7 @@ module.exports = {
       var token = self.token.trim();
       if (!token) return;
       self.error = '';
-      self.wait.push('signing in');
+      self.waitPush('signing in');
       // X-Tts-Probe marks this request for the 401 interceptor: a refusal
       // here is "wrong token", not a lost session to bounce back from.
       self.$http.get('/api/engines', { headers: { Authorization: 'Bearer ' + token, 'X-Tts-Probe': '1' } })
@@ -77,10 +79,7 @@ module.exports = {
           if (err && err.response && err.response.status === 401) self.error = 'Wrong token';
           else self.error = self.$apiError(err);
         })
-        .finally(function () {
-          var i = self.wait.indexOf('signing in');
-          if (i !== -1) self.wait.splice(i, 1);
-        });
+        .finally(function () { self.waitDrop('signing in'); });
     },
   },
 };

@@ -14,10 +14,7 @@
       </div>
     </div>
 
-    <div class="alert alert-secondary text-center p-1 mb-2" v-show="wait.length > 0">
-      <i class="fa fa-spinner fa-pulse"></i> {{ wait.join(', ') }}
-    </div>
-    <tts-alerts :error.sync="error" :warning.sync="warning"
+    <tts-alerts :wait="wait" :error.sync="error" :warning.sync="warning"
                 :info.sync="info" :success.sync="success"></tts-alerts>
 
     <!-- ENGINES: every engine this build knows about, one row each, and the
@@ -73,7 +70,7 @@
               </td>
               <td>{{ row.preloaded ? 'yes' : '-' }}</td>
               <td>{{ row.isDefault ? 'yes' : '-' }}</td>
-              <td>{{ row.isDefault ? (engines.language || '-') : '-' }}</td>
+              <td>{{ row.isDefault ? (catalog.defaultLanguage || '-') : '-' }}</td>
             </tr>
             <tr v-if="engineRows.length === 0 && wait.length === 0">
               <td colspan="5" class="text-center">-</td>
@@ -130,16 +127,17 @@
    about the container, and the only things that change them are a pip run
    and a download, neither of which belongs behind a button in a browser. */
 
-/* Where "missing" points. Every optional engine has a guide under docs/;
-   the two that ship with the server (gtts, pyttsx3) have none, and the
-   overview covers them. */
-var DOCS_URL = 'https://github.com/wachawo/text-to-speech/blob/main/docs/';
+/* Where "missing" points, under $docsUrl. Every optional engine has a guide
+   under docs/; the two that ship with the server (gtts, pyttsx3) have none,
+   and the overview covers them. */
 var ENGINE_GUIDES = {
   barktts: 'BARKTTS.md', coquitts: 'COQUITTS.md', kokorotts: 'KOKOROTTS.md',
   pipertts: 'PIPERTTS.md', silerotts: 'SILEROTTS.md',
 };
 
 module.exports = {
+  mixins: [TtsWait],
+
   data: function () {
     return {
       wait: [],
@@ -147,30 +145,29 @@ module.exports = {
       warning: '',
       info: '',
       success: '',
-      // The /api/engines answer as sent: supported, available, preload,
-      // default, language. Kept whole rather than unpacked so the template
-      // can read the default language off the same object as the default
-      // engine.
-      engines: { supported: [], available: [], preload: [], default: '', language: '' },
       // The /api/models rows as sent: {engine, status, model}.
       models: [],
     };
   },
 
   computed: {
+    /* The /api/engines answer, from the store: supported, engines (the
+       installed ones), preload, default engine and language. */
+    catalog: function () {
+      return this.$store.state.catalog;
+    },
+
     /* One row per supported engine, with the three memberships resolved
        here rather than in the template - a template doing indexOf four
        times per row is a template nobody can read. */
     engineRows: function () {
-      var engines = this.engines;
-      var available = engines.available || [];
-      var preload = engines.preload || [];
-      return (engines.supported || []).map(function (name) {
+      var catalog = this.catalog;
+      return catalog.supported.map(function (name) {
         return {
           name: name,
-          installed: available.indexOf(name) !== -1,
-          preloaded: preload.indexOf(name) !== -1,
-          isDefault: name === engines.default,
+          installed: catalog.engines.indexOf(name) !== -1,
+          preloaded: catalog.preload.indexOf(name) !== -1,
+          isDefault: name === catalog.defaultEngine,
         };
       });
     },
@@ -189,7 +186,7 @@ module.exports = {
     },
 
     installGuide: function (name) {
-      return DOCS_URL + (ENGINE_GUIDES[name] || 'ENGINES.md');
+      return this.$docsUrl + (ENGINE_GUIDES[name] || 'ENGINES.md');
     },
 
     reload: function () {
@@ -200,28 +197,20 @@ module.exports = {
 
     fetchEngines: function () {
       var self = this;
-      self.wait.push('engines');
-      self.$http.get('/api/engines').then(function (resp) {
-        self.engines = resp.data || {};
-      }).catch(function (err) {
-        self.error = self.$apiError(err);
-      }).finally(function () {
-        var i = self.wait.indexOf('engines');
-        if (i !== -1) self.wait.splice(i, 1);
-      });
+      self.waitPush('engines');
+      self.$store.dispatch('fetch_engines')
+        .catch(function (err) { self.error = self.$apiError(err); })
+        .finally(function () { self.waitDrop('engines'); });
     },
 
     fetchModels: function () {
       var self = this;
-      self.wait.push('models');
+      self.waitPush('models');
       self.$http.get('/api/models').then(function (resp) {
         self.models = (resp.data && resp.data.models) || [];
       }).catch(function (err) {
         self.error = self.$apiError(err);
-      }).finally(function () {
-        var i = self.wait.indexOf('models');
-        if (i !== -1) self.wait.splice(i, 1);
-      });
+      }).finally(function () { self.waitDrop('models'); });
     },
   },
 };

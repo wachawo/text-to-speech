@@ -312,12 +312,8 @@ input, select, textarea, button { font-family: inherit; }
    figures wants one face across it, and mixing two is jarring exactly when
    half a row has it.
 
-   Both carry `!important` because Bootstrap's utility does
-   (`.font-monospace{font-family:var(--bs-font-monospace)!important}`), so
-   there is no winning against it without one. Between the two, specificity
-   decides and the more specific one is the row - which is the intended
-   order: inside a table body, position wins over class. */
-.font-monospace { font-family: inherit !important; }
+   `!important` because Bootstrap's `.font-monospace` utility carries one, so
+   a cell that picked it up would otherwise win against this rule. */
 .table tbody td,
 .table tbody th { font-family: var(--tts-face-rows) !important; }
 
@@ -329,22 +325,12 @@ a:hover { color: var(--tts-primary-dark); text-decoration: underline; }
    underline on hover, and the button's own ink rather than the link's. */
 a.btn, a.btn:hover, a.btn:focus { text-decoration: none; }
 
-h1 { font-size: 22px; font-weight: 900; }
-h2 { font-size: 18px; font-weight: 900; }
-h3 { font-size: 15px; font-weight: 900; }
 h5 { font-size: 13px; font-weight: 900; }
 
 /* Utilities */
 .bg-blue        { background: var(--tts-primary) !important; color: var(--tts-on-accent) !important; }
-.bg-light-blue  { background: var(--tts-primary-light) !important; color: var(--tts-text); }
-.bg-red         { background: var(--tts-danger) !important; color: var(--tts-on-accent); }
-.bg-light-red   { background: var(--tts-danger-light); color: var(--tts-text-strong); }
-.bg-green       { background: var(--tts-success) !important; color: var(--tts-on-accent); }
-.bg-light-green { background: var(--tts-success-light); color: var(--tts-text-strong); }
 .text-primary   { color: var(--tts-primary) !important; }
-.text-strong    { color: var(--tts-text-strong); }
 .cursor-pointer { cursor: pointer; }
-.editable       { color: var(--tts-primary-dark); border-bottom: 1px dotted var(--tts-primary-dark); cursor: pointer; }
 
 /* Bootstrap overrides */
 /* The label as well as the fill. Bootstrap's `.btn-primary` hardcodes white
@@ -414,10 +400,8 @@ textarea:focus, input.form-control:focus, .form-control:focus, .form-select:focu
   font-size: 12px;
   line-height: 1.4;
 }
-/* Pagination and alerts sit on the same rhythm; otherwise they are the only
-   controls left at Bootstrap's 14px. */
-.page-link,
-.pagination-sm .page-link { font-size: 12px; padding: 2px 8px; }
+/* Alerts sit on the same rhythm; otherwise they are the only thing left at
+   Bootstrap's 14px. */
 .alert { font-size: 12px; }
 
 /* The dropdown that opens is drawn by the browser, not by this stylesheet, and
@@ -629,30 +613,7 @@ select option:checked {
   padding: 14px;
 }
 .tts-card .label { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--tts-text); }
-.tts-card .value { font-size: 22px; font-weight: 900; color: var(--tts-text-strong); margin-top: 4px; }
 .tts-card .sub   { font-size: 11px; color: var(--tts-text); margin-top: 6px; }
-
-/* Bento grid - the cards of a screen, four columns wide, each card spanning
-   what it needs. */
-.bento {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  grid-auto-rows: minmax(110px, auto);
-  gap: 10px;
-}
-.bento .span-2 { grid-column: span 2; }
-.bento .span-3 { grid-column: span 3; }
-.bento .span-4 { grid-column: span 4; }
-.bento .row-2  { grid-row: span 2; }
-/* A card that ends where its content does, rather than being stretched to the
-   height of whatever else shares its row. Grid items stretch by default, which
-   is right for two tables side by side and wrong for a figure beside a list. */
-.bento .self-start { align-self: start; }
-
-@media (max-width: 992px) {
-  .bento { grid-template-columns: repeat(2, 1fr); }
-  .bento .span-3, .bento .span-4 { grid-column: span 2; }
-}
 
 /* Tables */
 .table { font-size: 12px; margin-bottom: .25rem; }
@@ -740,12 +701,6 @@ table thead { text-transform: uppercase; font-weight: 700; }
   transition: transform .1s ease-out;
 }
 .td-actions i:last-child { margin-right: 0; }
-/* A download is a link around a glyph, not a glyph with a handler: the
-   browser saves the file itself. The link takes the glyph's spacing so the
-   row keeps one rhythm, and the glyph inside it gives its own up. */
-.td-actions a { margin-right: .5rem; text-decoration: none; }
-.td-actions a:last-child { margin-right: 0; }
-.td-actions a > i { margin-right: 0; }
 .td-actions i:hover { color: var(--tts-primary-dark); transform: scale(1.2); }
 
 /* Colour, and why some of it is !important and the base above is not.
@@ -772,82 +727,9 @@ table thead { text-transform: uppercase; font-weight: 700; }
    --bs-table-color-state as well as color: Bootstrap paints every cell with
    `.table > :not(caption) > * > *`, one attribute more specific than a bare
    class, and reads that variable first - so `color` alone never reached a
-   <td>. Not on a tinted row: a missing engine already sits on the amber
-   .row-warning fill, where this red measures under 2:1 on the dark half, so
-   Models.vue leaves the cell in the row's own ink there. */
+   <td>. */
 .tts-state-on  { --bs-table-color-state: var(--tts-success-deep); color: var(--tts-success-deep); }
 .tts-state-off { --bs-table-color-state: var(--tts-danger);       color: var(--tts-danger); }
-
-/* Blocked, marked with `aria-disabled` rather than with the .disabled class.
-   That class carries `pointer-events: none`, and with no pointer events there
-   is no `title` tooltip - which on a refused delete is the only place the
-   reason the row cannot go is written down. So the glyph stays hoverable, says
-   `aria-disabled` to assistive technology, and the click handler is what
-   refuses. Screens that have no reason to explain use the .disabled class
-   instead; its opacity and pointer-events are already global and are not
-   repeated here.
-
-   Dimmed with a colour, not with opacity: two opacities multiply, and a dimmed
-   icon inside a dimmed row lands under half the 3:1 a non-text control needs.
-   A flat muted colour does not compound.
-
-   Last in this group on purpose: it ties on specificity with the danger rules
-   above and the later of two equals wins, so a blocked glyph stays muted and
-   still under the pointer instead of lighting up as if it were live. */
-.td-actions i[aria-disabled="true"],
-.td-actions i[aria-disabled="true"]:hover {
-  color: var(--tts-muted) !important;
-  cursor: not-allowed;
-  transform: none;
-}
-
-/* Row state, from the palette rather than from Bootstrap's contextual classes.
-
-   `.table-warning` and its siblings are literals in every Bootstrap build -
-   a pastel wash behind black ink - and on a dark page that is a light patch
-   that reads as a layout fault rather than as a mark. Worse, their
-   `--bs-table-striped-bg` is opaque, so every second tinted row on a striped
-   table goes back to pastel whatever is done to `--bs-table-bg`. These three
-   name tokens instead, and the `-light` tokens are already dark washes on the
-   dark half, so one declaration serves both themes. No hover rule of their
-   own: the table's --bs-table-bg-state darkens whatever colour a row already
-   carries, so a tinted row deepens under the pointer by itself.
-
-   Set on the cells rather than on the row, because that is where Bootstrap
-   reads `--bs-table-bg`. This build (5.3.3) already stripes with an alpha of
-   the emphasis colour, so the tint shows through on every second row; only
-   the stripe's INK has to be pointed back at the row's own, or the odd rows
-   would print the emphasis colour - near-white on the dark half - on amber. */
-.row-warning > *,
-.row-danger > *,
-.row-info > * {
-  --bs-table-striped-color: var(--bs-table-color);
-}
-.row-warning > * { --bs-table-bg: var(--tts-warning);       --bs-table-color: var(--tts-on-warning); }
-.row-danger  > * { --bs-table-bg: var(--tts-danger-light);  --bs-table-color: var(--tts-text-strong); }
-.row-info    > * { --bs-table-bg: var(--tts-primary-light); --bs-table-color: var(--tts-text); }
-
-/* Pagination.
-
-   The active page needs its own colour, not just its own background. The rule
-   below it paints every page link in the primary blue, and an active rule that
-   set the background to that same blue and said nothing about the text would
-   leave the page you are on the one number on the row that cannot be read.
-
-   The pair is primary-DARK behind white, measured rather than picked: white on
-   the plain primary is 3.74:1 and the app background on it is 3.43:1, both
-   under the 4.5:1 a 12px figure needs. White on primary-dark is 4.83:1. It
-   also puts the current page a shade darker than the one under the cursor,
-   which is the difference doing the work when both are blue. */
-.pagination .page-link { color: var(--tts-primary); }
-.pagination .page-item.active .page-link {
-  background-color: var(--tts-primary-dark);
-  border-color: var(--tts-primary-dark);
-  color: var(--tts-on-accent);
-}
-
-/* Wait banner */
-.wait-banner { background: var(--tts-border); border-radius: 4px; padding: 4px 8px; text-align: center; font-size: 11px; }
 
 /* Modal.
    Every dialog carries `py-1 px-3` on its header, `py-2` on its body and `p-1`
@@ -905,14 +787,6 @@ table thead { text-transform: uppercase; font-weight: 700; }
 .set-grid > label { margin: 0; }
 .set-select { width: 140px; }
 
-/* Tabs inside a dialog or a settings screen, on the page's rhythm. Bootstrap
-   computes `.nav-link` off 1rem with .5rem of padding and the strip comes out
-   half again as tall as everything else around it. Colours are left alone -
-   they already follow `data-bs-theme`. Bold only on the open tab, as in the
-   header. */
-.set-tabs .nav-link        { padding: 3px 12px; font-size: 12px; }
-.set-tabs .nav-link.active { font-weight: 700; }
-
 /* A checkbox on the same rhythm. Bootstrap sizes the box off 1em, which on
    this page is a 12px target smaller than the glyphs beside it; 14px is
    findable without standing proud of the 24px row. The label is the page size
@@ -940,13 +814,6 @@ table thead { text-transform: uppercase; font-weight: 700; }
   margin: 0;
   color: var(--tts-text-strong);
 }
-
-/* A fact shown as text rather than as a disabled field - a disabled input
-   looks like a field that could be filled in later. `overflow-wrap` because
-   an id is longer than its cell and half an id is useless; `min-width: 0`
-   because a flex item refuses to shrink below its longest word and pushes the
-   value past the right edge. */
-.detail-value { overflow-wrap: anywhere; min-width: 0; }
 
 /* The four message bars (views/Alerts.vue), above every screen's table.
 

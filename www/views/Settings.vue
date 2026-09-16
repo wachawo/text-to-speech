@@ -12,10 +12,7 @@
         </div>
 
         <div class="modal-body py-2">
-          <div class="alert alert-secondary text-center p-1 mb-2" v-show="wait.length > 0">
-            <i class="fa fa-spinner fa-pulse"></i> {{ wait.join(', ') }}
-          </div>
-          <tts-alerts :error.sync="error"></tts-alerts>
+          <tts-alerts :wait="wait" :error.sync="error"></tts-alerts>
 
           <div class="fw-bold text-primary text-uppercase border-bottom mt-2 mb-1">Studio defaults</div>
           <div class="set-grid">
@@ -30,7 +27,7 @@
             <select id="set-language" class="form-select form-select-sm set-select" style="width: 220px"
                     v-model="form.language" :disabled="wait.length > 0">
               <option value="">default ({{ serverLanguage || '-' }})</option>
-              <option v-for="lang in languages" :key="lang.code" :value="lang.code">
+              <option v-for="lang in $languages" :key="lang.code" :value="lang.code">
                 {{ lang.code }} {{ lang.name }}
               </option>
             </select>
@@ -91,51 +88,15 @@
    cleared at once and nothing opens.
 */
 
-/* The languages xtts_v2 speaks. A copy of the list in Studio.vue, and the two
-   MUST STAY EQUAL: a default picked here that the studio's select does not
-   carry would render as a blank select. No engine reports its languages yet,
-   so neither file can ask the server instead. */
-var LANGUAGES = [
-  { code: 'en', name: 'English' },
-  { code: 'es', name: 'Spanish' },
-  { code: 'fr', name: 'French' },
-  { code: 'de', name: 'German' },
-  { code: 'it', name: 'Italian' },
-  { code: 'pt', name: 'Portuguese' },
-  { code: 'pl', name: 'Polish' },
-  { code: 'tr', name: 'Turkish' },
-  { code: 'ru', name: 'Russian' },
-  { code: 'nl', name: 'Dutch' },
-  { code: 'cs', name: 'Czech' },
-  { code: 'ar', name: 'Arabic' },
-  { code: 'zh', name: 'Chinese' },
-  { code: 'ja', name: 'Japanese' },
-  { code: 'hu', name: 'Hungarian' },
-  { code: 'ko', name: 'Korean' },
-  { code: 'hi', name: 'Hindi' },
-];
-
 var NOT_KEPT = 'This browser would not store the setting, so it holds until the page is reloaded.';
 
-/* Remove one label from the wait queue. */
-var dropWait = function (wait, label) {
-  var i = wait.indexOf(label);
-  if (i !== -1) wait.splice(i, 1);
-};
-
 module.exports = {
+  mixins: [TtsWait],
+
   data: function () {
     return {
       wait: [],
       error: '',
-      engines: [],
-      languages: LANGUAGES,
-      voices: [],
-      // What /api/engines and /api/voices say the server falls back to, for
-      // the "server default (...)" option of each select.
-      serverEngine: '',
-      serverLanguage: '',
-      serverVoice: '',
       form: { engine: '', language: '', voice: '' },
       curl: true,
       note: '',
@@ -145,13 +106,11 @@ module.exports = {
 
   mounted: function () {
     // The Bootstrap handle is kept off `data`, as in Confirm.vue: Vue would
-    // make the library object reactive and walk every field it owns. The
-    // voices serial is not reactive either - nothing renders from it.
+    // make the library object reactive and walk every field it owns.
     this.modalEl = this.$refs.modalEl;
     this.modal = (typeof bootstrap !== 'undefined' && bootstrap.Modal)
       ? new bootstrap.Modal(this.modalEl)
       : null;
-    this.voiceSerial = 0;
     this.modalEl.addEventListener('hidden.bs.modal', this.handleHidden);
     if (this.$store.state.settingsOpen) this.open();
   },
@@ -166,6 +125,30 @@ module.exports = {
   },
 
   computed: {
+    /* The catalogue, from the store: the engines this server has and what
+       /api/engines and /api/voices say it falls back to, for the "default
+       (...)" option of each select. */
+    engines: function () {
+      return this.$store.state.catalog.engines;
+    },
+    serverEngine: function () {
+      return this.$store.state.catalog.defaultEngine;
+    },
+    serverLanguage: function () {
+      return this.$store.state.catalog.defaultLanguage;
+    },
+    /* The voices of the pair in force, from the store, or nothing until the
+       pair has been asked for. */
+    voiceEntry: function () {
+      return this.$store.state.catalog.voices[this.voiceKey] || null;
+    },
+    voices: function () {
+      return this.voiceEntry ? this.voiceEntry.voices : [];
+    },
+    serverVoice: function () {
+      return this.voiceEntry ? this.voiceEntry['default'] : '';
+    },
+
     /* The pair the voices are asked for, with the server's own values in
        place of "server default" - the list the operator picks from must be
        the list of the engine the studio would actually open with. Empty until
@@ -200,8 +183,7 @@ module.exports = {
       // answers with; the language has no such list, so it is checked here.
       // A hand-edited code the select has no option for would otherwise show
       // as a blank select and be written back by SAVE as it came.
-      var language = LANGUAGES.some(function (l) { return l.code === studio.language; })
-        ? studio.language : '';
+      var language = this.$knownLanguage(studio.language) ? studio.language : '';
       this.form = { engine: studio.engine, language: language, voice: studio.voice };
       this.curl = this.$store.state.view.curl;
       this.note = '';
@@ -224,13 +206,9 @@ module.exports = {
     fetchEngines: function () {
       var self = this;
       var keyBefore = this.voiceKey;
-      this.wait.push('engines');
-      this.$http.get('/api/engines')
-        .then(function (resp) {
-          var data = resp.data || {};
-          self.engines = data.available || [];
-          self.serverEngine = data['default'] || '';
-          self.serverLanguage = data.language || '';
+      this.waitPush('engines');
+      this.$store.dispatch('fetch_engines')
+        .then(function () {
           // A stored engine this server no longer has is shown as the server
           // default rather than as a blank select claiming nothing.
           if (self.form.engine && self.engines.indexOf(self.form.engine) === -1) self.form.engine = '';
@@ -239,38 +217,31 @@ module.exports = {
           if (self.voiceKey === keyBefore) self.fetchVoices();
         })
         .catch(function (err) { self.error = self.$apiError(err); })
-        .finally(function () { dropWait(self.wait, 'engines'); });
+        .finally(function () { self.waitDrop('engines'); });
     },
 
-    /* The voices of the pair in force. Answers arriving out of order are
-       dropped by the serial, as in Studio.vue: two quick changes of engine
-       would otherwise leave the first engine's voices under the second
-       engine's name. A stored voice the new list does not carry falls back to
-       the server default; the select cannot show a value it has no option
-       for. */
+    /* The voices of the pair in force, through the store. An answer for a
+       pair the dialog has since moved off is not applied: the store files it
+       under its own pair, and the select reads the pair in force. A stored
+       voice the new list does not carry falls back to the server default;
+       the select cannot show a value it has no option for. */
     fetchVoices: function () {
       var self = this;
       var key = this.voiceKey;
       if (!key) return;
-      var serial = ++this.voiceSerial;
       var parts = key.split('/');
-      this.wait.push('voices');
-      this.$http.get('/api/voices', { params: { engine: parts[0], language: parts[1] } })
-        .then(function (resp) {
-          if (serial !== self.voiceSerial) return;
-          var data = resp.data || {};
-          self.voices = data.voices || [];
-          self.serverVoice = data['default'] || '';
+      this.waitPush('voices');
+      this.$store.dispatch('fetch_voices', { engine: parts[0], language: parts[1] })
+        .then(function () {
+          if (key !== self.voiceKey) return;
           if (self.voices.indexOf(self.form.voice) === -1) self.form.voice = '';
         })
         .catch(function (err) {
-          if (serial !== self.voiceSerial) return;
-          self.voices = [];
-          self.serverVoice = '';
+          if (key !== self.voiceKey) return;
           self.form.voice = '';
           self.error = self.$apiError(err);
         })
-        .finally(function () { dropWait(self.wait, 'voices'); });
+        .finally(function () { self.waitDrop('voices'); });
     },
 
     /* Save */
