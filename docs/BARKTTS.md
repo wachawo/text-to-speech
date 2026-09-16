@@ -17,48 +17,53 @@ Bark is a transformer-based text-to-audio model by Suno AI that can generate hig
 - Non-verbal sounds (laugh, sigh, gasp)
 - Speaker voices (100+ presets)
 - Multilingual support
-- Zero-shot voice cloning capability
 
 ## System Requirements
 
 ### Minimum Requirements (CPU)
-- Python 3.8-3.11
+- Python 3.11+ (the Docker images use 3.12)
 - 16GB RAM
 - 15GB disk space
 - CPU: Works but VERY slow (60-180s per sentence)
 
 ### Recommended Requirements (GPU)
-- Python 3.8-3.11
+- Python 3.11+
 - 16GB+ RAM
 - NVIDIA GPU with 8GB+ VRAM
 - 15GB disk space
-- CUDA 11.8+
+- NVIDIA driver 525+ (the installer uses the CUDA 12.1 wheel index)
 
 ## Installation
 
 ### Quick Installation
 
 ```bash
-# Install Bark from GitHub
-pip install git+https://github.com/suno-ai/bark.git
-
-# Install additional dependencies
-pip install scipy
+ttsgen --install barktts
 
 # Test installation
 python -c "from bark import generate_audio; print('Bark TTS installed')"
 ```
 
-### Using Installation Script
+The installer checks free disk space (about 15 GB), installs PyTorch from an
+explicit wheel index (`https://download.pytorch.org/whl/cpu` or
+`https://download.pytorch.org/whl/cu121`, your choice), installs Bark from
+GitHub plus `scipy` and `numpy`, and offers to pre-download the weights. The
+default PyPI index ships torch wheels built for a newer CUDA that fail on
+NVIDIA drivers below about 580, which is why the installer picks the index.
+
+### Manual install
+
+Only if you cannot run the installer:
 
 ```bash
-# Run installation script
-ttsgen --install barktts
+pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+pip install git+https://github.com/suno-ai/bark.git scipy numpy
 ```
 
 ## Supported Languages
 
-Bark supports many languages through speaker presets:
+Bark supports many languages through speaker presets. `engines/barktts.py`
+maps these `--language` codes to a preset:
 - English (en)
 - Spanish (es)
 - French (fr)
@@ -68,13 +73,12 @@ Bark supports many languages through speaker presets:
 - Polish (pl)
 - Turkish (tr)
 - Russian (ru)
-- Dutch (nl)
-- Czech (cs)
-- Arabic (ar)
 - Chinese (zh)
 - Japanese (ja)
 - Korean (ko)
 - Hindi (hi)
+
+Any other code (for example `nl`, `cs`, `ar`) falls back to the English preset.
 
 ## Usage
 
@@ -82,16 +86,16 @@ Bark supports many languages through speaker presets:
 
 ```bash
 # English
-python ttsgen.py "Hello world" --engine barktts
+ttsgen "Hello world" --engine barktts
 
 # With different language
-python ttsgen.py "Hola mundo" --engine barktts --language es
+ttsgen "Hola mundo" --engine barktts --language es
 
 # Save to file
-python ttsgen.py "Hello" --engine barktts --file output.wav
+ttsgen "Hello" --engine barktts --file output.wav
 
 # German
-python ttsgen.py "Hallo Welt" --engine barktts --language de
+ttsgen "Hallo Welt" --engine barktts --language de
 ```
 
 ### Special Syntax
@@ -100,22 +104,22 @@ Bark supports special annotations in text:
 
 ```bash
 # Laughter
-python ttsgen.py "That's hilarious [laugh]" --engine barktts
+ttsgen "That's hilarious [laugh]" --engine barktts
 
 # Sighing
-python ttsgen.py "I'm so tired [sigh]" --engine barktts
+ttsgen "I'm so tired [sigh]" --engine barktts
 
 # Music (use ♪ symbols)
-python ttsgen.py "♪ La la la ♪" --engine barktts
+ttsgen "♪ La la la ♪" --engine barktts
 
 # Emphasis (CAPS)
-python ttsgen.py "This is VERY important" --engine barktts
+ttsgen "This is VERY important" --engine barktts
 
 # Pauses (ellipsis)
-python ttsgen.py "Wait... what?" --engine barktts
+ttsgen "Wait... what?" --engine barktts
 
 # Combine effects
-python ttsgen.py "Oh no! [gasp] That's TERRIBLE [sigh]" --engine barktts
+ttsgen "Oh no! [gasp] That's TERRIBLE [sigh]" --engine barktts
 ```
 
 ### First Run
@@ -127,13 +131,18 @@ The first time you use Bark:
 - Subsequent runs use cached models
 
 > **Note on `BARKTTS_MODELS`.** Unlike pipertts/silerotts/coquitts/kokorotts, Bark
-> hard-codes its model cache path inside the library. Setting
-> `BARKTTS_MODELS=<dir>` in `.env` / `~/.config/ttsgen.conf` only affects
-> what `ttsgen --list` inspects; it does **not** relocate the actual
-> download. If you need the models on another disk, symlink
-> `~/.cache/suno/bark_v0/` to that location before the first run.
+> resolves its cache path (`$XDG_CACHE_HOME/suno/bark_v0`) inside the library
+> when it is imported, and `ttsgen --install barktts` does not ask where to
+> put the models. The engine reads `BARKTTS_MODELS` (default
+> `~/.cache/suno/bark_v0`, or `cache/barktts/` in the project root if that
+> exists) only to report it and for `ttsgen --list`; it does **not** relocate
+> the download. If you need the models on another disk, symlink
+> `~/.cache/suno/bark_v0/` to that location before the first run. See
+> [ENGINES.md, "Where models live"](ENGINES.md#where-models-live).
 
 ### Pre-download Models
+
+`ttsgen --install barktts` offers to pre-download the weights. To do it by hand:
 
 ```bash
 python << 'EOF'
@@ -189,13 +198,12 @@ DEFAULT_OUTPUT_FORMAT=play
 
 ### Voice Selection
 
-Bark has 100+ speaker presets. To use different voice, modify `engines/barktts.py`:
-
-```python
-# Change speaker in get_speaker_for_language()
-# Available: v2/en_speaker_0 through v2/en_speaker_9
-# And many more variants
-```
+Bark ships 100+ speaker presets (`v2/<lang>_speaker_0` to `_9`), but this
+engine does not expose them: it picks one fixed preset per `--language`
+(`engines/barktts.py:get_speaker_for_language`, for example `v2/en_speaker_6`
+for English and `v2/ru_speaker_0` for Russian) and ignores the `voice`
+parameter. Voice choice is available in silerotts (speakers), kokorotts
+(`KOKOROTTS_VOICE`) and coquitts (reference samples).
 
 ### Emotion Control
 
@@ -231,10 +239,9 @@ Models include:
 ```bash
 # Bark requires significant RAM/VRAM
 # Solutions:
-# 1. Use smaller models (modify engines/barktts.py)
-# 2. Use GPU with more VRAM
-# 3. Use different engine (pipertts, silerotts)
-# 4. Reduce text length
+# 1. Use GPU with more VRAM
+# 2. Use different engine (pipertts, silerotts)
+# 3. Reduce text length
 ```
 
 ### Very slow generation
@@ -261,10 +268,8 @@ rm -rf ~/.cache/suno/bark_v0/
 ### Import errors
 
 ```bash
-# Install all dependencies
-pip install git+https://github.com/suno-ai/bark.git
-pip install scipy numpy
-pip install torch torchaudio
+# Re-run the installer; it installs torch from the right wheel index
+ttsgen --install barktts
 ```
 
 ### PyTorch 2.6+ weights_only error
@@ -278,9 +283,9 @@ This is already fixed in the engine code. If issue persists:
 
 **Option 1:** Update to latest code (already includes fix)
 
-**Option 2:** Downgrade PyTorch
+**Option 2:** Downgrade PyTorch (from the explicit index, see Installation)
 ```bash
-pip install torch==2.5.0 torchaudio==2.5.0
+pip install torch==2.5.0 torchaudio==2.5.0 --index-url https://download.pytorch.org/whl/cu121
 ```
 
 **Option 3:** The engine automatically adds numpy globals to safe list for PyTorch 2.6+
@@ -331,29 +336,29 @@ pip install torch==2.5.0 torchaudio==2.5.0
 
 ### Simple Speech
 ```bash
-python ttsgen.py "Hello, how are you?" --engine barktts
+ttsgen "Hello, how are you?" --engine barktts
 ```
 
 ### With Emotions
 ```bash
-python ttsgen.py "That's hilarious! [laugh]" --engine barktts
-python ttsgen.py "Oh no... [sigh]" --engine barktts
+ttsgen "That's hilarious! [laugh]" --engine barktts
+ttsgen "Oh no... [sigh]" --engine barktts
 ```
 
 ### Music
 ```bash
-python ttsgen.py "♪ Happy birthday to you ♪" --engine barktts
+ttsgen "♪ Happy birthday to you ♪" --engine barktts
 ```
 
 ### Emphasis
 ```bash
-python ttsgen.py "This is VERY IMPORTANT!" --engine barktts
+ttsgen "This is VERY IMPORTANT!" --engine barktts
 ```
 
 ### Different Languages
 ```bash
-python ttsgen.py "Hola mundo" --engine barktts --language es
-python ttsgen.py "Bonjour le monde" --engine barktts --language fr
+ttsgen "Hola mundo" --engine barktts --language es
+ttsgen "Bonjour le monde" --engine barktts --language fr
 ```
 
 ## Notes

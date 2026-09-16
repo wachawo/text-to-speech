@@ -1,7 +1,7 @@
 # Piper TTS
 
-Offline high-quality TTS via [Piper](https://github.com/rhasspy/piper) —
-ONNX models trained per voice/language, ~10× realtime on CPU.
+Offline high-quality TTS via [Piper](https://github.com/rhasspy/piper) -
+ONNX models trained per voice/language, about 10x realtime on CPU.
 
 ## Quick install
 
@@ -11,12 +11,12 @@ ttsgen --install pipertts
 
 That command:
 1. Installs `piper-tts` (CPU-friendly, no torch dependency).
-2. Lets you pick the voices to download.
-3. Stores models under `cache/pipertts/` in the project root (or another
-   directory if you choose «Standard»/«Custom» at the prompt).
+2. Asks where to store the models (see [Models Storage](#models-storage)).
+3. Lets you pick the languages to download (English, Russian, Spanish, German,
+   French; medium quality) and verifies each file against the upstream checksum.
 
-Use `--non-interactive` to accept defaults — installs `en_US-lessac-medium`
-into `cache/pipertts/` without prompts.
+Use `--non-interactive` to accept defaults - installs all five voices into
+`~/.local/share/ttsgen/pipertts/` without prompts.
 
 ## Manual install
 
@@ -24,17 +24,17 @@ into `cache/pipertts/` without prompts.
 # 1. Install the Piper Python package
 pip install piper-tts
 
-# 2. Pick a destination (must match what the engine resolves — see Models Storage)
+# 2. Pick a destination (must match what the engine resolves - see Models Storage)
 mkdir -p cache/pipertts
 
 # 3. Download voice files (.onnx + .onnx.json) from rhasspy/piper-voices@v1.0.0
 BASE=https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0
 
-# English (en_US-lessac-medium) — clear female voice
+# English (en_US-lessac-medium) - clear female voice
 wget -P cache/pipertts "$BASE/en/en_US/lessac/medium/en_US-lessac-medium.onnx"
 wget -P cache/pipertts "$BASE/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json"
 
-# Russian (ru_RU-ruslan-medium) — male voice
+# Russian (ru_RU-ruslan-medium) - male voice
 wget -P cache/pipertts "$BASE/ru/ru_RU/ruslan/medium/ru_RU-ruslan-medium.onnx"
 wget -P cache/pipertts "$BASE/ru/ru_RU/ruslan/medium/ru_RU-ruslan-medium.onnx.json"
 
@@ -49,9 +49,9 @@ Both must live in the same directory.
 ## Verify the install
 
 ```bash
-pip list | grep piper                  # → piper-tts X.Y.Z
-ls -la cache/pipertts/                 # → *.onnx + *.onnx.json pairs
-ttsgen --list                          # → pipertts | installed | <models>
+pip list | grep piper                  # piper-tts X.Y.Z
+ls -la cache/pipertts/                 # *.onnx + *.onnx.json pairs
+ttsgen --list                          # pipertts | installed | <models>
 ```
 
 ## Usage
@@ -69,33 +69,20 @@ ttsgen "Hello world" --engine pipertts --file output.wav
 
 ## Models Storage
 
-### Default Location
+Environment variable: `PIPERTTS_MODELS`. Installer default:
+`~/.local/share/ttsgen/pipertts/`; the project-local choice is `cache/pipertts/`.
+The three-way prompt and how the answer is persisted are described in
+[ENGINES.md, "Where models live"](ENGINES.md#where-models-live).
 
-Models live in `cache/pipertts/` in the project root (auto-created by the
-installer). Example: `/path/to/text-to-speech/cache/pipertts/`.
+`engines/pipertts.py:get_models_directory()` resolves the directory as
+`PIPERTTS_MODELS` (absolute or project-root-relative), then `cache/pipertts/`
+in the project root if it exists, then `<project>/.piper/voices` for legacy
+installs. When the voice is not in that directory the engine also looks in
+`~/.local/share/piper/voices`, `/usr/share/piper/voices` and `./voices`.
 
-### Path Resolution Priority
-
-`engines/pipertts.py:get_models_directory()` resolves the model directory
-in this order:
-
-1. **`PIPERTTS_MODELS` env var** (set in process env, `.env`,
-   `./ttsgen.conf`, or `~/.config/ttsgen.conf`). Absolute or
-   project-root-relative.
-2. **`cache/pipertts/`** in the project root — used if it exists on disk.
-3. **`<project>/.piper/voices`** — fallback for legacy installs.
-
-### Custom Location
-
-`ttsgen --install pipertts` interactive mode offers three options:
-
-1. **Default:** `cache/pipertts/` (project-local — recommended for clones).
-2. **Standard:** `~/.local/share/ttsgen/pipertts/` (user-wide — survives
-   moving the project clone).
-3. **Custom:** any directory you specify.
-
-The choice persists to `~/.config/ttsgen.conf` as
-`PIPERTTS_MODELS=<chosen-path>`.
+Config precedence, strongest first: CLI flags > shell environment >
+`./ttsgen.conf` > `~/.config/ttsgen.conf` > `./.env.local` > `./.env`. Files
+never override the shell; `.env` is read only from the current directory.
 
 To override after install:
 
@@ -109,23 +96,27 @@ echo "PIPERTTS_MODELS=$HOME/my-piper-voices" >> ~/.config/ttsgen.conf
 
 ### Voice Quality Tiers
 
-- **low** — fast, basic quality (~10 MB).
-- **medium** — good quality (~50 MB). ⭐ Recommended.
-- **high** — best quality (~150 MB).
+- **low** - fast, basic quality (~10 MB).
+- **medium** - good quality (~50 MB). Recommended; the installer downloads this tier.
+- **high** - best quality (~150 MB).
 
 ### Popular Models
 
-| Language | Model | Quality |
-|---|---|---|
-| English (US) | `en_US-lessac-medium` | ⭐⭐⭐⭐⭐ |
-| English (GB) | `en_GB-alba-medium` | ⭐⭐⭐⭐ |
-| Russian | `ru_RU-ruslan-medium` | ⭐⭐⭐⭐⭐ |
-| Spanish (ES) | `es_ES-davefx-medium` | ⭐⭐⭐⭐ |
-| German | `de_DE-thorsten-medium` | ⭐⭐⭐⭐⭐ |
-| French | `fr_FR-siwis-medium` | ⭐⭐⭐⭐ |
-| Italian | `it_IT-riccardo-medium` | ⭐⭐⭐⭐ |
-| Ukrainian | `uk_UA-ukrainian_tts-medium` | ⭐⭐⭐⭐ |
-| Chinese | `zh_CN-huayan-medium` | ⭐⭐⭐⭐ |
+| `--language` | Model | Quality | Installer |
+|---|---|---|---|
+| `en` | `en_US-lessac-medium` | 5/5 | yes |
+| `ru` | `ru_RU-ruslan-medium` | 5/5 | yes |
+| `es` | `es_ES-davefx-medium` | 4/5 | yes |
+| `de` | `de_DE-thorsten-medium` | 5/5 | yes |
+| `fr` | `fr_FR-siwis-medium` | 4/5 | yes |
+| `it` | `it_IT-riccardo-medium` | 4/5 | manual download |
+| `uk` | `uk_UA-ukrainian_tts-medium` | 4/5 | manual download |
+| `zh` | `zh_CN-huayan-medium` | 4/5 | manual download |
+
+These are the voices `engines/pipertts.py` maps to a `--language` code; any
+other code falls back to the English voice. Other voices from the catalogue
+(for example `en_GB-alba-medium`) can be downloaded, but the engine does not
+select them by language.
 
 Full catalogue: <https://rhasspy.github.io/piper-samples/>.
 
@@ -153,11 +144,15 @@ to that directory.
 
 ### Low audio quality
 
-Switch to a `-high` voice variant — re-run the installer and pick the
-`high` quality tier, or download manually:
+Switch to a `-high` voice variant. The installer downloads the medium tier
+only, and the engine looks the voice up by its medium file name, so fetch the
+high tier manually into a separate directory, store it under the medium names
+and point `PIPERTTS_MODELS` at that directory:
 
 ```bash
 BASE=https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0
-wget -P cache/pipertts "$BASE/en/en_US/lessac/high/en_US-lessac-high.onnx"
-wget -P cache/pipertts "$BASE/en/en_US/lessac/high/en_US-lessac-high.onnx.json"
+mkdir -p ~/piper-high
+wget -O ~/piper-high/en_US-lessac-medium.onnx      "$BASE/en/en_US/lessac/high/en_US-lessac-high.onnx"
+wget -O ~/piper-high/en_US-lessac-medium.onnx.json "$BASE/en/en_US/lessac/high/en_US-lessac-high.onnx.json"
+export PIPERTTS_MODELS=~/piper-high
 ```

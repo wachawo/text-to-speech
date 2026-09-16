@@ -11,12 +11,15 @@ ttsgen --install kokorotts
 ```
 
 That command:
-1. Picks `onnxruntime` (CPU) or `onnxruntime-gpu` (CUDA) — interactive prompt.
-2. Installs `kokoro-onnx` and `soundfile`.
-3. Downloads `kokoro-v1.0.onnx` (~310 MB) and `voices-v1.0.bin` (~25 MB) from
+1. Asks where to store the models (see [Configuration](#configuration)).
+2. Picks `onnxruntime` (CPU) or `onnxruntime-gpu` (CUDA) - interactive prompt.
+3. Installs `kokoro-onnx` and `soundfile`.
+4. Downloads `kokoro-v1.0.onnx` (~310 MB) and `voices-v1.0.bin` (~25 MB) from
    [`nazdridoy/kokoro-tts` v1.0.0 release](https://github.com/nazdridoy/kokoro-tts/releases/tag/v1.0.0).
 
-Use `--non-interactive` to accept defaults (CPU runtime, default model dir).
+Use `--non-interactive` to accept defaults (CPU runtime, model directory
+`~/.local/share/ttsgen/kokorotts`). Kokoro needs no PyTorch; `kokoro-onnx`
+supports Python 3.10 to 3.12, and the project itself requires 3.11+.
 
 ## Manual install
 
@@ -36,14 +39,14 @@ Set `KOKOROTTS_MODELS` if you want models in another directory.
 # English (default voice af_sarah)
 ttsgen "Hello world" --engine kokorotts
 
-# Other languages — 2-char code maps to Kokoro lang internally
-ttsgen "Bonjour"     --engine kokorotts --language fr   # → fr-fr / ff_siwis
-ttsgen "Ciao mondo"  --engine kokorotts --language it   # → it    / if_sara
-ttsgen "你好世界"     --engine kokorotts --language zh   # → cmn   / zf_xiaobei
-ttsgen "こんにちは"    --engine kokorotts --language ja   # → ja    / jf_alpha
-ttsgen "Hola mundo"  --engine kokorotts --language es   # → es    / ef_dora
+# Other languages - 2-char code maps to Kokoro lang internally
+ttsgen "Bonjour"     --engine kokorotts --language fr   # fr-fr / ff_siwis
+ttsgen "Ciao mondo"  --engine kokorotts --language it   # it    / if_sara
+ttsgen "你好世界"     --engine kokorotts --language zh   # cmn   / zf_xiaobei
+ttsgen "こんにちは"    --engine kokorotts --language ja   # ja    / jf_alpha
+ttsgen "Hola mundo"  --engine kokorotts --language es   # es    / ef_dora
 
-# Override voice / speed via env (no CLI flags yet)
+# Override voice / speed via env (no CLI flags; the `voice` request field is ignored by this engine)
 KOKOROTTS_VOICE=am_adam     ttsgen "Hi" --engine kokorotts
 KOKOROTTS_VOICE=af_heart    ttsgen "Hi" --engine kokorotts
 KOKOROTTS_SPEED=1.2         ttsgen "Hi" --engine kokorotts
@@ -53,13 +56,15 @@ KOKOROTTS_SPEED=1.2         ttsgen "Hi" --engine kokorotts
 
 | Variable | Default | Notes |
 |---|---|---|
-| `KOKOROTTS_MODELS` | `~/.local/share/ttsgen/kokorotts` | Directory holding the two model files |
+| `KOKOROTTS_MODELS` | `~/.local/share/ttsgen/kokorotts` | Directory holding the two model files; `cache/kokorotts/` in the project root is used first when it exists (see [ENGINES.md, "Where models live"](ENGINES.md#where-models-live)) |
 | `KOKOROTTS_MODEL` | `kokoro-v1.0.onnx` | Filename inside `KOKOROTTS_MODELS` |
 | `KOKOROTTS_VOICES` | `voices-v1.0.bin` | Filename inside `KOKOROTTS_MODELS` |
-| `KOKOROTTS_VOICE` | per-language default (`af_sarah`, `ff_siwis`, …) | Any voice ID supported by the model |
+| `KOKOROTTS_VOICE` | per-language default (`af_sarah`, `ff_siwis`, ...) | Any voice ID supported by the model |
 | `KOKOROTTS_SPEED` | `1.0` | Speech speed multiplier |
 
-Standard config-file priority applies: process env > `./ttsgen.conf` > `~/.config/ttsgen.conf` > `.env`.
+Config precedence, strongest first: CLI flags > shell environment > `./ttsgen.conf` >
+`~/.config/ttsgen.conf` > `./.env.local` > `./.env`. Files never override the
+shell; `.env` is read only from the current directory.
 
 ## Supported languages and default voices
 
@@ -76,7 +81,7 @@ Standard config-file priority applies: process env > `./ttsgen.conf` > `~/.confi
 
 Override `KOKOROTTS_VOICE` to pick male / British / blended voices. The full
 catalog (mirrored from <https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md>)
-is below. Grades come from upstream subjective evaluation (A best → F worst);
+is below. Grades come from upstream subjective evaluation (A best to F worst);
 ungraded voices are listed without one.
 
 ## Full voice list
@@ -86,7 +91,7 @@ Voice ID prefix encodes language + gender:
 Japanese, `zf_*`/`zm_*` Mandarin, `ef_*`/`em_*` Spanish, `ff_*` French,
 `hf_*`/`hm_*` Hindi, `if_*`/`im_*` Italian, `pf_*`/`pm_*` Brazilian Portuguese.
 
-### American English (`--language en` → `en-us`)
+### American English (`--language en`, Kokoro lang `en-us`)
 
 | Voice ID | Gender | Grade |
 |---|---|---|
@@ -111,7 +116,7 @@ Japanese, `zf_*`/`zm_*` Mandarin, `ef_*`/`em_*` Spanish, `ff_*` French,
 | `am_santa` | Male | D- |
 | `am_adam` | Male | F+ |
 
-### British English (no default — set `KOKOROTTS_VOICE` and use `--language en`)
+### British English (no default - set `KOKOROTTS_VOICE` and use `--language en`)
 
 | Voice ID | Gender | Grade |
 |---|---|---|
@@ -124,7 +129,7 @@ Japanese, `zf_*`/`zm_*` Mandarin, `ef_*`/`em_*` Spanish, `ff_*` French,
 | `bm_lewis` | Male | D+ |
 | `bm_daniel` | Male | D |
 
-### Japanese (`--language ja` → `ja`)
+### Japanese (`--language ja`, Kokoro lang `ja`)
 
 | Voice ID | Gender | Grade |
 |---|---|---|
@@ -134,7 +139,7 @@ Japanese, `zf_*`/`zm_*` Mandarin, `ef_*`/`em_*` Spanish, `ff_*` French,
 | `jf_nezumi` | Female | C- |
 | `jm_kumo` | Male | C- |
 
-### Mandarin Chinese (`--language zh` → `cmn`)
+### Mandarin Chinese (`--language zh`, Kokoro lang `cmn`)
 
 | Voice ID | Gender | Grade |
 |---|---|---|
@@ -147,21 +152,21 @@ Japanese, `zf_*`/`zm_*` Mandarin, `ef_*`/`em_*` Spanish, `ff_*` French,
 | `zm_yunxia` | Male | D |
 | `zm_yunyang` | Male | D |
 
-### Spanish (`--language es` → `es`)
+### Spanish (`--language es`, Kokoro lang `es`)
 
 | Voice ID | Gender | Grade |
 |---|---|---|
-| `ef_dora` *(default)* | Female | — |
-| `em_alex` | Male | — |
-| `em_santa` | Male | — |
+| `ef_dora` *(default)* | Female | ungraded |
+| `em_alex` | Male | ungraded |
+| `em_santa` | Male | ungraded |
 
-### French (`--language fr` → `fr-fr`)
+### French (`--language fr`, Kokoro lang `fr-fr`)
 
 | Voice ID | Gender | Grade |
 |---|---|---|
 | `ff_siwis` *(default)* | Female | B- |
 
-### Hindi (`--language hi` → `hi`)
+### Hindi (`--language hi`, Kokoro lang `hi`)
 
 | Voice ID | Gender | Grade |
 |---|---|---|
@@ -170,25 +175,25 @@ Japanese, `zf_*`/`zm_*` Mandarin, `ef_*`/`em_*` Spanish, `ff_*` French,
 | `hm_omega` | Male | C |
 | `hm_psi` | Male | C |
 
-### Italian (`--language it` → `it`)
+### Italian (`--language it`, Kokoro lang `it`)
 
 | Voice ID | Gender | Grade |
 |---|---|---|
 | `if_sara` *(default)* | Female | C |
 | `im_nicola` | Male | C |
 
-### Brazilian Portuguese (`--language pt` → `pt-br`)
+### Brazilian Portuguese (`--language pt`, Kokoro lang `pt-br`)
 
 | Voice ID | Gender | Grade |
 |---|---|---|
-| `pf_dora` *(default)* | Female | — |
-| `pm_alex` | Male | — |
-| `pm_santa` | Male | — |
+| `pf_dora` *(default)* | Female | ungraded |
+| `pm_alex` | Male | ungraded |
+| `pm_santa` | Male | ungraded |
 
 ## Output format
 
 WAV, 16-bit PCM, mono, 24000 Hz (Kokoro native). The CLI's chunking pipeline
-concatenates chunks via `wave` from the standard library — no re-encoding.
+concatenates chunks via `wave` from the standard library - no re-encoding.
 
 ## Troubleshooting
 

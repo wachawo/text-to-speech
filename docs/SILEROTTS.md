@@ -18,13 +18,13 @@ Particularly strong for Russian language. Fast on CPU, no GPU required.
 ## System Requirements
 
 ### Minimum Requirements
-- Python 3.8+
+- Python 3.11+ (the Docker images use 3.12)
 - 2GB RAM
 - 500MB disk space
 - CPU: Works well on modern CPUs
 
 ### Recommended Requirements
-- Python 3.8+
+- Python 3.11+
 - 4GB+ RAM
 - 1GB disk space
 - Multi-core CPU
@@ -34,49 +34,38 @@ Particularly strong for Russian language. Fast on CPU, no GPU required.
 ### Quick Installation
 
 ```bash
-# Install dependencies
-pip install torch torchaudio omegaconf
+ttsgen --install silerotts
 
 # Test installation
 python -c "import torch, torchaudio, omegaconf; print('Silero TTS ready')"
 ```
 
-### Using Installation Script
-
-```bash
-# Run installation script
-ttsgen --install silerotts
-```
-
-The script will:
-1. Install PyTorch and torchaudio
-2. Verify installation
-3. Optionally pre-download models
+The installer:
+1. Asks where to store the models (see [Models Storage](#models-storage))
+2. Installs PyTorch and torchaudio from an explicit wheel index
+   (`https://download.pytorch.org/whl/cpu` or `.../whl/cu121`); the default
+   PyPI index ships wheels for a newer CUDA that fail on NVIDIA drivers below
+   about 580, which is why the installer picks the index for you
+3. Installs `omegaconf`
+4. Optionally pre-downloads the models
 
 ## Models Storage
 
-### Default Location
+Environment variable: `SILEROTTS_MODELS`. Installer default:
+`~/.cache/torch/hub/` (the torch.hub cache Silero uses on its own); the
+project-local choice is `cache/silerotts/`. The three-way prompt and how the
+answer is persisted are described in
+[ENGINES.md, "Where models live"](ENGINES.md#where-models-live).
 
-Models are stored in `cache/silerotts/` directory in project root (created automatically during installation).
-
-Example: `/path/to/tts/cache/silerotts/`
-
-### Custom Location
-
-During installation, you can choose from:
-1. **Default:** `cache/silerotts/` (in project directory)
-2. **Standard:** `~/.cache/torch/hub/` (default Silero location)
-3. **Custom:** any directory you specify
-
-To change directory after installation:
+To change the directory after installation:
 
 ```bash
-# In .env file
-echo "SILEROTTS_MODELS=~/.cache/torch/hub" >> .env
+# Persist in ~/.config/ttsgen.conf
+echo "SILEROTTS_MODELS=$HOME/.cache/torch/hub" >> ~/.config/ttsgen.conf
 
 # Or via environment variable
-export SILEROTTS_MODELS="~/.cache/torch/hub"
-python ttsgen.py "Hello" --engine silerotts
+export SILEROTTS_MODELS="$HOME/.cache/torch/hub"
+ttsgen "Hello" --engine silerotts
 ```
 
 ## Supported Languages
@@ -103,22 +92,24 @@ All models use:
 ## Voices
 
 Each Silero language model ships several speakers (voices). The first speaker of
-each language is the default; pass `voice` (HTTP `/api/tts`) or `config["voice"]`
-to pick another. Russian (`v3_1_ru`) includes both male and female voices:
+each language is the default; pass `voice` (HTTP `/api/tts`, the `voice`
+argument of `libs.api.text_to_speech_bytes`, or `config["voice"]` when calling
+the engine directly) to pick another. The `ttsgen` CLI has no voice flag for
+this engine. Russian (`v3_1_ru`) includes both male and female voices:
 
 | Language | Default | Speakers |
 |----------|---------|----------|
 | `ru` | `aidar` (male) | `aidar`, `baya` (female), `kseniya` (female), `xenia` (female), `eugene` (male), `random` |
-| `en` | `en_0` | `en_0` … `en_117`, `random` |
+| `en` | `en_0` | `en_0` to `en_117`, `random` |
 | `de` | `bernd_ungerer` | model speakers |
-| `es` | `es_0` | `es_0` … |
-| `fr` | `fr_0` | `fr_0` … |
+| `es` | `es_0` | `es_0`, ... |
+| `fr` | `fr_0` | `fr_0`, ... |
 | `ua` | `mykyta` | model speakers |
 
 The authoritative list comes from the loaded model's `speakers` attribute and is
 exposed at runtime:
 
-- `engines.silerotts.list_voices(language)` → `{"voices": [...], "default": "aidar"}`
+- `engines.silerotts.list_voices(language)` returns `{"voices": [...], "default": "aidar"}`
 - HTTP: `GET /api/voices?engine=silerotts&language=ru`
 
 An unknown voice for the language raises `ValidationError` (HTTP `400`).
@@ -136,19 +127,19 @@ audio = generate("Здравствуйте", {"language": "ru", "voice": "baya"}
 
 ```bash
 # English
-python ttsgen.py "Hello world" --engine silerotts
+ttsgen "Hello world" --engine silerotts
 
 # Russian (excellent quality)
-python ttsgen.py "Привет мир" --engine silerotts --language ru
+ttsgen "Привет мир" --engine silerotts --language ru
 
 # Spanish
-python ttsgen.py "Hola mundo" --engine silerotts --language es
+ttsgen "Hola mundo" --engine silerotts --language es
 
 # Save to file
-python ttsgen.py "Hello" --engine silerotts --file output.wav
+ttsgen "Hello" --engine silerotts --file output.wav
 
 # Play and save
-python ttsgen.py "Hello" --engine silerotts --file output.wav --play
+ttsgen "Hello" --engine silerotts --file output.wav --play
 ```
 
 ### First Run
@@ -157,11 +148,11 @@ The first time you use Silero TTS for each language:
 - Model downloads automatically from PyTorch Hub
 - Download size: 50-100MB per model
 - Takes 1-5 minutes depending on connection
-- Models cached in: `~/.cache/torch/hub/`
+- Models cached in the `SILEROTTS_MODELS` directory (see Models Storage)
 
 ### Pre-download Models
 
-To download models ahead of time:
+`ttsgen --install silerotts` offers to pre-download the models. To do it by hand:
 
 ```bash
 python << 'EOF'
@@ -269,7 +260,7 @@ Some models support multiple speakers:
 # English model speakers: en_0, en_1, en_2, etc.
 ```
 
-To use different speaker, modify `engines/silerotts.py` or create custom engine.
+Pick one with the `voice` parameter, see [Voices](#voices) above.
 
 ## Comparison
 
@@ -300,12 +291,8 @@ To use different speaker, modify `engines/silerotts.py` or create custom engine.
 ### Installation fails
 
 ```bash
-# Install dependencies separately
-pip install numpy
-pip install torch torchaudio
-
-# Try specific version
-pip install torch==2.0.0 torchaudio==2.0.0
+# Re-run the installer; it installs torch from the right wheel index
+ttsgen --install silerotts
 ```
 
 ### Model download fails
@@ -329,10 +316,10 @@ rm -rf ~/.cache/torch/hub/snakers4_silero-models_master/
 ### ImportError: No module named torch
 
 ```bash
-# Install PyTorch
-pip install torch torchaudio
+# Install PyTorch through the installer (prompts for CPU or CUDA build)
+ttsgen --install silerotts
 
-# Or use CPU-only version (smaller)
+# Equivalent by hand, CPU-only build (smaller)
 pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
 ```
 
@@ -360,13 +347,13 @@ pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
 
 ```bash
 # 1. Install
-pip install torch torchaudio
+ttsgen --install silerotts
 
 # 2. Use (model downloads automatically on first run)
-python ttsgen.py "Hello world" --engine silerotts
+ttsgen "Hello world" --engine silerotts
 
 # 3. Russian (recommended - best quality)
-python ttsgen.py "Привет мир" --engine silerotts --language ru
+ttsgen "Привет мир" --engine silerotts --language ru
 ```
 
 Models download automatically on first use. No manual model management needed!
