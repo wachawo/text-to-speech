@@ -234,3 +234,56 @@ def test_generate_unknown_language_falls_back_to_en(engine, monkeypatch, tmp_pat
     # Should not raise — unknown language falls back to LANGUAGE_MAP["en"].
     out = engine.generate("hi", {"language": "xx"})
     assert isinstance(out, bytes)
+
+
+# Import-time side effects and concurrency
+
+
+def raise_on_call(*args, **kwargs):
+    """Fail the test: the patched config loader must never run at engine import."""
+    raise AssertionError("config loading must not happen at engine import time")
+
+
+def test_import_does_not_load_config(engine, monkeypatch):
+    """Importing the engine neither calls libs.config.load_config nor dotenv.load_dotenv."""
+    import dotenv
+
+    import libs.config
+
+    monkeypatch.setattr(libs.config, "load_config", raise_on_call)
+    monkeypatch.setattr(dotenv, "load_dotenv", raise_on_call)
+    monkeypatch.setattr(dotenv, "find_dotenv", raise_on_call)
+    importlib.reload(engine)
+
+
+def test_concurrent_first_load_constructs_kokoro_once(engine, monkeypatch, tmp_path):
+    """Four threads generating at once against an empty cache build exactly one Kokoro."""
+    import threading
+    import time
+
+    constructions = []
+
+    class SlowKokoro:
+        """Kokoro stand-in whose constructor is slow enough for the threads to overlap."""
+
+        def __init__(self, model_path, voices_path):
+            """Record the construction and sleep so concurrent callers pile up."""
+            constructions.append(model_path)
+            time.sleep(0.05)
+
+        def create(self, text, voice, speed, lang):
+            """Return a fixed block of silent samples and the sample rate."""
+            return array.array("h", [0] * 240), 24000
+
+    (tmp_path / "kokoro-v1.0.onnx").write_bytes(b"x")
+    (tmp_path / "voices-v1.0.bin").write_bytes(b"x")
+    monkeypatch.setenv("KOKOROTTS_MODELS", str(tmp_path))
+    monkeypatch.setattr(engine, "Kokoro", SlowKokoro)
+
+    threads = [threading.Thread(target=engine.generate, args=("hi", {"language": "en"})) for unused in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert len(constructions) == 1
+    assert len(engine.KOKORO_CACHE) == 1

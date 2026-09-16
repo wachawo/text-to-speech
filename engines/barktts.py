@@ -8,39 +8,39 @@ memory hungry (10GB+ of model weights) — best used with a GPU.
 
 import logging
 import os
+import threading
 
 # Local imports
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
 from libs.tempfiles import safe_unlink
-
-# .env via find_dotenv (walks up from cwd) → then .env.local override.
-try:
-    from dotenv import find_dotenv, load_dotenv
-
-    found = find_dotenv(usecwd=True)
-    if found:
-        load_dotenv(found)
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    local_env_file = os.path.join(project_root, ".env.local")
-    if os.path.exists(local_env_file):
-        load_dotenv(local_env_file, override=True)
-except ImportError:
-    pass  # dotenv not installed, skip
 
 logger = logging.getLogger(__name__)
 
 # Bark generates ~14s of audio per minute on CPU; 5k chars is already heavy.
 MAX_TEXT_LENGTH = 5_000
 
-# Try to import Bark
+# Try to import Bark. scipy is part of the probe: generate() cannot encode
+# the waveform without it, so `ttsgen --list` must not advertise the engine
+# when it is missing.
 try:
     import numpy as np
+    import scipy.io.wavfile
     from bark import SAMPLE_RATE, generate_audio, preload_models
 
     AVAILABLE = True
 except ImportError:
     AVAILABLE = False
     logger.warning("Bark TTS not available. Install with: pip install git+https://github.com/suno-ai/bark.git")
+
+# PRELOAD_LOCK guards the first preload_models() so concurrent first requests
+# do not load the 10GB of weights twice; MODELS_PRELOADED is its
+# double-checked flag. INFERENCE_LOCK serialises generate_audio: Bark keeps
+# its models in module globals and is not safe to drive from several threads
+# at once. The engine pool bounds synthesis across engines; this lock bounds
+# this engine to one synthesis at a time.
+PRELOAD_LOCK = threading.Lock()
+MODELS_PRELOADED = False
+INFERENCE_LOCK = threading.Lock()
 
 
 def is_available() -> bool:
@@ -109,6 +109,51 @@ def get_speaker_for_language(language: str) -> str:
     return speaker_map.get(language, speaker_map["en"])
 
 
+def ensure_models_loaded() -> None:
+    """Run Bark's preload_models() once per process, under the preload lock.
+
+    Bark resolves its cache directory from XDG_CACHE_HOME when `bark.generation`
+    is imported, which happened at engine import, so BARKTTS_MODELS cannot
+    relocate the weights from here (see docs/BARKTTS.md); it is only reported.
+    """
+    global MODELS_PRELOADED
+    if MODELS_PRELOADED:
+        return
+    with PRELOAD_LOCK:
+        if MODELS_PRELOADED:
+            return
+        models_dir = get_models_directory()
+        if models_dir != os.path.expanduser("~/.cache/suno/bark_v0"):
+            logger.info(f"BARKTTS_MODELS is {models_dir}, but Bark loads its weights from ~/.cache/suno/bark_v0")
+
+        # Fix for PyTorch 2.6+ weights_only security issue.
+        # Bark checkpoints need these numpy globals allow-listed (actual
+        # objects, not strings) or torch.load refuses to unpickle them.
+        # numpy 2.x moved `core` to `_core`; the old name only warns.
+        import torch
+
+        torch_version = tuple(map(int, torch.__version__.split(".")[:2]))
+        if torch_version >= (2, 6):
+            np_core = getattr(np, "_core", None) or np.core
+            torch.serialization.add_safe_globals([np_core.multiarray.scalar, np.dtype])
+
+        # First run downloads the weights; later runs load them from cache.
+        preload_models()
+        MODELS_PRELOADED = True
+
+
+def to_pcm16(audio_array):
+    """Return a float waveform in -1..1 as int16 samples; anything else is passed through.
+
+    Bark returns float32, and scipy would write a float WAV (format 3), which
+    the stdlib `wave` module behind the streaming and history code cannot read.
+    """
+    samples = np.asarray(audio_array)
+    if not np.issubdtype(samples.dtype, np.floating):
+        return audio_array
+    return (np.clip(samples, -1.0, 1.0) * 32767.0).astype(np.int16)
+
+
 def generate(text: str, config: dict) -> bytes:
     """
     Generate TTS and return audio as bytes.
@@ -148,39 +193,20 @@ def generate(text: str, config: dict) -> bytes:
         raise ValidationError(f"Text too long for barktts: {len(text)} > {MAX_TEXT_LENGTH}")
 
     try:
-        # scipy/tempfile/torch are imported lazily: they are only needed on the
+        # tempfile/torch are imported lazily: they are only needed on the
         # synthesis path, and Bark's stack is heavy enough that `ttsgen --list`
         # should not pay for it.
         import tempfile
 
-        import scipy.io.wavfile
-
         language = config.get("language", "en")
 
-        models_dir = get_models_directory()
-        if models_dir != os.path.expanduser("~/.cache/suno/bark_v0"):
-            # Bark resolves its weights under $XDG_CACHE_HOME/suno/bark_v0, so
-            # point XDG_CACHE_HOME at the grandparent of the configured directory.
-            cache_dir = os.path.dirname(os.path.dirname(models_dir))
-            os.environ["XDG_CACHE_HOME"] = cache_dir
-            logger.info(f"Using custom Bark TTS models directory: {models_dir}")
-
-        # Fix for PyTorch 2.6+ weights_only security issue.
-        # Bark checkpoints need these numpy globals allow-listed (actual
-        # objects, not strings) or torch.load refuses to unpickle them.
-        import torch
-
-        torch_version = tuple(map(int, torch.__version__.split(".")[:2]))
-        if torch_version >= (2, 6):
-            torch.serialization.add_safe_globals([np.core.multiarray.scalar, np.dtype])
-
-        # First run downloads the weights; later runs load them from cache.
-        preload_models()
+        ensure_models_loaded()
 
         history_prompt = get_speaker_for_language(language)
 
         # Bark returns a numpy waveform sampled at SAMPLE_RATE (24000 Hz).
-        audio_array = generate_audio(text, history_prompt=history_prompt, text_temp=0.7, waveform_temp=0.7)
+        with INFERENCE_LOCK:
+            audio_array = generate_audio(text, history_prompt=history_prompt, text_temp=0.7, waveform_temp=0.7)
 
         # scipy.io.wavfile.write needs a real path, so encode through a
         # temporary file and hand the caller the resulting bytes.
@@ -188,7 +214,7 @@ def generate(text: str, config: dict) -> bytes:
             temp_filename = temp_file.name
 
         try:
-            scipy.io.wavfile.write(temp_filename, SAMPLE_RATE, audio_array)
+            scipy.io.wavfile.write(temp_filename, SAMPLE_RATE, to_pcm16(audio_array))
 
             with open(temp_filename, "rb") as f:
                 audio_bytes = f.read()

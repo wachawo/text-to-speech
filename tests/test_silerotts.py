@@ -29,9 +29,17 @@ def make_fake_torch():
             """Fail loudly unless a test has swapped in its own loader."""
             raise NotImplementedError
 
+        def __init__(self):
+            """Start with the torch default hub directory."""
+            self.dir = "~/.cache/torch/hub"
+
         def set_dir(self, path):
-            """Accept and ignore the hub cache directory."""
-            pass
+            """Record the hub cache directory."""
+            self.dir = path
+
+        def get_dir(self):
+            """Return the recorded hub cache directory."""
+            return self.dir
 
     new_torch = types.ModuleType("torch")  # type: ignore[name-defined]
     new_torch.hub = FakeHub()
@@ -332,3 +340,109 @@ def test_generate_unknown_voice_raises_validation_error(engine, monkeypatch):
     install_voice_model(engine, monkeypatch, ["aidar", "baya", "kseniya"])
     with pytest.raises(ValidationError, match="Unknown voice"):
         engine.generate("hello", {"language": "ru", "voice": "nonexistent"})
+
+
+# Import-time side effects, hub dir handling and concurrency
+
+
+def raise_on_call(*args, **kwargs):
+    """Fail the test: the patched config loader must never run at engine import."""
+    raise AssertionError("config loading must not happen at engine import time")
+
+
+def test_import_does_not_load_config(engine, monkeypatch):
+    """Importing the engine neither calls libs.config.load_config nor dotenv.load_dotenv."""
+    import dotenv
+
+    import libs.config
+
+    monkeypatch.setattr(libs.config, "load_config", raise_on_call)
+    monkeypatch.setattr(dotenv, "load_dotenv", raise_on_call)
+    monkeypatch.setattr(dotenv, "find_dotenv", raise_on_call)
+    importlib.reload(engine)
+
+
+def test_hub_dir_set_once_at_load(engine, monkeypatch, tmp_path):
+    """torch.hub.set_dir runs at model load, only when the directory differs, never per call."""
+    set_calls = []
+    real_set_dir = engine.torch.hub.set_dir
+
+    def counting_set_dir(path):
+        """Record the call and forward it to the fake hub."""
+        set_calls.append(path)
+        real_set_dir(path)
+
+    monkeypatch.setattr(engine.torch.hub, "set_dir", counting_set_dir)
+    monkeypatch.setenv("SILEROTTS_MODELS", str(tmp_path / "hub"))
+    install_voice_model(engine, monkeypatch, ["aidar"])
+
+    engine.generate("a", {"language": "ru"})
+    engine.generate("b", {"language": "ru"})
+    assert set_calls == [str(tmp_path / "hub")]
+
+    # Already pointing there: a new model load must not set it again.
+    engine.TTS_CACHE.clear()
+    engine.generate("c", {"language": "ru"})
+    assert set_calls == [str(tmp_path / "hub")]
+
+
+def run_threads(target, count=4):
+    """Start `count` threads on `target` and wait for all of them."""
+    import threading
+
+    threads = [threading.Thread(target=target) for unused in range(count)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+
+def test_concurrent_first_load_loads_model_once(engine, monkeypatch):
+    """Four threads generating at once against an empty cache call torch.hub.load exactly once."""
+    import time
+
+    loads = []
+
+    def slow_load(**kw):
+        """Record the load and sleep so concurrent callers pile up."""
+        loads.append(kw["speaker"])
+        time.sleep(0.05)
+        return VoiceStubModel(["aidar", "baya"]), "example"
+
+    monkeypatch.setattr(engine, "AVAILABLE", True)
+    monkeypatch.setattr(engine.torch.hub, "load", slow_load)
+    run_threads(lambda: engine.generate("hi", {"language": "ru"}))
+    assert len(loads) == 1
+    assert len(engine.TTS_CACHE) == 1
+
+
+def test_inference_is_serialised(engine, monkeypatch):
+    """apply_tts never overlaps: with four threads the fake sees at most one caller inside."""
+    import threading
+    import time
+
+    state = {"inside": 0, "overlap": 0, "calls": 0}
+    guard = threading.Lock()
+
+    class OverlapModel(VoiceStubModel):
+        """Model stand-in that counts callers inside apply_tts at the same time."""
+
+        def apply_tts(self, text, speaker, sample_rate):
+            """Track concurrent entries, then return the canned waveform."""
+            with guard:
+                state["inside"] += 1
+                state["calls"] += 1
+                if state["inside"] > 1:
+                    state["overlap"] += 1
+            time.sleep(0.02)
+            result = super().apply_tts(text, speaker, sample_rate)
+            with guard:
+                state["inside"] -= 1
+            return result
+
+    model = OverlapModel(["aidar"])
+    monkeypatch.setattr(engine, "AVAILABLE", True)
+    monkeypatch.setattr(engine.torch.hub, "load", lambda **kw: (model, "example"))
+    run_threads(lambda: engine.generate("hi", {"language": "ru"}))
+    assert state["calls"] == 4
+    assert state["overlap"] == 0

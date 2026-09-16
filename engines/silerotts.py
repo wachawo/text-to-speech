@@ -9,26 +9,13 @@ German, Spanish, French, Ukrainian and more.
 import io
 import logging
 import os
+import threading
 import wave
 
 import numpy as np
 
 # Local imports
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
-
-# .env via find_dotenv (walks up from cwd) → then .env.local override.
-try:
-    from dotenv import find_dotenv, load_dotenv
-
-    found = find_dotenv(usecwd=True)
-    if found:
-        load_dotenv(found)
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    local_env_file = os.path.join(project_root, ".env.local")
-    if os.path.exists(local_env_file):
-        load_dotenv(local_env_file, override=True)
-except ImportError:
-    pass  # dotenv not installed, skip
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +26,13 @@ MAX_TEXT_LENGTH = 50_000
 # on every call. Mirrors engines/coquitts.py:TTS_CACHE. Without this, each
 # synthesis re-instantiates the model (seconds), defeating Silero's fast path.
 TTS_CACHE: dict = {}
+# TTS_CACHE_LOCK guards the first load (and the one-time torch.hub.set_dir) so
+# concurrent first requests do not fetch the model twice. INFERENCE_LOCK
+# serialises apply_tts: one Silero torch model is not safe to drive from
+# several threads at once. The engine pool bounds synthesis across engines;
+# this lock bounds this engine to one synthesis at a time.
+TTS_CACHE_LOCK = threading.Lock()
+INFERENCE_LOCK = threading.Lock()
 
 # Try to import Silero dependencies
 try:
@@ -123,9 +117,17 @@ def load_model(language: str) -> tuple:
     device = torch.device("cpu")
     cache_key = (model_id, str(device))
     model = TTS_CACHE.get(cache_key)
-    if model is None:
+    if model is not None:
+        return model, default_speaker, sample_rate
+    with TTS_CACHE_LOCK:
+        model = TTS_CACHE.get(cache_key)
+        if model is not None:
+            return model, default_speaker, sample_rate
+        # torch.hub.load takes no directory argument; the hub dir is process
+        # state set through set_dir, so it is set once here, under the lock,
+        # and only when it differs from the current one.
         models_dir = get_models_directory()
-        if models_dir != os.path.expanduser("~/.cache/torch/hub"):
+        if models_dir != os.path.expanduser("~/.cache/torch/hub") and torch.hub.get_dir() != models_dir:
             torch.hub.set_dir(models_dir)
             logger.info(f"Using custom Silero models directory: {models_dir}")
 
@@ -161,8 +163,7 @@ def load_model(language: str) -> tuple:
         # Note: model.to() returns None for some Silero models, use in-place
         model.to(device)
         TTS_CACHE[cache_key] = model
-
-    return model, default_speaker, sample_rate
+        return model, default_speaker, sample_rate
 
 
 def list_voices(language: str = "en") -> dict:
@@ -227,7 +228,8 @@ def generate(text: str, config: dict) -> bytes:
             )
 
         # Generate audio (float32 mono waveform in [-1, 1]).
-        audio_tensor = model.apply_tts(text=text, speaker=speaker, sample_rate=sample_rate)
+        with INFERENCE_LOCK:
+            audio_tensor = model.apply_tts(text=text, speaker=speaker, sample_rate=sample_rate)
 
         # Encode WAV with the stdlib `wave` module instead of torchaudio.save():
         # in torchaudio >= 2.9 save() routes through the torchcodec backend, whose

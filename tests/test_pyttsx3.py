@@ -151,3 +151,126 @@ def test_generate_wraps_unexpected_exception_as_tts_exception(engine, monkeypatc
     fake.init = boom
     with pytest.raises(TTSException, match="generation failed"):
         engine.generate("hi", {})
+
+
+# Voice selection
+
+
+def voice(voice_id, languages=None, name=None):
+    """Build a pyttsx3-like voice object with the given id, languages and name."""
+    return types.SimpleNamespace(id=voice_id, languages=languages or [], name=name or voice_id)
+
+
+ESPEAK_VOICES = [
+    voice("default", [b"\x05en"], "default"),
+    voice("gmw/en", [b"\x05en"], "English (Great Britain)"),
+    voice("gmw/en-US", [b"\x05en-us"], "English (America)"),
+    voice("roa/de", [b"\x05de"], "German"),
+    voice("zle/ru", [b"\x05ru"], "Russian"),
+]
+
+
+def import_engine_with_voices(monkeypatch, voices):
+    """Fresh-import engines.pyttsx3 against a fake pyttsx3 that reports `voices`."""
+    monkeypatch.setitem(sys.modules, "pyttsx3", make_fake_pyttsx3(voices=voices))
+    monkeypatch.delitem(sys.modules, "engines.pyttsx3", raising=False)
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
+    return importlib.import_module("engines.pyttsx3")
+
+
+def test_generate_picks_voice_by_language(monkeypatch):
+    """config['language'] selects the first voice whose language tag starts with the code."""
+    eng = import_engine_with_voices(monkeypatch, ESPEAK_VOICES)
+    eng.generate("hi", {"language": "ru"})
+    assert sys.modules["pyttsx3"].state["voice"] == "zle/ru"
+
+
+def test_generate_picks_voice_by_explicit_voice_id(monkeypatch):
+    """config['voice'] wins over the language and matches the voice id case-insensitively."""
+    eng = import_engine_with_voices(monkeypatch, ESPEAK_VOICES)
+    eng.generate("hi", {"language": "ru", "voice": "gmw/en-us"})
+    assert sys.modules["pyttsx3"].state["voice"] == "gmw/en-US"
+
+
+def test_generate_picks_voice_by_explicit_voice_name(monkeypatch):
+    """config['voice'] also matches the human-readable voice name."""
+    eng = import_engine_with_voices(monkeypatch, ESPEAK_VOICES)
+    eng.generate("hi", {"language": "en", "voice": "german"})
+    assert sys.modules["pyttsx3"].state["voice"] == "roa/de"
+
+
+def test_generate_unknown_voice_falls_back_to_language(monkeypatch):
+    """A voice the driver does not offer falls back to the language match, not to voices[0]."""
+    eng = import_engine_with_voices(monkeypatch, ESPEAK_VOICES)
+    eng.generate("hi", {"language": "de", "voice": "nonexistent"})
+    assert sys.modules["pyttsx3"].state["voice"] == "roa/de"
+
+
+def test_generate_unmatched_language_falls_back_to_first_voice(monkeypatch):
+    """A language no voice serves keeps the historical voices[0] choice."""
+    eng = import_engine_with_voices(monkeypatch, ESPEAK_VOICES)
+    eng.generate("hi", {"language": "zz"})
+    assert sys.modules["pyttsx3"].state["voice"] == "default"
+
+
+@pytest.mark.parametrize(
+    "voice_obj,language,expected",
+    [
+        (voice("en", ["en"]), "en", True),
+        (voice("english", [b"\x05en"]), "en", True),
+        (voice("gmw/en-US", []), "en", True),
+        (voice("en_US", []), "en", True),
+        (voice("default", []), "de", False),
+        (voice("zle/ru", [b"\x05ru"]), "en", False),
+    ],
+)
+def test_voice_matches_language(engine, voice_obj, language, expected):
+    """Language tags match by prefix; ids match exactly, by last segment, or before '-' / '_'."""
+    assert engine.voice_matches_language(voice_obj, language) is expected
+
+
+# Concurrency
+
+
+def test_engine_calls_are_serialised(monkeypatch):
+    """init/save_to_file/runAndWait/stop never overlap across threads."""
+    import threading
+
+    state = {"inside": 0, "overlap": 0, "calls": 0}
+    guard = threading.Lock()
+    fake = make_fake_pyttsx3()
+    real_init = fake.init
+
+    def tracked_init():
+        """Count callers between init() and stop() at the same time."""
+        with guard:
+            state["inside"] += 1
+            state["calls"] += 1
+            if state["inside"] > 1:
+                state["overlap"] += 1
+        engine_obj = real_init()
+        real_stop = engine_obj.stop
+
+        def tracked_stop():
+            """Leave the critical section after the real stop."""
+            real_stop()
+            with guard:
+                state["inside"] -= 1
+
+        engine_obj.stop = tracked_stop
+        return engine_obj
+
+    fake.init = tracked_init
+    monkeypatch.setitem(sys.modules, "pyttsx3", fake)
+    monkeypatch.delitem(sys.modules, "engines.pyttsx3", raising=False)
+    # A short real pause instead of the 0.5s flush wait keeps the section open long enough to overlap.
+    monkeypatch.setattr(time, "sleep", lambda seconds: threading.Event().wait(0.02))
+    eng = importlib.import_module("engines.pyttsx3")
+
+    threads = [threading.Thread(target=eng.generate, args=("hi", {})) for unused in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert state["calls"] == 4
+    assert state["overlap"] == 0
