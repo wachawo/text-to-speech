@@ -1,6 +1,6 @@
 ## Changelog
 
-### [Unreleased]
+### [1.0.6] - 2026-09-16
 
 #### Added
 - The web UI signs in when the server has `TTS_TOKENS`: `/api/health` reports
