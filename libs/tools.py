@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, cast
 
 # Local imports
-from engines import get_engine_function, is_engine_available
+from engines import get_engine_function, get_supported_engines, is_engine_available
 
 from .exceptions import EngineNotAvailableError, TTSException, ValidationError
 
@@ -90,9 +90,10 @@ def validate_engine(engine: str) -> str:
         engine_file = Path(__file__).parent.parent / "engines" / f"{engine}.py"
 
         if not engine_file.exists():
+            supported = ", ".join(get_supported_engines())
             raise ValidationError(
                 f"Engine '{engine}' not found.\n"
-                f"Available engines: gtts, pyttsx3, piper (and any custom engines in engines/ directory)\n"
+                f"Available engines: {supported} (and any custom engines in engines/ directory)\n"
                 f"To add '{engine}' engine: create engines/{engine}.py"
             )
         else:

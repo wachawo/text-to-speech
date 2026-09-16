@@ -106,11 +106,11 @@ def test_parser_file_flag_without_path_yields_empty_string():
     assert args.file == ""
 
 
-def test_parser_default_language_is_en():
-    """Omitting `--language` falls back to English."""
+def test_parser_default_language_is_unset():
+    """Omitting `--language` leaves None, so main() can fall back to TTS_LANGUAGE and then en."""
     parser = ttsapi.parse_arguments()
     args = parser.parse_args(["hello"])
-    assert args.language == "en"
+    assert args.language is None
 
 
 # setup_logging
@@ -204,6 +204,32 @@ def test_fetch_audio_returns_response_content_on_2xx(monkeypatch):
 
     monkeypatch.setattr(requests, "post", lambda *a, **kw: FakeResp())
     assert ttsapi.fetch_audio("hi", "gtts", "en") == b"RIFFdata"
+
+
+def test_fetch_audio_records_content_type(monkeypatch):
+    """The response Content-Type is kept so an auto-named file can take its extension from it."""
+
+    class FakeResp:
+        """Canned 200 response with an MP3 Content-Type."""
+
+        status_code = 200
+        content = b"\xff\xfb" + b"\x00" * 8
+        text = ""
+        headers = {"Content-Type": "audio/mpeg"}
+
+    monkeypatch.setattr(requests, "post", lambda *a, **kw: FakeResp())
+    ttsapi.fetch_audio("hi", "gtts", "en")
+    assert ttsapi.LAST_RESPONSE["content_type"] == "audio/mpeg"
+
+
+def test_response_extension_prefers_content_type_then_sniffs(tmp_path):
+    """A known Content-Type names the extension; anything else falls back to the chunk header."""
+    chunk = tmp_path / "a.part"
+    chunk.write_bytes(b"RIFF" + b"\x00" * 8)
+    assert ttsapi.response_extension("audio/mpeg; charset=binary", [str(chunk)]) == "mp3"
+    assert ttsapi.response_extension("audio/x-wav", [str(chunk)]) == "wav"
+    assert ttsapi.response_extension("", [str(chunk)]) == "wav"
+    assert ttsapi.response_extension("application/octet-stream", [str(chunk)]) == "wav"
 
 
 def test_fetch_audio_truncates_long_error_body_in_message(monkeypatch):

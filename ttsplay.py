@@ -33,6 +33,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "libs"))
 # Local imports
 try:
     from libs.api import play_audio
+    from libs.audio import audio_format
+    from libs.config import load_config
 except ImportError as e:
     logger.error(f"Failed to import playback module: {e}")
     sys.exit(1)
@@ -40,6 +42,7 @@ except ImportError as e:
 
 def main():
     """Read audio bytes from stdin, play them, and return a shell exit code."""
+    load_config()
     try:
         # Refuse to block on an interactive terminal: without a pipe there is nothing to play.
         if sys.stdin.isatty():
@@ -56,14 +59,7 @@ def main():
             return 1
 
         # Format is reported for diagnostics only; play_audio sniffs the header itself.
-        if audio_data.startswith(b"RIFF"):
-            format_type = "WAV"
-        elif audio_data.startswith(b"ID3") or audio_data[0:2] == b"\xff\xfb":
-            format_type = "MP3"
-        else:
-            format_type = "Unknown"
-
-        logger.info(f"Playing {len(audio_data)} bytes ({format_type})...")
+        logger.info(f"Playing {len(audio_data)} bytes ({audio_format(audio_data)})...")
 
         play_audio(audio_data)
 

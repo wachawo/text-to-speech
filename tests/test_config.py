@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 
 import pytest
+from dotenv import load_dotenv
 
 # Local imports
 from libs import config as cfg
@@ -97,6 +98,24 @@ def test_persist_uncomments_commented_key(isolated_user_config):
     assert "# OTHER=keep" in body  # untouched commented keys preserved
 
 
+def test_persist_quotes_value_with_hash_and_spaces(isolated_user_config, monkeypatch):
+    """A path with `#` and spaces is quoted so dotenv reads it back intact."""
+    value = "/home/me/my #1 voice.wav"
+    cfg.persist_config_value("COQUITTS_SAMPLE", value)
+    body = isolated_user_config.read_text(encoding="utf-8")
+    assert 'COQUITTS_SAMPLE="/home/me/my #1 voice.wav"' in body
+    monkeypatch.delenv("COQUITTS_SAMPLE", raising=False)
+    load_dotenv(isolated_user_config)
+    assert os.environ["COQUITTS_SAMPLE"] == value
+
+
+def test_persist_refuses_value_with_newline(isolated_user_config):
+    """A value carrying a line break would inject a second key, so it is rejected."""
+    with pytest.raises(ValueError, match="line break"):
+        cfg.persist_config_value("COQUITTS_SAMPLE", "one\ntwo")
+    assert not isolated_user_config.exists()
+
+
 def test_persist_only_replaces_first_match(isolated_user_config):
     """If the file has duplicate KEY entries, only the first is replaced —
     callers should not rely on dedup, but the contract pins down stability."""
@@ -119,7 +138,7 @@ def test_load_config_no_op_when_dotenv_missing(monkeypatch, isolated_user_config
 
 
 def test_load_config_priority_local_over_shared_env(monkeypatch, isolated_user_config, tmp_path):
-    """`.env.local` must win over `.env` (the bug the user originally hit)."""
+    """`.env.local` must win over `.env`."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".env").write_text("MY_KEY=shared_loses\n")
     (tmp_path / ".env.local").write_text("MY_KEY=local_wins\n")
@@ -128,21 +147,54 @@ def test_load_config_priority_local_over_shared_env(monkeypatch, isolated_user_c
     assert os.environ.get("MY_KEY") == "local_wins"
 
 
-def test_load_config_dotenv_beats_user_config(monkeypatch, isolated_user_config, tmp_path):
-    """.env is priority 3, ~/.config/ttsgen.conf is priority 4 — .env wins."""
+def test_load_config_env_local_does_not_beat_shell(monkeypatch, isolated_user_config, tmp_path):
+    """A shell variable (or a CLI flag pushed into the env) outranks `.env.local`."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env.local").write_text("SHELL_KEY=local_loses\n")
+    monkeypatch.setenv("SHELL_KEY", "from_shell")
+    cfg.load_config()
+    assert os.environ["SHELL_KEY"] == "from_shell"
+
+
+def test_load_config_user_config_beats_dotenv(monkeypatch, isolated_user_config, tmp_path):
+    """~/.config/ttsgen.conf outranks both .env.local and .env."""
     monkeypatch.chdir(tmp_path)
     isolated_user_config.parent.mkdir(parents=True, exist_ok=True)
-    isolated_user_config.write_text("USER_PRIORITY=user_loses\n")
-    (tmp_path / ".env").write_text("USER_PRIORITY=env_wins\n")
+    isolated_user_config.write_text("USER_PRIORITY=user_wins\n")
+    (tmp_path / ".env.local").write_text("USER_PRIORITY=local_loses\n")
+    (tmp_path / ".env").write_text("USER_PRIORITY=env_loses\n")
     monkeypatch.delenv("USER_PRIORITY", raising=False)
     cfg.load_config()
-    assert os.environ.get("USER_PRIORITY") == "env_wins"
+    assert os.environ.get("USER_PRIORITY") == "user_wins"
+
+
+def test_load_config_project_config_beats_user_config(monkeypatch, isolated_user_config, tmp_path):
+    """./ttsgen.conf outranks ~/.config/ttsgen.conf."""
+    monkeypatch.chdir(tmp_path)
+    isolated_user_config.parent.mkdir(parents=True, exist_ok=True)
+    isolated_user_config.write_text("PROJECT_PRIORITY=user_loses\n")
+    (tmp_path / "ttsgen.conf").write_text("PROJECT_PRIORITY=project_wins\n")
+    monkeypatch.delenv("PROJECT_PRIORITY", raising=False)
+    cfg.load_config()
+    assert os.environ.get("PROJECT_PRIORITY") == "project_wins"
+
+
+def test_load_config_ignores_parent_directory_dotenv(monkeypatch, isolated_user_config, tmp_path):
+    """A `.env` in a parent directory is never read; only the current directory counts."""
+    (tmp_path / ".env").write_text("PARENT_KEY=from_parent\n")
+    child = tmp_path / "child"
+    child.mkdir()
+    monkeypatch.chdir(child)
+    monkeypatch.delenv("PARENT_KEY", raising=False)
+    cfg.load_config()
+    assert "PARENT_KEY" not in os.environ
 
 
 def test_load_config_process_env_beats_files(monkeypatch, isolated_user_config, tmp_path):
-    """Real process env outranks every file except .env.local, which is absent here."""
+    """Real process env outranks every file."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".env").write_text("PROCESS_ENV_KEY=from_env_file\n")
+    (tmp_path / "ttsgen.conf").write_text("PROCESS_ENV_KEY=from_project_file\n")
     monkeypatch.setenv("PROCESS_ENV_KEY", "from_process")
     cfg.load_config()
     assert os.environ["PROCESS_ENV_KEY"] == "from_process"

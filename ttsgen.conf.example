@@ -4,12 +4,15 @@
 #   ./ttsgen.conf            (project-local, highest file priority)
 #   ~/.config/ttsgen.conf    (user-wide; auto-created with defaults on first run)
 #
-# Lookup priority (highest wins):
-#   1. Process env (shell vars, CLI flags like --coqui-model)
-#   2. ./ttsgen.conf
-#   3. ~/.config/ttsgen.conf
-#   4. .env (legacy)
-#   5. Built-in defaults baked into engine modules
+# Lookup priority (highest wins; a weaker source never overwrites a stronger one):
+#   1. CLI flags (--engine, --coqui-model, ...)
+#   2. Shell environment
+#   3. ./ttsgen.conf
+#   4. ~/.config/ttsgen.conf
+#   5. ./.env.local (gitignored local overrides of ./.env)
+#   6. ./.env
+#   7. Built-in defaults baked into engine modules
+# .env and .env.local are read from the current directory only, never from a parent.
 
 
 # Default engine and language used when not specified on the command line.

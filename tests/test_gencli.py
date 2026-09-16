@@ -46,7 +46,7 @@ def run_ttsgen(args: list[str], env: dict, timeout: int = 30) -> subprocess.Comp
 
 
 def test_ttsgen_file_output_writes_audio(tmp_path):
-    """File output mode exits 0 and leaves a non-empty audio file on disk."""
+    """File output mode exits 0, writes exactly the requested file and prints its path."""
     out = tmp_path / "out.mp3"
     env = stubbed_env({"AUDIO_DIRECTORY": str(tmp_path)})
     result = run_ttsgen(
@@ -54,11 +54,25 @@ def test_ttsgen_file_output_writes_audio(tmp_path):
         env=env,
     )
     assert result.returncode == 0, f"ttsgen exit {result.returncode}\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
-    # The file mode auto-numbers chunks: <base>_001.mp3 — so look for any sibling.
-    siblings = list(tmp_path.glob("out_*.mp3")) + ([out] if out.exists() else [])
-    assert siblings, f"no output file produced; tmp dir contents: {list(tmp_path.iterdir())}"
-    chosen = max(siblings, key=lambda p: p.stat().st_size)
-    assert chosen.stat().st_size > 0
+    assert out.exists(), f"no output file produced; tmp dir contents: {list(tmp_path.iterdir())}"
+    assert out.stat().st_size > 0
+    assert sorted(tmp_path.iterdir()) == [out]
+    assert result.stdout.strip() == str(out)
+
+
+def test_ttsgen_long_text_still_writes_one_file(tmp_path):
+    """Several chunks end up concatenated in the one requested file, never in out_001, out_002."""
+    out = tmp_path / "out.mp3"
+    env = stubbed_env({"AUDIO_DIRECTORY": str(tmp_path)})
+    long_text = ". ".join(f"sentence number {i}" for i in range(40)) + "."
+    result = run_ttsgen(
+        [long_text, "--engine", "gtts", "--file", str(out), "--quiet"],
+        env=env,
+    )
+    assert result.returncode == 0, f"ttsgen exit {result.returncode}\nSTDERR:\n{result.stderr}"
+    assert sorted(tmp_path.iterdir()) == [out]
+    # The stub returns the same tagged frame for every chunk; the file holds them back to back.
+    assert out.read_bytes().count(b"ID3") >= 2
 
 
 def test_ttsgen_engine_failure_returns_nonzero(tmp_path):

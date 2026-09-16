@@ -3,17 +3,13 @@
 """Command-line tool that synthesizes text locally and plays, saves or pipes the audio."""
 
 import argparse
-import io
 import logging
 import os
 import queue
-import shutil
 import sys
 import threading
 import traceback
 from typing import Any, cast
-
-from dotenv import find_dotenv, load_dotenv
 
 # Configure logging
 LOGGING = {
@@ -40,39 +36,39 @@ try:
     from libs.config import load_config
     from libs.models import collect_engine_rows
     from libs.tempfiles import safe_unlink
-    from libs.tools import ensure_audio_directory, generate_timestamp_filename
 except ImportError as exc:
     logger.error(f"Failed to import TTS library: {exc}")
     sys.exit(1)
 
-# Pipeline helpers (chunk_text, concat_wav_files, rec_worker, play_worker) live in libs.cli
+# Pipeline helpers (chunk_text, output resolution, rec_worker, play_worker) live in libs.cli
 # so they're shared between ttsgen (offline) and ttsapi (HTTP-based) without code duplication.
 # This import sits below the logging setup and the guarded block above on purpose, so the
 # E402 waiver is deliberate rather than an oversight.
 from libs.cli import (  # noqa: E402
+    CHUNK_SUFFIX,
     QueueItem,
+    chunk_extension,
     chunk_text,
-    concat_wav_files,
+    output_path_for,
     play_worker,
     rec_worker,
+    resolve_output_target,
+    save_audio_file,
+    scratch_dir,
+    write_audio,
 )
 
 # Long input is split into chunks so playback can start before synthesis finishes.
 DEFAULT_CHUNK_CHARS = 200
 
-# Bounded queue between producer and consumer threads — provides backpressure.
+# Bounded queue between producer and consumer threads, provides backpressure.
 PIPELINE_QUEUE_SIZE = 2
 
 VALID_OUTPUT_FORMATS = ("play", "file", "stdout")
 
 
-def get_config() -> dict[str, Any]:
-    """Load configuration from .env (base) → .env.local (override)."""
-    found = find_dotenv(usecwd=True)
-    if found:
-        load_dotenv(found)
-    if os.path.exists(".env.local"):
-        load_dotenv(".env.local", override=True)
+def read_env_config() -> dict[str, Any]:
+    """Read the CLI defaults from the environment, after load_config() has filled it."""
     return {
         "engine": os.getenv("TTS_ENGINE", "gtts"),
         "language": os.getenv("TTS_LANGUAGE", "en"),
@@ -202,7 +198,7 @@ Environment Configuration:
         "--engine",
         help="TTS engine to use (gtts, pyttsx3, or any custom engine in engines/)",
     )
-    parser.add_argument("-l", "--language", default="en", help="Language code (default: en)")
+    parser.add_argument("-l", "--language", help="Language code (default: en)")
 
     # Audio directory option
     parser.add_argument(
@@ -252,27 +248,6 @@ def get_text(args: argparse.Namespace) -> str:
         return cast(str, args.text)
     else:
         raise ValidationError("No text provided")
-
-
-def to_file(args: argparse.Namespace, config: dict[str, Any], engine: str) -> str | None:
-    """Determine output filename from arguments and configuration."""
-    if args.file is None:
-        return None
-    extension = "mp3" if engine == "gtts" else "wav"
-    if args.file == "":
-        audio_dir = args.audio_dir or config["audio_directory"]
-        ensure_audio_directory(audio_dir)
-        timestamp_filename = cast(str, generate_timestamp_filename("", extension))
-        return os.path.join(audio_dir, timestamp_filename)
-    if args.file.endswith("/") or (os.path.exists(args.file) and os.path.isdir(args.file)):
-        ensure_audio_directory(args.file)
-        timestamp_filename = cast(str, generate_timestamp_filename("", extension))
-        return os.path.join(args.file, timestamp_filename)
-    parent_dir = os.path.dirname(args.file)
-    if parent_dir and parent_dir != ".":
-        ensure_audio_directory(parent_dir)
-    filename: str = args.file
-    return filename
 
 
 def list_engines_and_models() -> None:
@@ -327,7 +302,7 @@ def log_run_summary(
     engine: str,
     language: str,
     output_formats: list[str],
-    output_filename: str | None,
+    output_target: str | None,
 ) -> None:
     """Log the resolved run parameters before synthesis starts."""
     logger.info("TTS CLI Tool")
@@ -337,73 +312,8 @@ def log_run_summary(
     logger.info(f"Engine: {engine}")
     logger.info(f"Language: {language}")
     logger.info(f"Formats: {', '.join(output_formats)}")
-    if output_filename:
-        logger.info(f"Output file: {output_filename}")
-
-
-def save_chunk_files(
-    collected_paths: list[str],
-    output_filename: str | None,
-    extension: str,
-    fallback_dir: str,
-) -> list[str]:
-    """Move the generated chunk temp files to their final destination.
-
-    Args:
-        collected_paths: Temp files produced by the pipeline, in playback order.
-        output_filename: Requested output path, a directory, or None.
-        extension: Audio extension used when the request carries none.
-        fallback_dir: Directory used when output_filename is missing or is a directory.
-
-    Returns:
-        Destination paths of the chunks that were written successfully.
-    """
-    saved_files: list[str] = []
-
-    if output_filename and not os.path.isdir(output_filename):
-        base, requested_ext = os.path.splitext(output_filename)
-        if not requested_ext:
-            requested_ext = f".{extension}"
-        for index, tmp_path in enumerate(collected_paths, start=1):
-            destination = f"{base}_{index:03d}{requested_ext}"
-            try:
-                shutil.copy2(tmp_path, destination)  # copy temp file to destination
-                safe_unlink(tmp_path)  # delete original temp file (Windows-safe)
-                saved_files.append(destination)
-            except Exception as exc:
-                logger.error(f"Failed to save chunk {index} to {destination}: {exc}")
-        return saved_files
-
-    out_dir = output_filename if (output_filename and os.path.isdir(output_filename)) else fallback_dir
-    ensure_audio_directory(out_dir)
-    for index, tmp_path in enumerate(collected_paths, start=1):
-        filename = generate_timestamp_filename(f"part_{index:03d}_", extension)
-        destination = os.path.join(out_dir, filename)
-        try:
-            shutil.copy2(tmp_path, destination)
-            safe_unlink(tmp_path)
-            saved_files.append(destination)
-        except Exception as exc:
-            logger.error(f"Failed to save chunk {index} to {destination}: {exc}")
-    return saved_files
-
-
-def write_stdout_audio(engine: str, audio_paths: list[str]) -> None:
-    """Write the generated audio to stdout, concatenating WAV chunks when possible."""
-    if engine == "gtts":
-        # MP3 - don't glue them together without recoding -
-        # write them sequentially
-        logger.warning("multiple MP3 chunks written sequentially to stdout; " "this is not a single valid MP3 file.")
-        for path in audio_paths:
-            with open(path, "rb") as f:
-                sys.stdout.buffer.write(f.read())
-        sys.stdout.buffer.flush()
-        return
-
-    stdout_buf = io.BytesIO()
-    concat_wav_files(audio_paths, stdout_buf)
-    sys.stdout.buffer.write(stdout_buf.getvalue())
-    sys.stdout.buffer.flush()
+    if output_target:
+        logger.info(f"Output: {output_target}")
 
 
 def main() -> int:
@@ -411,15 +321,15 @@ def main() -> int:
     parser = parse_arguments()
     args = parser.parse_args()
 
-    # Engine-specific CLI overrides → push into env so engine/installer pick them up.
+    # Engine-specific CLI overrides are pushed into the env so engine/installer pick them up.
     # CLI flags take top priority over config files.
     if getattr(args, "coqui_model", None):
         os.environ["COQUITTS_MODEL"] = args.coqui_model
     if getattr(args, "coqui_sample", None):
         os.environ["COQUITTS_SAMPLE"] = args.coqui_sample
 
-    # Load config files (./ttsgen.conf > ~/.config/ttsgen.conf > .env). Existing env
-    # (set by shell or by the CLI flags above) is preserved — files only fill gaps.
+    # Load config files (./ttsgen.conf > ~/.config/ttsgen.conf > .env.local > .env). Existing
+    # env (set by the shell or by the CLI flags above) is preserved: files only fill gaps.
     load_config()
 
     if getattr(args, "list", False):
@@ -434,48 +344,35 @@ def main() -> int:
 
     try:
         setup_logging(args.verbose, args.quiet)
-        config = get_config()
+        config = read_env_config()
         text = get_text(args)
         engine = args.engine or config["engine"]
         language = args.language or config["language"]
 
         output_formats = resolve_output_formats(args)
+        out_is_stdout = "stdout" in output_formats
+        out_is_file = "file" in output_formats
 
-        # Determine output filename if saving to file
-        output_filename: str | None = None
-        if "file" in output_formats:
-            if args.file is not None:
-                output_filename = to_file(args, config, engine)
-            else:
-                audio_dir = config["audio_directory"]
-                ensure_audio_directory(audio_dir)
-                prefix = config.get("filename_prefix", "")
-                extension = "wav" if engine in ["pyttsx3", "pipertts"] else "mp3"
-                timestamp_filename = generate_timestamp_filename(prefix, extension)
-                output_filename = os.path.join(audio_dir, timestamp_filename)
+        # The output target is an exact file name, or a directory whose file name is
+        # built after synthesis, once the audio header says whether it is WAV or MP3.
+        output_target: str | None = None
+        target_is_dir = False
+        if out_is_file:
+            audio_dir = args.audio_dir or config["audio_directory"]
+            output_target, target_is_dir = resolve_output_target(args.file, audio_dir)
 
-        verbose_summary = not args.quiet and "stdout" not in output_formats
+        verbose_summary = not args.quiet and not out_is_stdout
         if verbose_summary:
-            log_run_summary(text, engine, language, output_formats, output_filename)
+            log_run_summary(text, engine, language, output_formats, output_target)
 
         # Chunked mode: synthesis and playback overlap through a bounded queue.
         chunks = chunk_text(text, DEFAULT_CHUNK_CHARS)
         if verbose_summary:
             logger.info(f"Chunks: {len(chunks)} (<= {DEFAULT_CHUNK_CHARS} chars each)")
 
-        ext = "mp3" if engine == "gtts" else "wav"
-        tmp_suffix = f".{ext}"
-
-        out_is_stdout = "stdout" in output_formats
-        out_is_file = "file" in output_formats
-
-        # Co-locate temp chunks with the final file only when actually saving to disk
-        # (avoids cross-drive moves). Otherwise use system /tmp.
-        if out_is_file:
-            tmp_dir = args.audio_dir or config["audio_directory"]
-            ensure_audio_directory(tmp_dir)
-        else:
-            tmp_dir = None
+        # Co-locate temp chunks with the final file only when actually saving to disk.
+        # Otherwise use the system temp dir.
+        tmp_dir = scratch_dir(output_target, target_is_dir)
 
         audio_queue: queue.Queue[QueueItem] = queue.Queue(maxsize=PIPELINE_QUEUE_SIZE)
         collected_paths: list[str] = []
@@ -487,7 +384,7 @@ def main() -> int:
 
         rec_thread = threading.Thread(
             target=rec_worker,
-            args=(chunks, generator, audio_queue, tmp_suffix, tmp_dir),
+            args=(chunks, generator, audio_queue, CHUNK_SUFFIX, tmp_dir),
             daemon=True,
         )
         play_thread = threading.Thread(
@@ -505,27 +402,31 @@ def main() -> int:
                 logger.error(f"Chunk {idx} failed: {type(err).__name__}: {err}")
             logger.error(f"{len(failures)}/{len(chunks)} chunk(s) failed; aborting with exit code 3.")
             return 3
+        if not collected_paths:
+            logger.error("No audio was generated: the text holds nothing to synthesize.")
+            return 1
 
-        saved_files: list[str] = []
-
-        if out_is_file:
-            fallback_dir = args.audio_dir or config["audio_directory"]
-            saved_files = save_chunk_files(collected_paths, output_filename, ext, fallback_dir)
-            if "stdout" not in output_formats:
-                # Written to stdout so shells can capture it: FILE=$(ttsgen "Hi" --file).
-                for fpath in saved_files:
-                    print(fpath, file=sys.stdout)
+        if out_is_file and output_target is not None:
+            extension = chunk_extension(collected_paths)
+            output_filename = output_path_for(output_target, target_is_dir, config["filename_prefix"], extension)
+            try:
+                save_audio_file(collected_paths, output_filename)
+            except OSError as exc:
+                logger.error(f"Failed to save {output_filename}: {type(exc).__name__}: {exc}\n{traceback.format_exc()}")
+                return 1
+            if out_is_stdout:
+                # stdout carries the audio stream, so the filename goes to the log instead.
+                logger.info(output_filename)
             else:
-                # stdout carries the audio stream, so the filenames go to the log instead.
-                for fpath in saved_files:
-                    logger.info(fpath)
+                # Written to stdout so shells can capture it: FILE=$(ttsgen "Hi" --file).
+                print(output_filename, file=sys.stdout)
 
         if out_is_stdout:
-            write_stdout_audio(engine, saved_files if saved_files else collected_paths)
+            write_audio(collected_paths, sys.stdout.buffer)
+            sys.stdout.buffer.flush()
 
-        if not out_is_file:
-            for tmp_path in collected_paths:
-                safe_unlink(tmp_path)
+        for tmp_path in collected_paths:
+            safe_unlink(tmp_path)
 
         return 0
 

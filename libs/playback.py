@@ -9,6 +9,7 @@ import warnings
 import wave
 
 # Local imports
+from .audio import is_wav
 from .exceptions import EngineNotAvailableError, TTSException, ValidationError
 from .tempfiles import safe_unlink
 
@@ -70,7 +71,11 @@ def play_file(filename: str) -> None:
         sample_rate = DEFAULT_SAMPLE_RATE
         channels = DEFAULT_CHANNELS
 
-        if filename.endswith(".wav"):
+        # Sniff the header rather than trust the extension: a chunk spooled as
+        # .mp3 by a WAV engine would otherwise get the default mixer rate.
+        with open(filename, "rb") as header_file:
+            header = header_file.read(4)
+        if is_wav(header):
             try:
                 with wave.open(filename, "rb") as wf:
                     sample_rate = wf.getframerate()
@@ -107,9 +112,7 @@ def play_bytes(audio_bytes: bytes) -> None:
         raise EngineNotAvailableError("pygame not available for audio playback")
 
     # pygame picks its decoder from the extension, so sniff the container header.
-    suffix = ".mp3"
-    if audio_bytes.startswith(b"RIFF"):
-        suffix = ".wav"
+    suffix = ".wav" if is_wav(audio_bytes) else ".mp3"
 
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp_file:
         temp_filename = temp_file.name

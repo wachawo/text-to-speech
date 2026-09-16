@@ -1,22 +1,41 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Unit tests for libs/cli — pipeline helpers shared by ttsgen and ttsapi.
+"""Unit tests for libs/cli, the pipeline helpers shared by ttsgen and ttsapi.
 
 Covers:
 - chunk_text: empty, at or below max, above max, no punctuation, very long single token.
 - concat_wav_files: empty list, single file, two-file concat, mismatched params.
+- output resolution: directory targets, exact names, timestamped names from the header.
+- write_audio / save_audio_file: WAV concat, MP3 byte concat, umask-driven file mode.
 - rec_worker / play_worker: success path, partial failure (sentinel propagation),
   done-sentinel always emitted, failures list capture.
 """
 
 import io
+import os
 import queue
+import stat
+import sys
 import threading
 import wave
 from pathlib import Path
 
+import pytest
+
 # Local imports
-from libs.cli import ChunkResult, chunk_text, concat_wav_files, play_worker, rec_worker
+from libs.cli import (
+    ChunkResult,
+    chunk_extension,
+    chunk_text,
+    concat_wav_files,
+    is_directory_target,
+    output_path_for,
+    play_worker,
+    rec_worker,
+    resolve_output_target,
+    save_audio_file,
+    write_audio,
+)
 
 # chunk_text
 
@@ -112,6 +131,107 @@ def test_concat_wav_files_param_mismatch_warns(tmp_path, caplog):
         with open(out_path, "wb") as out:
             concat_wav_files([str(a), str(b)], out)
     assert any("WAV params mismatch" in r.message for r in caplog.records)
+
+
+# output resolution
+
+
+def test_is_directory_target_trailing_separator_or_existing_dir(tmp_path):
+    """A trailing separator or an existing directory means "directory, auto-named file"."""
+    assert is_directory_target("audio" + os.sep)
+    assert is_directory_target(str(tmp_path))
+    assert not is_directory_target(str(tmp_path / "out.wav"))
+    assert not is_directory_target("out")
+
+
+@pytest.mark.skipif(os.altsep is None, reason="no alternative separator on this platform")
+def test_is_directory_target_accepts_altsep():
+    """On Windows a forward slash also marks a directory target."""
+    assert is_directory_target("audio" + os.altsep)
+
+
+def test_resolve_output_target_empty_uses_audio_dir(tmp_path):
+    """None (via --output file) and "" (bare --file) both mean the audio directory."""
+    audio_dir = tmp_path / "audio"
+    assert resolve_output_target(None, str(audio_dir)) == (str(audio_dir), True)
+    assert resolve_output_target("", str(audio_dir)) == (str(audio_dir), True)
+    assert audio_dir.is_dir()
+
+
+def test_resolve_output_target_exact_name_creates_parent(tmp_path):
+    """An exact file name is returned verbatim and its parent directory is created."""
+    target = tmp_path / "nested" / "out.wav"
+    assert resolve_output_target(str(target), str(tmp_path)) == (str(target), False)
+    assert target.parent.is_dir()
+    assert not target.exists()
+
+
+def test_output_path_for_directory_uses_prefix_and_extension(tmp_path):
+    """A directory target gets a [prefix_]timestamp.<extension> name inside it."""
+    name = output_path_for(str(tmp_path), True, "voice", "mp3")
+    assert Path(name).parent == tmp_path
+    assert Path(name).name.startswith("voice_")
+    assert name.endswith(".mp3")
+    assert output_path_for(str(tmp_path / "exact.wav"), False, "voice", "mp3") == str(tmp_path / "exact.wav")
+
+
+# write_audio / save_audio_file
+
+
+def test_chunk_extension_sniffs_first_chunk(tmp_path):
+    """The extension comes from the header of the first chunk, whatever the file is called."""
+    wav = tmp_path / "a.part"
+    silent_wav(wav)
+    mp3 = tmp_path / "b.part"
+    mp3.write_bytes(b"\xff\xf3\x64\xc4" + b"\x00" * 8)
+    assert chunk_extension([str(wav)]) == "wav"
+    assert chunk_extension([str(mp3)]) == "mp3"
+
+
+def test_write_audio_concatenates_wav_chunks(tmp_path):
+    """Several WAV chunks are merged through the wave module into one valid WAV."""
+    a, b = tmp_path / "a.part", tmp_path / "b.part"
+    silent_wav(a, ms=100)
+    silent_wav(b, ms=200)
+    out = io.BytesIO()
+    write_audio([str(a), str(b)], out)
+    with wave.open(io.BytesIO(out.getvalue()), "rb") as merged:
+        assert merged.getnframes() == int(22050 * 0.3)
+
+
+def test_write_audio_concatenates_mp3_bytes(tmp_path):
+    """MP3 chunks are written back to back, untouched."""
+    frame = b"\xff\xfb\x90\x64" + b"\x01" * 8
+    a, b = tmp_path / "a.part", tmp_path / "b.part"
+    a.write_bytes(frame)
+    b.write_bytes(frame)
+    out = io.BytesIO()
+    write_audio([str(a), str(b)], out)
+    assert out.getvalue() == frame + frame
+
+
+def test_write_audio_single_chunk_is_copied(tmp_path):
+    """One chunk is copied byte for byte, no re-encoding."""
+    a = tmp_path / "a.part"
+    silent_wav(a, ms=50)
+    out = io.BytesIO()
+    write_audio([str(a)], out)
+    assert out.getvalue() == a.read_bytes()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX file modes")
+def test_save_audio_file_follows_umask(tmp_path):
+    """The saved file is group and world readable under umask 022, unlike the 0600 temp chunks."""
+    a = tmp_path / "a.part"
+    silent_wav(a)
+    destination = tmp_path / "out.wav"
+    old_umask = os.umask(0o022)
+    try:
+        save_audio_file([str(a)], str(destination))
+    finally:
+        os.umask(old_umask)
+    mode = stat.S_IMODE(destination.stat().st_mode)
+    assert mode & 0o044 == 0o044
 
 
 # rec_worker / play_worker
