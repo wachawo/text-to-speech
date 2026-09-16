@@ -10,8 +10,10 @@ services:
     restart: unless-stopped
     networks:
       - tts_network
+    # Optional: a fresh clone runs on the defaults below, `.env` only overrides them.
     env_file:
-      - ./.env
+      - path: ./.env
+        required: false
     environment:
       TZ:                   ${TZ:-America/New_York}
       TTS_HOST:             ${TTS_HOST:-0.0.0.0}
@@ -20,6 +22,7 @@ services:
       TTS_TOKENS:           ${TTS_TOKENS:-}
       CORS_ORIGINS:         ${CORS_ORIGINS:-*}
       TTS_POOL_SIZE:        ${TTS_POOL_SIZE:-1}
+      TTS_QUEUE_SIZE:       ${TTS_QUEUE_SIZE:-8}
       TTS_ENGINE:           ${TTS_ENGINE:-gtts}
       TTS_ENGINES:          ${TTS_ENGINES:-}
       TTS_LANGUAGE:         ${TTS_LANGUAGE:-en}
@@ -43,7 +46,6 @@ services:
       - ./data:/opt/data
       - ./cache:/opt/cache
       - ./samples:/opt/samples
-      - ./.env:/opt/.env:ro
       - ./libs:/opt/libs:ro
       - ./engines:/opt/engines:ro
       - ./install:/opt/install:ro

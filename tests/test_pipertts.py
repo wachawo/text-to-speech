@@ -58,6 +58,54 @@ def engine(monkeypatch):
     return importlib.import_module("engines.pipertts")
 
 
+def raise_on_call(*args, **kwargs):
+    """Fail the test: the patched config loader must never run at engine import."""
+    raise AssertionError("config loading must not happen at engine import time")
+
+
+def test_import_does_not_load_config(engine, monkeypatch):
+    """Importing the engine neither calls libs.config.load_config nor dotenv.load_dotenv."""
+    import dotenv
+
+    import libs.config
+
+    monkeypatch.setattr(libs.config, "load_config", raise_on_call)
+    monkeypatch.setattr(dotenv, "load_dotenv", raise_on_call)
+    monkeypatch.setattr(dotenv, "find_dotenv", raise_on_call)
+    importlib.reload(engine)
+
+
+def test_concurrent_first_load_loads_voice_once(engine, monkeypatch, tmp_path):
+    """Four threads asking for the same voice at once construct exactly one PiperVoice."""
+    import threading
+    import time
+
+    constructions = []
+
+    class SlowVoice:
+        """PiperVoice stand-in whose load is slow enough for the threads to overlap."""
+
+        def __init__(self, path):
+            """Record the construction and hold the lock long enough to overlap."""
+            constructions.append(path)
+            time.sleep(0.05)
+
+        @classmethod
+        def load(cls, path):
+            """Mirror PiperVoice.load."""
+            return cls(path)
+
+    monkeypatch.setattr(engine, "PiperVoice", SlowVoice)
+    engine.VOICE_CACHE.clear()
+    voice_path = str(tmp_path / "en_US-lessac-medium.onnx")
+    threads = [threading.Thread(target=engine.get_voice, args=(voice_path,)) for unused in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert len(constructions) == 1
+
+
 # is_available
 
 
@@ -80,8 +128,8 @@ def test_models_dir_resolves_relative_env_against_project_root(engine, monkeypat
     monkeypatch.setenv("PIPERTTS_MODELS", "custom_voices")
     result = engine.get_models_directory()
     # Relative env var must resolve under project root, NOT cwd.
-    assert result.endswith("custom_voices")
-    assert "/text-to-speech/" in result or result.endswith("text-to-speech/custom_voices")
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(engine.__file__)))
+    assert result == os.path.join(project_root, "custom_voices")
 
 
 def test_models_dir_falls_back_to_cache_pipertts_in_project(engine, monkeypatch, tmp_path):

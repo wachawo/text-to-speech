@@ -42,7 +42,8 @@ server {
     root  /usr/share/nginx/html;
     index index.html;
 
-    location /api/ {
+    # The project's own API and the OpenAI-compatible one (/v1/) share this block.
+    location ~ ^/(api|v1)/ {
         proxy_pass http://ttssrv_upstream;
 
         # Every proxy_set_header lives in this one location, and none at the

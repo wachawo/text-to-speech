@@ -1,11 +1,7 @@
 <template>
   <div class="tts-page">
 
-    <div class="alert alert-secondary text-center p-1 mb-2" v-show="wait.length > 0">
-      <i class="fa fa-spinner fa-pulse"></i> {{ wait.join(', ') }}
-    </div>
-
-    <tts-alerts :error.sync="error" :warning.sync="warning"
+    <tts-alerts :wait="wait" :error.sync="error" :warning.sync="warning"
                 :info.sync="info" :success.sync="success"></tts-alerts>
 
     <div class="tts-card mb-2">
@@ -16,7 +12,6 @@
              a two-column grid read as a ragged edge, not as a form. -->
         <input id="voice-name" type="text" class="form-control form-control-sm" style="width:340px"
                v-model="form.name" placeholder="maria"
-               pattern="[A-Za-z0-9_-]{1,48}"
                title="Letters, digits, underscore and dash, up to 48 characters" />
 
         <label for="voice-file">File</label>
@@ -129,15 +124,17 @@
               <td>{{ row.name === defaultVoice ? 'default' : '' }}</td>
               <!-- Three glyphs, each an action on this row: play/pause the
                    sample through one shared Audio object, download it, delete
-                   it. The default sample is deletable too; the confirm dialog
-                   says what that costs. -->
+                   it. Both the play and the download fetch the WAV through
+                   axios (the token goes in the header, and a bare <a href>
+                   or <audio src> could not carry it) and hand the browser an
+                   object URL. The default sample is deletable too; the
+                   confirm dialog says what that costs. -->
               <td class="td-actions" @click.stop>
                 <i class="fa fa-fw text-primary" :class="playing === row.name ? 'fa-pause' : 'fa-play'"
                    :title="playing === row.name ? 'Pause' : 'Listen to this sample'"
                    @click="togglePlay(row.name)"></i>
-                <a :href="audioUrl(row.name, true)" download :title="'Download ' + row.name + '.wav'">
-                  <i class="fa fa-fw fa-download"></i>
-                </a>
+                <i class="fa fa-fw fa-download" :title="'Download ' + row.name + '.wav'"
+                   :class="{ disabled: wait.length > 0 }" @click="download(row.name)"></i>
                 <i class="fa fa-fw fa-trash text-danger"
                    title="Delete this voice" :class="{ disabled: wait.length > 0 }"
                    @click="remove(row.name)"></i>
@@ -189,6 +186,8 @@ var formatClock = function (seconds) {
 };
 
 module.exports = {
+  mixins: [TtsWait],
+
   data: function () {
     return {
       wait: [],
@@ -231,6 +230,11 @@ module.exports = {
   mounted: function () {
     var self = this;
     this.recorder = null;
+    // The object URLs behind the player and the last download, revoked when
+    // replaced and when the screen goes: each one pins its Blob in memory
+    // until the document does.
+    this.playerUrl = '';
+    this.downloadUrl = '';
     this.player = new Audio();
     this.player.addEventListener('ended', function () { self.playing = null; });
     this.player.addEventListener('error', function () {
@@ -245,9 +249,10 @@ module.exports = {
      looking at, and the tab's recording indicator goes out with it. */
   beforeDestroy: function () {
     if (this.player) {
-      this.player.pause();
+      this.stopPlayer();
       this.player = null;
     }
+    this.setDownloadUrl('');
     if (this.recorder) {
       this.recorder.release();
       this.recorder = null;
@@ -269,9 +274,10 @@ module.exports = {
     },
 
     /* The https address of this same UI, for the REC explanation. The port
-       comes from nginx (/ui-config.json); 8443 until it has answered. */
+       comes from nginx (/ui-config.json); without an answer the address is
+       printed without one. */
     httpsUrl: function () {
-      return 'https://' + window.location.hostname + ':' + (this.tlsPort || '8443');
+      return 'https://' + window.location.hostname + (this.tlsPort ? ':' + this.tlsPort : '');
     },
 
     takeSilent: function () {
@@ -345,7 +351,7 @@ module.exports = {
       });
       self.recorder = recorder;
       self.clock = '0:00';
-      self.wait.push('microphone');
+      self.waitPush('microphone');
       recorder.start()
         .then(function () {
           // The screen was left while the prompt was up: beforeDestroy has
@@ -358,10 +364,7 @@ module.exports = {
           if (err && err.name === 'NotAllowedError') self.error = 'Microphone access was refused';
           else self.error = (err && err.message) || 'The microphone could not be opened';
         })
-        .finally(function () {
-          var i = self.wait.indexOf('microphone');
-          if (i !== -1) self.wait.splice(i, 1);
-        });
+        .finally(function () { self.waitDrop('microphone'); });
     },
 
     /* The take replaces whatever file was chosen (see the template). The
@@ -411,45 +414,107 @@ module.exports = {
       }
       this.info = 'The browser gives the microphone only to https or localhost. ' +
         'Open ' + this.httpsUrl + ' (accept the certificate once), ' +
-        'or add ' + window.location.origin + ' to chrome://flags/#unsafely-treat-insecure-origin-as-secure';
+        'or mark ' + window.location.origin + ' as a secure origin in the browser settings';
     },
 
-    audioUrl: function (name, download) {
-      return '/api/voices/' + encodeURIComponent(name) + '/audio?engine=' + ENGINE +
-        (download ? '&download=1' : '');
+    /* Audio */
+
+    /* The sample as a Blob, fetched through axios so the request carries the
+       token; the browser's own loaders (<audio src>, <a href>) cannot, and a
+       server with TTS_TOKENS answers them 401. */
+    fetchSample: function (name) {
+      var url = '/api/voices/' + encodeURIComponent(name) + '/audio';
+      return this.$http.get(url, { params: { engine: ENGINE }, responseType: 'blob' })
+        .then(function (resp) { return resp.data; });
+    },
+
+    /* Point the player at a new object URL, or at nothing. The old one is
+       revoked either way, and `src` is removed rather than set to '' - an
+       empty src is a request for the page itself, and the error handler
+       above would report it. */
+    setPlayerUrl: function (url) {
+      if (this.playerUrl) URL.revokeObjectURL(this.playerUrl);
+      this.playerUrl = url;
+      if (!this.player) return;
+      if (url) {
+        this.player.src = url;
+      } else {
+        this.player.removeAttribute('src');
+        this.player.load();
+      }
+    },
+
+    stopPlayer: function () {
+      if (this.player) this.player.pause();
+      this.playing = null;
+      this.setPlayerUrl('');
+    },
+
+    setDownloadUrl: function (url) {
+      if (this.downloadUrl) URL.revokeObjectURL(this.downloadUrl);
+      this.downloadUrl = url;
     },
 
     /* One sample sounds at a time. A second click on the same row pauses it;
-       a click on another row switches to that one, with no pause step. */
+       a click on another row switches to that one, with no pause step. The
+       glyph flips as soon as the row is clicked; the audio follows once the
+       Blob is here, unless the row was clicked off again meanwhile. */
     togglePlay: function (name) {
+      var self = this;
       if (!this.player) return;
       if (this.playing === name) {
         this.player.pause();
         this.playing = null;
         return;
       }
-      this.player.src = this.audioUrl(name);
       this.playing = name;
-      var started = this.player.play();
-      if (started && started.catch) started.catch(function () {});
+      this.fetchSample(name)
+        .then(function (blob) {
+          if (self.playing !== name || !self.player) return;
+          self.setPlayerUrl(URL.createObjectURL(blob));
+          var started = self.player.play();
+          if (started && started.catch) started.catch(function () {});
+        })
+        .catch(function (err) {
+          if (self.playing === name) self.playing = null;
+          self.error = self.$apiError(err);
+        });
+    },
+
+    /* The same Blob, handed to the browser as a download through a link
+       clicked for the operator. The object URL is kept until the next
+       download or the end of the screen: revoked at once, the save the
+       browser has only just started would find nothing behind it. */
+    download: function (name) {
+      var self = this;
+      this.waitPush('downloading ' + name);
+      this.fetchSample(name)
+        .then(function (blob) {
+          self.setDownloadUrl(URL.createObjectURL(blob));
+          var link = document.createElement('a');
+          link.href = self.downloadUrl;
+          link.download = name + '.wav';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        })
+        .catch(function (err) { self.error = self.$apiError(err); })
+        .finally(function () { self.waitDrop('downloading ' + name); });
     },
 
     /* Reading */
     fetchVoices: function () {
       var self = this;
-      self.wait.push('voices');
-      self.$http.get('/api/voices', { params: { engine: ENGINE } })
-        .then(function (resp) {
-          self.samples = resp.data.samples || [];
-          self.defaultVoice = resp.data.default || null;
+      self.waitPush('voices');
+      self.$store.dispatch('fetch_voices', { engine: ENGINE })
+        .then(function (data) {
+          self.samples = data.samples || [];
+          self.defaultVoice = data['default'] || null;
         })
         .catch(function (err) {
           self.error = self.$apiError(err);
         })
-        .finally(function () {
-          var i = self.wait.indexOf('voices');
-          if (i !== -1) self.wait.splice(i, 1);
-        });
+        .finally(function () { self.waitDrop('voices'); });
     },
 
     /* Creating */
@@ -467,7 +532,7 @@ module.exports = {
       body.append('engine', ENGINE);
       self.note = '';
       self.noteError = false;
-      self.wait.push('uploading ' + name);
+      self.waitPush('uploading ' + name);
       // No Content-Type header of our own: axios writes the multipart boundary
       // into it, and a header set here would drop the boundary.
       self.$http.post('/api/voices', body)
@@ -495,10 +560,7 @@ module.exports = {
           }
           self.noteError = true;
         })
-        .finally(function () {
-          var i = self.wait.indexOf('uploading ' + name);
-          if (i !== -1) self.wait.splice(i, 1);
-        });
+        .finally(function () { self.waitDrop('uploading ' + name); });
     },
 
     /* Deleting */
@@ -510,6 +572,7 @@ module.exports = {
       if (name === self.defaultVoice) {
         body += '\n\nThis is the COQUITTS_SAMPLE default: requests that name no voice will fail until it is uploaded again.';
       }
+      if (!self.$refs.confirm) return;
       self.$refs.confirm.ask({
         title: 'DELETE VOICE',
         body: body,
@@ -517,20 +580,17 @@ module.exports = {
         danger: true,
       }).then(function (ok) {
         if (!ok) return;
-        self.wait.push('deleting ' + name);
+        self.waitPush('deleting ' + name);
         self.$http.delete('/api/voices/' + encodeURIComponent(name), { params: { engine: ENGINE } })
           .then(function () {
-            if (self.playing === name) self.togglePlay(name);
+            if (self.playing === name) self.stopPlayer();
             self.$store.dispatch('push_toast', { level: 'success', message: 'Voice "' + name + '" deleted' });
             self.fetchVoices();
           })
           .catch(function (err) {
             self.error = self.$apiError(err);
           })
-          .finally(function () {
-            var i = self.wait.indexOf('deleting ' + name);
-            if (i !== -1) self.wait.splice(i, 1);
-          });
+          .finally(function () { self.waitDrop('deleting ' + name); });
       });
     },
   },

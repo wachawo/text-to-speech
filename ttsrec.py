@@ -78,17 +78,9 @@ Examples:
 
 
 def resolve_output_path(arg_path: str | None) -> Path:
-    """Pick output path: CLI arg → COQUITTS_SAMPLE env → fallback."""
+    """Pick output path: CLI arg -> COQUITTS_SAMPLE env -> fallback."""
     if arg_path:
         return Path(os.path.expanduser(arg_path)).resolve()
-
-    # Imported lazily: recording to an explicit path must work even without libs/.
-    try:
-        from libs.config import load_config
-
-        load_config()
-    except ImportError:
-        pass
 
     sample = os.environ.get("COQUITTS_SAMPLE", "").strip()
     if sample:
@@ -136,6 +128,16 @@ def main() -> int:
     """Record a sample to the resolved path and return a shell exit code."""
     logging.basicConfig(**LOGGING)  # type: ignore[arg-type]
     args = parse_args()
+
+    # Config files fill the env after the CLI flags; recording to an explicit
+    # path must still work without libs/, hence the tolerant import.
+    try:
+        from libs.config import load_config
+
+        load_config()
+    except ImportError:
+        pass
+
     output = resolve_output_path(args.path)
 
     if not args.yes and sys.stdin.isatty():

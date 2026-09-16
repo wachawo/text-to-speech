@@ -1,5 +1,8 @@
 <template>
-  <div class="tts-alerts" v-if="bars.length">
+  <div class="tts-alerts" v-if="wait.length || bars.length">
+    <div class="alert alert-secondary text-center p-1 mb-2" v-if="wait.length">
+      <i class="fa fa-spinner fa-pulse"></i> {{ wait.join(', ') }}
+    </div>
     <div v-for="bar in bars" :key="bar.kind"
          class="tts-alert" :class="'tts-alert-' + bar.kind" :role="bar.role">
       <i class="fa" :class="bar.icon" aria-hidden="true"></i>
@@ -11,19 +14,20 @@
 </template>
 
 <script>
-/* The four message bars every screen carries, above its content.
+/* The four message bars every screen carries, above its content, and the
+   spinner strip above them.
 
    Used everywhere as:
 
-     <tts-alerts :error.sync="error" :warning.sync="warning"
+     <tts-alerts :wait="wait" :error.sync="error" :warning.sync="warning"
                  :info.sync="info" :success.sync="success"></tts-alerts>
 
    Four strings on the screen's own `data`, one component, and no screen
    deciding for itself where a failure goes or what colour it is.
 
-   The spinner strip a screen shows while `wait.length > 0` is not one of
-   these: that is progress, and it belongs to the request rather than to the
-   operator.
+   The strip is the screen's wait queue joined - progress, which belongs to
+   the request rather than to the operator, so it is drawn first and has no
+   dismiss control: it goes when the request does.
 */
 
 /* The order, fixed here rather than by whichever string was set last. A bar
@@ -44,6 +48,7 @@ var BARS = [
 
 module.exports = {
   props: {
+    wait:    { type: Array, default: function () { return []; } },
     error:   { type: String, default: '' },
     warning: { type: String, default: '' },
     info:    { type: String, default: '' },

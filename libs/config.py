@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Config loader that fills os.environ from KEY=VALUE files, highest priority first.
+"""Config loader that fills os.environ from KEY=VALUE files, strongest source first.
 
-Priority, strongest first — a weaker source never overwrites a stronger one:
-    1. ./.env.local                 (gitignored local overrides; the only file loaded
-                                     with override=True, so it beats even shell variables)
-    2. process environment          (shell vars and CLI flags)
-    3. ./.env                       (versioned defaults, shared with Docker)
-    4. ~/.config/ttsgen.conf        (user-wide fallback)
-    5. ./ttsgen.conf                (project-local fallback)
+Priority, strongest first (a weaker source never overwrites a stronger one):
+    1. CLI flags                    (pushed into the process environment by the entrypoint)
+    2. shell environment            (variables already set when the process started)
+    3. ./ttsgen.conf                (project-local settings)
+    4. ~/.config/ttsgen.conf        (user-wide settings)
+    5. ./.env.local                 (gitignored local overrides of ./.env)
+    6. ./.env                       (versioned defaults, shared with Docker)
 
-All files use the same KEY=VALUE format as `.env`. Every file except `.env.local`
-is loaded with override=False, so it only fills keys nobody stronger has set.
+All files use the same KEY=VALUE format as `.env`. Every file is loaded with
+override=False, strongest file first, so a file only fills keys nobody stronger
+has set. `.env` and `.env.local` are read from the current directory only, never
+from a parent directory.
 """
 
 import logging
@@ -20,7 +22,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 try:
-    from dotenv import find_dotenv, load_dotenv
+    from dotenv import load_dotenv
 
     DOTENV_AVAILABLE = True
 except ImportError:
@@ -31,13 +33,14 @@ USER_CONFIG_DIR = Path.home() / ".config"
 USER_CONFIG_PATH = USER_CONFIG_DIR / "ttsgen.conf"
 
 DEFAULT_USER_CONFIG = """\
-# ttsgen configuration — KEY=VALUE format (same as .env).
+# ttsgen configuration - KEY=VALUE format (same as .env).
 # Load order, strongest first (a weaker source never overwrites a stronger one):
-#   1. ./.env.local                 (gitignored override; beats even shell variables)
-#   2. process environment          (shell vars and CLI flags)
-#   3. ./.env                       (versioned defaults)
-#   4. ~/.config/ttsgen.conf        (this file — fallback default)
-#   5. ./ttsgen.conf                (project fallback)
+#   1. CLI flags                    (--engine, --coqui-model, ...)
+#   2. shell environment
+#   3. ./ttsgen.conf                (project-local)
+#   4. ~/.config/ttsgen.conf        (this file)
+#   5. ./.env.local                 (gitignored local overrides of ./.env)
+#   6. ./.env
 #
 # Uncomment and edit the lines below to set your defaults.
 
@@ -70,6 +73,7 @@ DEFAULT_USER_CONFIG = """\
 # TTS_DEBUG=False
 # TTS_TOKENS=SuP3rS3cr3tK3y!
 # TTS_POOL_SIZE=1
+# TTS_QUEUE_SIZE=8
 # TTS_HISTORY_DIR=data/history
 # TTS_HISTORY_MAX=200
 # TTS_MAX_SAMPLE_BYTES=16777216
@@ -84,7 +88,7 @@ def ensure_user_config() -> Path:
     try:
         if not USER_CONFIG_PATH.exists():
             USER_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-            USER_CONFIG_PATH.write_text(DEFAULT_USER_CONFIG)
+            USER_CONFIG_PATH.write_text(DEFAULT_USER_CONFIG, encoding="utf-8")
             logger.info(f"Created default config at {USER_CONFIG_PATH}")
     except OSError as exc:
         logger.warning(f"Could not create {USER_CONFIG_PATH}: {type(exc).__name__}: {exc}")
@@ -92,31 +96,36 @@ def ensure_user_config() -> Path:
 
 
 def load_config() -> None:
-    """Populate os.environ from the config files, weakest source loaded last.
+    """Populate os.environ from the config files, strongest file loaded first.
 
-    Load sequence: .env (base) -> .env.local (override=True) -> ~/.config/ttsgen.conf
-    -> ./ttsgen.conf. Only `.env.local` overrides values that are already set, which
-    is what puts it above the process environment in the module-level priority list;
-    every other file supplies keys nobody stronger has set.
-    Does nothing when python-dotenv is not installed.
+    Load sequence: ./ttsgen.conf -> ~/.config/ttsgen.conf -> ./.env.local -> ./.env,
+    every file with override=False. A key already present in the process
+    environment (shell variable or CLI flag) is never touched, and each file only
+    fills the keys no stronger file has set. Does nothing when python-dotenv is
+    not installed.
     """
     if not DOTENV_AVAILABLE:
         return
 
     ensure_user_config()
 
-    # .env — found by walking up from cwd; .env.local — local override.
-    found = find_dotenv(usecwd=True)
-    if found:
-        load_dotenv(found)
-    local_env = Path(".env.local")
-    if local_env.exists():
-        load_dotenv(local_env, override=True)
-    if USER_CONFIG_PATH.exists():
-        load_dotenv(USER_CONFIG_PATH)
-    local_config = Path("ttsgen.conf")
-    if local_config.exists():
-        load_dotenv(local_config)
+    config_files = [Path("ttsgen.conf"), USER_CONFIG_PATH, Path(".env.local"), Path(".env")]
+    for config_file in config_files:
+        if config_file.is_file():
+            load_dotenv(config_file, override=False)
+
+
+def quote_config_value(value: str) -> str:
+    """Wrap `value` in double quotes when dotenv would otherwise cut or split it.
+
+    A bare `#` starts an inline comment and a bare space ends the value, so a
+    path such as `/home/me/my #1 voice.wav` has to be quoted. Backslashes and
+    double quotes inside are escaped the way python-dotenv unescapes them.
+    """
+    if not any(ch in value for ch in "#'\" \t"):
+        return value
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
 
 
 def persist_config_value(key: str, value: str) -> None:
@@ -128,10 +137,17 @@ def persist_config_value(key: str, value: str) -> None:
 
     Args:
         key: Config key to write, without the leading `#`.
-        value: Value to store verbatim.
+        value: Value to store; quoted when it contains `#`, whitespace or quotes
+            so dotenv reads it back intact.
+
+    Raises:
+        ValueError: If the value contains a line break.
     """
+    if "\n" in value or "\r" in value:
+        raise ValueError(f"Config value for {key} must not contain a line break")
+    value = quote_config_value(value)
     ensure_user_config()
-    lines = USER_CONFIG_PATH.read_text().splitlines()
+    lines = USER_CONFIG_PATH.read_text(encoding="utf-8").splitlines()
     out: list[str] = []
     replaced = False
     for line in lines:
@@ -145,7 +161,7 @@ def persist_config_value(key: str, value: str) -> None:
         if out and out[-1].strip() != "":
             out.append("")
         out.append(f"{key}={value}")
-    USER_CONFIG_PATH.write_text("\n".join(out) + "\n")
+    USER_CONFIG_PATH.write_text("\n".join(out) + "\n", encoding="utf-8")
 
 
 def main():

@@ -71,13 +71,6 @@
 </template>
 
 <script>
-/* The screens a tab stands for beyond its own path. Empty while every screen is
-   its own tab; the lookup falls back to the tab's path. Kept as a table so a
-   route added later is either owned by a tab or visibly owned by none - a page
-   where nothing in the row lights up reads as a broken app rather than as a
-   sub-page. */
-var TAB_ROUTES = {};
-
 module.exports = {
   computed: {
     signedIn: function () {
@@ -114,11 +107,9 @@ module.exports = {
     },
 
     /* Whether a tab is the one the operator is on. By path rather than by
-       name, through TAB_ROUTES, so a screen that belongs to a tab without
-       being it can be declared rather than guessed. */
+       name: the path is what the tab links to. */
     tabActive: function (own) {
-      var owned = TAB_ROUTES[own] || [own];
-      return owned.indexOf(this.$route.path) !== -1;
+      return this.$route.path === own;
     },
 
     /* Publish how tall this bar is, for the dialogs that open under it.

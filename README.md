@@ -1,4 +1,4 @@
-## text-to-speech - a single interface for TTS engines
+# text-to-speech - a single interface for TTS engines
 
 [![CI](https://github.com/wachawo/text-to-speech/actions/workflows/ci.yml/badge.svg)](https://github.com/wachawo/text-to-speech/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/wachawo/text-to-speech/blob/main/LICENSE)
@@ -89,9 +89,16 @@ It is easier to run the server with Docker:
 ```bash
 git clone https://github.com/wachawo/text-to-speech.git
 cd text-to-speech
+cp env.example .env                                   # optional: tokens, engines, ports
 
 docker compose up --build -d                          # GPU / CUDA 12.1
 docker compose -f docker-compose-cpu.yml up --build -d # CPU only
+```
+
+The GPU variant passes the card through CDI, so the host needs the NVIDIA container toolkit (1.14 or newer) and a generated CDI spec, once per driver update:
+
+```bash
+sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
 ```
 
 Once it is running, you can check the server status and send a synthesis request:
@@ -147,6 +154,55 @@ curl -X DELETE localhost:5000/api/history/<id> \
   -H "Authorization: Bearer $TTS_TOKEN"
 ```
 
+#### OpenAI-compatible API
+
+The same server also answers the OpenAI audio API, so Open WebUI, SillyTavern, Home Assistant and the official SDKs work with `base_url` pointing at it and the bearer token as the API key:
+
+```bash
+curl -X POST localhost:5000/v1/audio/speech \
+  -H "Authorization: Bearer $TTS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"tts-1","input":"Hello world","voice":"alloy","response_format":"mp3"}' \
+  -o out.mp3
+```
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:5000/v1", api_key="<one of TTS_TOKENS>")
+audio = client.audio.speech.create(model="coquitts", voice="maria", input="Hola mundo")
+audio.write_to_file("hola.mp3")
+```
+
+- `model` is an engine name, or `tts-1` / `tts-1-hd` / `gpt-4o-mini-tts` for the default engine.
+- `voice` is an engine voice; the OpenAI voice names (`alloy`, `nova`, ...) select the engine default.
+- `response_format`: `mp3` (default), `wav`, `pcm`, `opus`, `flac`, `aac`. Engines produce WAV or MP3; anything else is transcoded with `ffmpeg`, which the Docker images include. `speed` (0.25 to 4.0) is applied the same way.
+- `language` is an extension: a two-letter code, default `TTS_LANGUAGE`.
+- `GET /v1/models` lists the installed engines plus `tts-1`; `GET /v1/audio/voices?model=<engine>` lists the voices of one engine.
+
+#### API reference
+
+Every route except `/api/health` requires `Authorization: Bearer <token>` when `TTS_TOKENS` is set. Errors under `/api/` are `{"error": "...", "request_id": "..."}`; errors under `/v1/` use the OpenAI shape.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/health` | Liveness, `auth` flag, engines, pool and queue sizes. No token needed. |
+| GET | `/api/engines` | Supported engines, the installed ones and the default. |
+| GET | `/api/models` | Installed and missing models per engine, the table `ttsgen --list` prints. |
+| GET | `/api/voices?engine=&language=` | Voices of an engine; for `coquitts` the samples with size, rate and duration. |
+| POST | `/api/voices` | Upload a WAV sample (`file`, `name`, `engine=coquitts`). |
+| GET | `/api/voices/<name>/audio?engine=&download=1` | Play or download a sample. |
+| DELETE | `/api/voices/<name>?engine=` | Delete a sample. |
+| POST, GET | `/api/tts` | Synthesize `text` with `engine`, `language`, `voice`; `stream=true` streams chunks as they are ready. |
+| POST | `/api/history` | Synthesize into the server-side history instead of the response body. |
+| GET | `/api/history?limit=&offset=` | List history items, newest first. |
+| GET | `/api/history/<id>` | One item's metadata. |
+| GET | `/api/history/<id>/audio?download=1` | The item's audio, inline or as a download. |
+| DELETE | `/api/history/<id>` | Delete an item. |
+| POST | `/v1/audio/speech` | OpenAI-compatible synthesis, see above. |
+| GET | `/v1/models` | OpenAI-compatible model list. |
+| GET | `/v1/audio/voices?model=` | Voices of one engine. |
+
 #### Web UI
 
 Both compose files also start `ttswww`, an nginx container that serves the web UI and proxies `/api/` to `ttssrv`:
@@ -161,9 +217,45 @@ xdg-open https://localhost:8443     # TTS_WWW_TLS_PORT; self-signed certificate,
 - **Voices** - upload or record WAV voice samples for `coquitts` voice cloning; play, download and delete them.
 - **Models** - the engines and the installed / missing models, the same table as `ttsgen --list`.
 
-The gear in the header opens the settings dialog: the default engine, language and voice for the Studio, and whether the curl example is shown; the choices are stored in the browser. The Studio shows a ready-to-copy `curl` command for the current request. The Voices screen can also record a sample from the microphone, which browsers allow only on `https` or `localhost` - over the LAN open the UI through the https port. A self-signed certificate is generated into `./data/certs` on the first start; mount a real one under the same names (`tts.crt`, `tts.key`) to replace it.
+The gear in the header opens the settings dialog: the default engine, language and voice for the Studio, and whether the curl example is shown; the choices are stored in the browser. The Studio shows a ready-to-copy `curl` command for the current request; it references the token as `$TTS_TOKEN` rather than printing it. The Voices screen can also record a sample from the microphone, which browsers allow only on `https` or `localhost` - over the LAN open the UI through the https port. A self-signed certificate is generated into `./data/certs` on the first start; mount a real one under the same names (`tts.crt`, `tts.key`) to replace it.
 
-When `TTS_TOKENS` is set, the UI opens on a sign-in screen and asks for one of those tokens; the browser keeps it and sends it with every request, and the `curl` example carries it. Without `TTS_TOKENS` there is no sign-in.
+When `TTS_TOKENS` is set, the UI opens on a sign-in screen and asks for one of those tokens; the browser keeps it and sends it with every request. Without `TTS_TOKENS` there is no sign-in.
+
+#### Configuration
+
+Every setting is an environment variable; `env.example` documents them all and `.env` next to the compose files is read automatically. The ones you are most likely to change:
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `TTS_TOKENS` | empty | Comma-separated bearer tokens. Empty means no authentication at all. |
+| `TTS_ENGINES` | empty | Engines to install and warm up at start, comma-separated (`coquitts,silerotts`). |
+| `TTS_ENGINE` | `gtts` | Engine used when a request does not name one. |
+| `TTS_LANGUAGE` | `en` | Language used when a request does not name one. |
+| `TTS_POOL_SIZE` | `1` | Synthesis calls allowed at the same time across all engines; `0` removes the cap and the warmup. |
+| `TTS_QUEUE_SIZE` | `8` | Synthesis requests allowed to wait for a free slot; any more get 503 at once. |
+| `TTS_HISTORY_MAX` | `200` | Items kept in the history; the oldest are removed when a new one is saved. |
+| `TTS_MAX_SAMPLE_BYTES` | `16777216` | Largest voice sample upload (16 MiB). |
+| `TTS_MAX_SAMPLES` | `100` | Voice samples kept on the server. |
+| `TTS_MAX_BODY_BYTES` | `2097152` | Largest JSON request body (2 MiB). |
+| `TTS_STREAM_MAX_CHARS` | `200` | Chunk size for `stream=true`. |
+| `CORS_ORIGINS` | `*` | Allowed origins for `/api/*`. |
+| `TTS_PORT` | `5000` | Port of `ttssrv`. |
+| `TTS_WWW_PORT`, `TTS_WWW_TLS_PORT` | `8080`, `8443` | http and https ports of the web UI. |
+| `COQUITTS_MODEL`, `COQUITTS_SAMPLE` | `xtts_v2`, `default.wav` | Coqui model and the default voice sample. |
+| `TZ` | `America/New_York` | Time zone for timestamps in logs and history. |
+
+Outside Docker the CLIs and the server read the same keys from, strongest first: CLI flags, the shell environment, `./ttsgen.conf`, `~/.config/ttsgen.conf`, `./.env.local`, `./.env`. A file never overrides the shell, and `.env` is read only from the current directory.
+
+`TTS_POOL_SIZE` above 1 lets different engines synthesize in parallel; inside one engine the calls are serialized, because the underlying models are not safe to share between threads.
+
+#### Security
+
+- Authentication is off until you set `TTS_TOKENS`. Every route except `/api/health` then requires `Authorization: Bearer <token>`, and the web UI asks for the token on a sign-in screen.
+- The API listens on all interfaces and the compose files publish `TTS_PORT`, `TTS_WWW_PORT` and `TTS_WWW_TLS_PORT` on the host. On a shared network set a token, or bind the ports to `127.0.0.1` in an override file.
+- The https listener uses a self-signed certificate minted on the first start; it is meant for a LAN. On the internet put the UI behind your own reverse proxy with a real certificate.
+- Voice samples, history and certificates live under `./data`; back it up and keep it out of the build context.
+
+Report a vulnerability through the repository's Security tab, see [SECURITY.md](SECURITY.md).
 
 For working with and testing the server there is a separate CLI client, `ttsapi`. It has the same main flags as `ttsgen`, but synthesis runs on the server. The server address and token are taken from `TTS_URL` and `TTS_TOKEN`.
 
@@ -190,7 +282,7 @@ text-to-speech/
 
 ### Development
 
-To install the development dependencies:
+Contributions are welcome; [CONTRIBUTING.md](CONTRIBUTING.md) explains the setup, the checks and how an engine is added. To install the development dependencies:
 
 ```bash
 pip install -e ".[dev]"

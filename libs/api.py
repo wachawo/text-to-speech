@@ -13,6 +13,7 @@ from typing import cast
 from engines import get_engine_function
 
 from . import playback
+from .audio import extension_for
 
 # TTSException/ValidationError are unused here but re-exported so callers can do
 # `from libs.api import TTSException` without knowing about libs.exceptions.
@@ -96,8 +97,7 @@ def text_to_speech_file(
 
     if filename is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        extension = "mp3" if audio_bytes.startswith(b"ID3") or audio_bytes[0:2] == b"\xff\xfb" else "wav"
-        filename = f"{timestamp}.{extension}"
+        filename = f"{timestamp}.{extension_for(audio_bytes)}"
 
     with open(filename, "wb") as f:
         f.write(audio_bytes)

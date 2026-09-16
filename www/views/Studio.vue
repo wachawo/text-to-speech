@@ -15,7 +15,7 @@
         <div class="input-group input-group-sm" title="Language">
           <select class="form-select form-select-sm" style="width: 150px"
                   v-model="form.language" :disabled="wait.length > 0">
-            <option v-for="lang in languages" :key="lang.code" :value="lang.code">
+            <option v-for="lang in $languages" :key="lang.code" :value="lang.code">
               {{ lang.code }} {{ lang.name }}
             </option>
           </select>
@@ -56,11 +56,10 @@
       </div>
     </div>
 
-    <div class="alert alert-secondary text-center p-1 mb-2" v-show="wait.length > 0">
-      <i class="fa fa-spinner fa-pulse"></i> {{ wait.join(', ') }}
-    </div>
-
-    <tts-alerts :error.sync="error" :warning.sync="warning"
+    <!-- The health poll reports in the warning bar, on its own string: while
+         the server is down the poll writes every five seconds, and written
+         to `error` it would overwrite whatever a request had just said. -->
+    <tts-alerts :wait="wait" :error.sync="error" :warning.sync="healthError"
                 :info.sync="info" :success.sync="success"></tts-alerts>
 
     <div class="row g-2">
@@ -70,10 +69,14 @@
                   @keydown.ctrl.enter.prevent="generate"
                   @keydown.meta.enter.prevent="generate"></textarea>
 
+        <!-- The take is fetched through axios (the token goes in the header,
+             and a bare src could not carry it) and both the player and the
+             SAVE link are pointed at the object URL of the Blob. -->
         <div class="tts-player mt-2">
           <template v-if="selected">
-            <audio ref="player" controls :src="audioUrl"></audio>
-            <a class="btn btn-sm btn-secondary fw-bold btn-w85" :href="audioUrl + '?download=1'" download>
+            <audio ref="player" controls :src="audioUrl || null"></audio>
+            <a class="btn btn-sm btn-secondary fw-bold btn-w85" :href="audioUrl" :download="audioName"
+               :class="{ disabled: !audioUrl }">
               <i class="fa fa-download"></i> SAVE
             </a>
             <small class="text-secondary">{{ summary }}</small>
@@ -159,36 +162,8 @@
    click on the row and a click on GENERATE.
 */
 
-/* The languages xtts_v2 speaks, fixed here rather than asked of the server:
-   no engine reports its languages yet, and this list is the widest of them. */
-var LANGUAGES = [
-  { code: 'en', name: 'English' },
-  { code: 'es', name: 'Spanish' },
-  { code: 'fr', name: 'French' },
-  { code: 'de', name: 'German' },
-  { code: 'it', name: 'Italian' },
-  { code: 'pt', name: 'Portuguese' },
-  { code: 'pl', name: 'Polish' },
-  { code: 'tr', name: 'Turkish' },
-  { code: 'ru', name: 'Russian' },
-  { code: 'nl', name: 'Dutch' },
-  { code: 'cs', name: 'Czech' },
-  { code: 'ar', name: 'Arabic' },
-  { code: 'zh', name: 'Chinese' },
-  { code: 'ja', name: 'Japanese' },
-  { code: 'hu', name: 'Hungarian' },
-  { code: 'ko', name: 'Korean' },
-  { code: 'hi', name: 'Hindi' },
-];
-
 var PAGE_SIZE = 50;
 var WARMUP_INFO = 'The server is warming up its engines';
-
-/* Remove one label from the wait queue, by exact text or by prefix. */
-var dropWait = function (wait, prefix) {
-  var i = wait.findIndex(function (label) { return label.indexOf(prefix) === 0; });
-  if (i !== -1) wait.splice(i, 1);
-};
 
 /* The clipboard the old way, for a page the browser does not trust with
    navigator.clipboard - plain http from another host is the common case for
@@ -213,37 +188,35 @@ var copyByTextarea = function (text) {
 };
 
 module.exports = {
+  mixins: [TtsWait],
+
   data: function () {
     return {
       wait: [],
       error: '',
-      warning: '',
+      // What the health poll has to say while the server does not answer.
+      healthError: '',
       // Up until the first ok from /api/health; see pollHealth.
       info: WARMUP_INFO,
       success: '',
-      engines: [],
-      languages: LANGUAGES,
-      voices: [],
       form: { engine: '', language: 'en', voice: '', text: '' },
-      // The server's own defaults from GET /api/engines, kept for the case
-      // where a saved preference goes back to "server default".
-      serverEngine: '',
-      serverLanguage: '',
       items: [],
       total: 0,
       selected: null,
+      // The object URL of the selected take's Blob and the file name SAVE
+      // gives it; '' while the Blob is on its way.
+      audioUrl: '',
+      audioName: '',
       ready: false,
       elapsed: 0,
     };
   },
 
   created: function () {
-    // Timers and the voices request counter are kept off `data`: nothing
-    // renders from them, and a reactive interval handle is just noise.
+    // Timers are kept off `data`: nothing renders from them, and a reactive
+    // interval handle is just noise.
     this.healthTimer = null;
     this.elapsedTimer = null;
-    this.voiceSerial = 0;
-    this.healthError = '';
     // False until the engines and the first voices answer have been applied;
     // see the `choice` watcher.
     this.settled = false;
@@ -256,6 +229,7 @@ module.exports = {
   beforeDestroy: function () {
     if (this.healthTimer) clearInterval(this.healthTimer);
     if (this.elapsedTimer) clearInterval(this.elapsedTimer);
+    this.setAudio('', '');
   },
 
   computed: {
@@ -263,8 +237,21 @@ module.exports = {
       return this.wait.length === 0 && !!this.form.text.trim() && this.ready;
     },
 
-    audioUrl: function () {
-      return this.selected ? '/api/history/' + this.selected.id + '/audio' : '';
+    /* The catalogue, from the store: the engines this server has, its own
+       defaults (kept for the case where a saved preference goes back to
+       "server default"), and the voices of the pair in force. */
+    engines: function () {
+      return this.$store.state.catalog.engines;
+    },
+    serverEngine: function () {
+      return this.$store.state.catalog.defaultEngine;
+    },
+    serverLanguage: function () {
+      return this.$store.state.catalog.defaultLanguage;
+    },
+    voices: function () {
+      var entry = this.$store.state.catalog.voices[this.voiceKey];
+      return entry ? entry.voices : [];
     },
 
     /* "WAV - 4.2 s - 186 KB - generated in 3.1 s". The duration is only known
@@ -291,14 +278,15 @@ module.exports = {
       return this.form.engine + '/' + this.form.language + '/' + this.form.voice;
     },
 
-    /* The request GENERATE would send, as a curl command line.
+    /* The request GENERATE would send, as a curl command line, addressed to
+       the origin of this page. Single quotes in the text end the shell's
+       quoting, so each becomes the '\'' spelling; everything else
+       JSON.stringify has already escaped.
 
-       Addressed to the origin of this page, not to ttssrv: the page is served
-       by the nginx that carries the API token on the browser's behalf, and
-       the same nginx does it for curl - a command aimed at the container's
-       own address would be refused for want of a token the page never sees.
-       Single quotes in the text end the shell's quoting, so each becomes the
-       '\'' spelling; everything else JSON.stringify has already escaped. */
+       The token is never printed: this card is the most copied and the most
+       screenshotted part of the UI. When the server wants one the header is
+       written against $TTS_TOKEN, for the shell to fill in; when it wants
+       none there is no header line. */
     curlCommand: function () {
       var body = {
         text: this.form.text.trim() || 'Hello world',
@@ -309,10 +297,7 @@ module.exports = {
       var json = JSON.stringify(body).split("'").join("'\\''");
       var ext = this.form.engine === 'gtts' ? 'mp3' : 'wav';
       var lines = ['curl -sS -X POST ' + window.location.origin + '/api/tts'];
-      // The token this browser signed in with, so the command also works
-      // against ttssrv directly; absent when the server wants none.
-      var token = this.$store.state.auth.token;
-      if (token) lines.push("-H 'Authorization: Bearer " + token.split("'").join("'\\''") + "'");
+      if (this.$store.state.auth.required) lines.push('-H "Authorization: Bearer $TTS_TOKEN"');
       lines.push("-H 'Content-Type: application/json'", "-d '" + json + "'", '-o out.' + ext);
       return lines.join(' \\\n  ');
     },
@@ -350,9 +335,8 @@ module.exports = {
     '$store.state.studio': function (prefs) {
       if (!this.settled) return;
       var self = this;
-      var isKnown = LANGUAGES.some(function (lang) { return lang.code === prefs.language; });
       var engine = this.engines.indexOf(prefs.engine) !== -1 ? prefs.engine : this.serverEngine;
-      var language = isKnown ? prefs.language : this.serverLanguage;
+      var language = this.$knownLanguage(prefs.language) ? prefs.language : this.serverLanguage;
       var moved = false;
       if (engine && this.engines.indexOf(engine) !== -1 && engine !== this.form.engine) {
         this.form.engine = engine;
@@ -376,7 +360,7 @@ module.exports = {
        the engines take minutes to warm on CPU, and a button that fails with
        502 for the first five minutes reads as a broken deploy rather than a
        server that is not ready yet. The bar is cleared on the first ok, and so
-       is a failure bar that only the poll wrote. */
+       is the poll's own warning. */
     pollHealth: function () {
       var self = this;
       this.$http.get('/api/health')
@@ -385,22 +369,21 @@ module.exports = {
           if (!resp.data || resp.data.status !== 'ok') return;
           self.ready = true;
           if (self.info === WARMUP_INFO) self.info = '';
-          if (self.error === self.healthError) self.error = '';
           self.healthError = '';
           if (self.healthTimer) {
             clearInterval(self.healthTimer);
             self.healthTimer = null;
           }
           // The catalogue and the history asked for while the server was
-          // still coming up got a 502 - ask again now that it answers.
-          if (!self.engines.length) self.fetchEngines();
-          if (!self.items.length) self.fetchHistory();
+          // still coming up got a 502 - ask again now that it answers, unless
+          // the first request is still on its way.
+          if (!self.form.engine && self.wait.indexOf('engines') === -1) self.fetchEngines();
+          if (!self.items.length && self.wait.indexOf('history') === -1) self.fetchHistory();
         })
         .catch(function (err) {
           self.ready = false;
           self.info = WARMUP_INFO;
           self.healthError = self.$apiError(err);
-          self.error = self.healthError;
         });
     },
 
@@ -408,11 +391,9 @@ module.exports = {
 
     fetchEngines: function () {
       var self = this;
-      this.wait.push('engines');
-      this.$http.get('/api/engines')
-        .then(function (resp) {
-          var data = resp.data || {};
-          self.engines = data.available || [];
+      this.waitPush('engines');
+      this.$store.dispatch('fetch_engines')
+        .then(function (catalog) {
           // The default is TTS_ENGINE as configured, reported whether or not
           // that engine is installed here; a blank select and a 503 on
           // GENERATE would follow from taking it on trust.
@@ -420,29 +401,25 @@ module.exports = {
           // this server has it: a browser that last picked coquitts on another
           // deployment must not open on a blank select here.
           var prefs = self.$store.state.studio;
-          self.serverEngine = data['default'] || '';
-          self.serverLanguage = data.language || '';
-          var wanted = self.engines.indexOf(prefs.engine) !== -1 ? prefs.engine : data['default'];
-          if (!self.form.engine || self.engines.indexOf(self.form.engine) === -1) {
-            self.form.engine = self.engines.indexOf(wanted) !== -1 ? wanted : (self.engines[0] || '');
+          var engines = catalog.engines;
+          var wanted = engines.indexOf(prefs.engine) !== -1 ? prefs.engine : catalog.defaultEngine;
+          if (!self.form.engine || engines.indexOf(self.form.engine) === -1) {
+            self.form.engine = engines.indexOf(wanted) !== -1 ? wanted : (engines[0] || '');
           }
-          var isKnown = function (code) {
-            return LANGUAGES.some(function (lang) { return lang.code === code; });
-          };
-          if (isKnown(prefs.language)) self.form.language = prefs.language;
-          else if (isKnown(data.language)) self.form.language = data.language;
+          if (self.$knownLanguage(prefs.language)) self.form.language = prefs.language;
+          else if (self.$knownLanguage(catalog.defaultLanguage)) self.form.language = catalog.defaultLanguage;
         })
         .catch(function (err) { self.error = self.$apiError(err); })
-        .finally(function () { dropWait(self.wait, 'engines'); });
+        .finally(function () { self.waitDrop('engines'); });
     },
 
-    /* The voices of the engine and language in force. The chosen voice is
-       kept when the new list still has it - a row click sets the voice before
-       this runs, and the answer must not undo it - otherwise the remembered
-       one, otherwise the server's default, otherwise the engine default.
-       Answers arriving out of order are dropped by the serial: two quick
-       changes of engine would otherwise leave the first engine's voices under
-       the second engine's name.
+    /* The voices of the engine and language in force, through the store.
+       The chosen voice is kept when the new list still has it - a row click
+       sets the voice before this runs, and the answer must not undo it -
+       otherwise the remembered one, otherwise the server's default,
+       otherwise the engine default. An answer for a pair the selects have
+       since moved off is not applied: the store files it under its own
+       pair, and `voices` reads the pair in force.
 
        The first answer applied is what settles the initial load. Marked on the
        next tick rather than here: the watcher that this answer's assignment
@@ -450,27 +427,24 @@ module.exports = {
     fetchVoices: function () {
       var self = this;
       if (!this.form.engine) return;
-      var serial = ++this.voiceSerial;
-      this.wait.push('voices');
-      this.$http.get('/api/voices', { params: { engine: this.form.engine, language: this.form.language } })
-        .then(function (resp) {
-          if (serial !== self.voiceSerial) return;
-          var data = resp.data || {};
-          self.voices = data.voices || [];
+      var key = this.voiceKey;
+      this.waitPush('voices');
+      this.$store.dispatch('fetch_voices', { engine: this.form.engine, language: this.form.language })
+        .then(function (data) {
+          if (key !== self.voiceKey) return;
           if (self.voices.indexOf(self.form.voice) !== -1) return;
           var stored = self.$store.state.studio.voice;
           if (self.voices.indexOf(stored) !== -1) self.form.voice = stored;
           else self.form.voice = self.voices.indexOf(data['default']) !== -1 ? data['default'] : '';
         })
         .catch(function (err) {
-          if (serial !== self.voiceSerial) return;
-          self.voices = [];
+          if (key !== self.voiceKey) return;
           self.form.voice = '';
           self.error = self.$apiError(err);
         })
         .finally(function () {
-          dropWait(self.wait, 'voices');
-          if (serial === self.voiceSerial && !self.settled) {
+          self.waitDrop('voices');
+          if (key === self.voiceKey && !self.settled) {
             self.$nextTick(function () { self.settled = true; });
           }
         });
@@ -480,26 +454,26 @@ module.exports = {
 
     fetchHistory: function () {
       var self = this;
-      this.wait.push('history');
+      this.waitPush('history');
       this.$http.get('/api/history', { params: { limit: PAGE_SIZE } })
         .then(function (resp) {
           self.items = resp.data.items || [];
           self.total = resp.data.total || 0;
         })
         .catch(function (err) { self.error = self.$apiError(err); })
-        .finally(function () { dropWait(self.wait, 'history'); });
+        .finally(function () { self.waitDrop('history'); });
     },
 
     fetchMore: function () {
       var self = this;
-      this.wait.push('history');
+      this.waitPush('history');
       this.$http.get('/api/history', { params: { limit: PAGE_SIZE, offset: this.items.length } })
         .then(function (resp) {
           self.items = self.items.concat(resp.data.items || []);
           self.total = resp.data.total || 0;
         })
         .catch(function (err) { self.error = self.$apiError(err); })
-        .finally(function () { dropWait(self.wait, 'history'); });
+        .finally(function () { self.waitDrop('history'); });
     },
 
     /* The clock, not the date, for a take made today: the date column is
@@ -533,14 +507,18 @@ module.exports = {
       };
       this.error = '';
       this.elapsed = 0;
-      this.wait.push('generating 0s');
+      var label = 'generating 0s';
+      this.waitPush(label);
       // Seconds ticking in the wait strip: a CPU take of a paragraph runs into
       // minutes, and a spinner that does not count is a spinner that may have
-      // stopped.
+      // stopped. The label is replaced in place and dropped under its last
+      // text.
       this.elapsedTimer = setInterval(function () {
         self.elapsed += 1;
-        var i = self.wait.findIndex(function (label) { return label.indexOf('generating ') === 0; });
-        if (i !== -1) self.wait.splice(i, 1, 'generating ' + self.elapsed + 's');
+        var next = 'generating ' + self.elapsed + 's';
+        var i = self.wait.indexOf(label);
+        if (i !== -1) self.wait.splice(i, 1, next);
+        label = next;
       }, 1000);
       this.$http.post('/api/history', body)
         .then(function (resp) {
@@ -548,14 +526,48 @@ module.exports = {
           self.items.unshift(item);
           self.total += 1;
           self.selected = item;
-          self.$nextTick(function () { self.play(); });
+          // After the tick that puts the URL on the player.
+          self.loadAudio(item).then(function () { self.$nextTick(self.play); });
         })
         .catch(function (err) { self.error = self.$apiError(err); })
         .finally(function () {
           clearInterval(self.elapsedTimer);
           self.elapsedTimer = null;
-          dropWait(self.wait, 'generating ');
+          self.waitDrop(label);
         });
+    },
+
+    /* Audio */
+
+    /* Point the player and SAVE at a new object URL, or at nothing. The old
+       one is revoked either way: each pins its Blob in memory until the
+       document goes away, and a studio used all afternoon would hold every
+       take ever listened to. */
+    setAudio: function (url, name) {
+      if (this.audioUrl) URL.revokeObjectURL(this.audioUrl);
+      this.audioUrl = url;
+      this.audioName = name;
+    },
+
+    /* The take's audio as a Blob, fetched through axios so the request
+       carries the token - a bare <audio src> or <a href> cannot, and a server
+       with TTS_TOKENS answers them 401. An answer for a row that is no longer
+       the selected one is dropped. Resolves once the player has the URL, or
+       at once when there is nothing to fetch. */
+    loadAudio: function (item) {
+      var self = this;
+      this.setAudio('', '');
+      if (!item) return Promise.resolve();
+      this.waitPush('audio');
+      return this.$http.get('/api/history/' + item.id + '/audio', { responseType: 'blob' })
+        .then(function (resp) {
+          if (!self.selected || self.selected.id !== item.id) return;
+          var type = String(resp.headers['content-type'] || '');
+          var ext = type.indexOf('audio/mpeg') === 0 ? 'mp3' : (item.format || 'wav');
+          self.setAudio(URL.createObjectURL(resp.data), 'tts_' + item.id + '.' + ext);
+        })
+        .catch(function (err) { self.error = self.$apiError(err); })
+        .finally(function () { self.waitDrop('audio'); });
     },
 
     /* Autoplay may be refused - a browser that has not seen a click on this
@@ -610,6 +622,7 @@ module.exports = {
     select: function (item) {
       var self = this;
       this.selected = item;
+      this.loadAudio(item);
       this.form.engine = item.engine || this.form.engine;
       this.form.language = item.language || this.form.language;
       this.form.voice = item.voice || '';
@@ -617,7 +630,7 @@ module.exports = {
         this.form.text = item.text || '';
         return;
       }
-      this.wait.push('text');
+      this.waitPush('text');
       this.$http.get('/api/history/' + item.id)
         .then(function (resp) {
           // Only if the row is still the one open: a second click during the
@@ -625,7 +638,7 @@ module.exports = {
           if (self.selected && self.selected.id === item.id) self.form.text = resp.data.text || '';
         })
         .catch(function (err) { self.error = self.$apiError(err); })
-        .finally(function () { dropWait(self.wait, 'text'); });
+        .finally(function () { self.waitDrop('text'); });
     },
 
     /* Delete */
@@ -633,6 +646,7 @@ module.exports = {
     remove: function (item) {
       var self = this;
       var head = (item.text || '').slice(0, 60);
+      if (!this.$refs.confirm) return;
       this.$refs.confirm.ask({
         title: 'DELETE HISTORY ITEM',
         body: 'Delete "' + head + '"? The audio file is removed as well.',
@@ -640,16 +654,19 @@ module.exports = {
         danger: true,
       }).then(function (ok) {
         if (!ok) return;
-        self.wait.push('deleting');
+        self.waitPush('deleting');
         self.$http.delete('/api/history/' + item.id)
           .then(function () {
             var i = self.items.findIndex(function (row) { return row.id === item.id; });
             if (i !== -1) self.items.splice(i, 1);
             self.total = Math.max(0, self.total - 1);
-            if (self.selected && self.selected.id === item.id) self.selected = null;
+            if (self.selected && self.selected.id === item.id) {
+              self.selected = null;
+              self.setAudio('', '');
+            }
           })
           .catch(function (err) { self.error = self.$apiError(err); })
-          .finally(function () { dropWait(self.wait, 'deleting'); });
+          .finally(function () { self.waitDrop('deleting'); });
       });
     },
   },

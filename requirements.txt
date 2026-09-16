@@ -1,5 +1,5 @@
 # Client-side runtime dependencies for ttsgen / ttsplay / ttsrec / ttsapi.
-# Mirrors `[project].dependencies` in pyproject.toml — keep in sync.
+# Mirrors `[project].dependencies` in pyproject.toml - keep in sync.
 #
 # This file ships ONLY the lightweight CLI scaffolding: gtts + pyttsx3 (always-
 # available engines), pygame (playback), requests + dotenv, sounddevice + numpy
@@ -15,7 +15,7 @@
 # `ttsgen --install <engine>` picks the correct PyTorch wheel index (cpu /
 # cu121), respects driver constraints, persists the model directory to
 # ~/.config/ttsgen.conf, and verifies download checksums where supported.
-# This is the ONLY supported way to add an engine — no [piper] / [silero] /
+# This is the ONLY supported way to add an engine - no [piper] / [silero] /
 # [coqui] / [bark] pip extras exist.
 #
 # Server (ttssrv): runs only via Docker. Light web-stack deps live in

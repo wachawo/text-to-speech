@@ -1,31 +1,40 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""TTS HTTP client — mirror of `ttsgen` that forwards synthesis to a remote `ttssrv`.
+"""TTS HTTP client, a mirror of `ttsgen` that forwards synthesis to a remote `ttssrv`.
 
 Accepts the same core argparse surface as `ttsgen` (text input, --file/--play/--stdout/
 --output, --engine, --language, --list, -i, -v/-q) but replaces local
 `text_to_speech_bytes()` with `POST {TTS_URL}/api/tts`.
 
 Reads `TTS_URL` and `TTS_TOKEN` from the same config chain as ttsgen
-(./ttsgen.conf > ~/.config/ttsgen.conf > .env > defaults).
+(shell env > ./ttsgen.conf > ~/.config/ttsgen.conf > .env.local > .env > defaults).
 """
 
 import argparse
-import io
 import logging
 import os
 import queue
-import shutil
 import sys
 import threading
 import traceback
-from datetime import datetime
 from typing import Any, cast
 
 import requests
 
 # Local imports
-from libs.cli import QueueItem, chunk_text, concat_wav_files, play_worker, rec_worker
+from libs.cli import (
+    CHUNK_SUFFIX,
+    QueueItem,
+    chunk_extension,
+    chunk_text,
+    output_path_for,
+    play_worker,
+    rec_worker,
+    resolve_output_target,
+    save_audio_file,
+    scratch_dir,
+    write_audio,
+)
 from libs.tempfiles import safe_unlink
 
 LOGGING = {
@@ -39,6 +48,19 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_URL = "http://localhost:5000"
 DEFAULT_TIMEOUT = 120
+
+# Extension per response Content-Type; anything else falls back to sniffing the bytes.
+CONTENT_TYPE_EXTENSIONS = {
+    "audio/wav": "wav",
+    "audio/x-wav": "wav",
+    "audio/wave": "wav",
+    "audio/mpeg": "mp3",
+    "audio/mp3": "mp3",
+}
+
+# Content-Type of the last /api/tts response. The pipeline generator only returns
+# bytes, so the type that names an auto-generated file is kept here instead.
+LAST_RESPONSE: dict[str, str] = {"content_type": ""}
 
 
 def get_url() -> str:
@@ -73,7 +95,15 @@ def fetch_audio(text: str, engine: str, language: str) -> bytes:
     resp = requests.post(url, json=payload, headers=get_headers(), timeout=DEFAULT_TIMEOUT)
     if resp.status_code >= 400:
         raise RuntimeError(f"Server returned {resp.status_code}: {resp.text[:500]}")
+    headers = getattr(resp, "headers", None) or {}
+    LAST_RESPONSE["content_type"] = str(headers.get("Content-Type", ""))
     return resp.content
+
+
+def response_extension(content_type: str, chunk_paths: list[str]) -> str:
+    """Return the extension named by the response Content-Type, or sniff the first chunk."""
+    media_type = content_type.split(";", 1)[0].strip().lower()
+    return CONTENT_TYPE_EXTENSIONS.get(media_type) or chunk_extension(chunk_paths)
 
 
 def fetch_engines() -> dict[str, Any]:
@@ -102,17 +132,17 @@ def list_remote_engines() -> int:
 def parse_arguments() -> argparse.ArgumentParser:
     """Build the argparse parser mirroring the ttsgen command line."""
     parser = argparse.ArgumentParser(
-        description="TTS HTTP client — synthesize via remote ttssrv (mirror of ttsgen).",
+        description="TTS HTTP client: synthesize via remote ttssrv (mirror of ttsgen).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s "Hello world"                    # POST → server → play
+  %(prog)s "Hello world"                    # POST to the server, then play
   %(prog)s "Hello" --file out.mp3           # save server response
   %(prog)s -i input.txt -o play,file        # multi-output, chunked
   %(prog)s --list                           # list engines on server
   %(prog)s "Hi" --engine coquitts           # ask server to use coquitts
 
-Configuration (read from process env, ./ttsgen.conf, ~/.config/ttsgen.conf, .env):
+Configuration (read from process env, ./ttsgen.conf, ~/.config/ttsgen.conf, .env.local, .env):
   TTS_URL    = http://localhost:5000   (server URL, default localhost:5000)
   TTS_TOKEN  =                          (Bearer token; empty disables auth header)
         """,
@@ -129,7 +159,7 @@ Configuration (read from process env, ./ttsgen.conf, ~/.config/ttsgen.conf, .env
     parser.add_argument("-s", "--stdout", action="store_true", help="Output audio bytes to stdout")
     parser.add_argument("-o", "--output", metavar="FORMATS", help="Comma-separated: play, file, stdout")
     parser.add_argument("-e", "--engine", help="Remote engine name (server's TTS_ENGINE if omitted)")
-    parser.add_argument("-l", "--language", default="en", help="Language code (default: en)")
+    parser.add_argument("-l", "--language", help="Language code (default: en)")
     parser.add_argument("-d", "--audio-dir", metavar="DIR", help="Directory for saved files (default: audio/)")
 
     parser.add_argument("-v", "--verbose", action="store_true")
@@ -169,7 +199,7 @@ def main() -> int:
     args = parser.parse_args()
     setup_logging(args.verbose, args.quiet)
 
-    # Load config files (./ttsgen.conf > ~/.config/ttsgen.conf > .env > defaults).
+    # Load config files (./ttsgen.conf > ~/.config/ttsgen.conf > .env.local > .env > defaults).
     # Imported lazily and tolerantly so the client still runs from a bare checkout.
     try:
         from libs.config import load_config
@@ -181,6 +211,8 @@ def main() -> int:
     if getattr(args, "list", False):
         return list_remote_engines()
 
+    LAST_RESPONSE["content_type"] = ""
+
     # Resolve inputs
     if args.text_file:
         try:
@@ -191,8 +223,9 @@ def main() -> int:
     else:
         text = args.text
 
-    engine = args.engine or os.getenv("TTS_ENGINE", "")  # empty → server picks default
+    engine = args.engine or os.getenv("TTS_ENGINE", "")  # empty: the server picks its default
     language = args.language or os.getenv("TTS_LANGUAGE", "en")
+    audio_dir = args.audio_dir or os.getenv("AUDIO_DIRECTORY", "audio")
 
     output_formats: list[str] = []
     if args.output:
@@ -214,23 +247,19 @@ def main() -> int:
     out_is_stdout = "stdout" in output_formats
     out_is_file = "file" in output_formats
 
-    # Output filename resolution
-    output_filename: str | None = None
+    # The output target is an exact file name, or a directory whose file name is
+    # built after synthesis from the response Content-Type (or the audio header).
+    output_target: str | None = None
+    target_is_dir = False
     if out_is_file:
-        ext = "mp3" if engine in ("", "gtts") else "wav"
-        if args.file == "" or args.file is None:
-            audio_dir = args.audio_dir or os.getenv("AUDIO_DIRECTORY", "audio")
-            os.makedirs(audio_dir, exist_ok=True)
-            output_filename = os.path.join(audio_dir, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.{ext}")
-        else:
-            output_filename = args.file
+        output_target, target_is_dir = resolve_output_target(args.file, audio_dir)
 
     if not args.quiet and not out_is_stdout:
-        logger.info(f"TTS API client → {get_url()}")
+        logger.info(f"TTS API client: {get_url()}")
         logger.info(f"Engine: {engine or '(server default)'}  Language: {language}")
         logger.info(f"Formats: {', '.join(output_formats)}")
-        if output_filename:
-            logger.info(f"Output file: {output_filename}")
+        if output_target:
+            logger.info(f"Output: {output_target}")
 
     # Chunking and pipeline (matches ttsgen: 200-char chunks, producer/consumer threads)
     MAX_LEN = 200
@@ -238,12 +267,8 @@ def main() -> int:
     if not args.quiet and not out_is_stdout:
         logger.info(f"Chunks: {len(chunks)} (<= {MAX_LEN} chars each)")
 
-    ext = "mp3" if engine in ("", "gtts") else "wav"
-    tmp_suffix = f".{ext}"
-    # Keep scratch files next to the destination in file mode to avoid cross-device moves.
-    tmp_dir = (args.audio_dir or os.getenv("AUDIO_DIRECTORY", "audio")) if out_is_file else None
-    if tmp_dir:
-        os.makedirs(tmp_dir, exist_ok=True)
+    # Keep scratch files next to the destination in file mode, in the system temp dir otherwise.
+    tmp_dir = scratch_dir(output_target, target_is_dir)
 
     def generator(text_chunk: str) -> bytes:
         """Synthesize one chunk remotely, binding the resolved engine and language."""
@@ -256,7 +281,7 @@ def main() -> int:
     # Imported lazily: playback pulls in pygame, which is useless for --file/--stdout runs.
     from libs.api import play_audio
 
-    rec = threading.Thread(target=rec_worker, args=(chunks, generator, q, tmp_suffix, tmp_dir), daemon=True)
+    rec = threading.Thread(target=rec_worker, args=(chunks, generator, q, CHUNK_SUFFIX, tmp_dir), daemon=True)
     play = threading.Thread(target=play_worker, args=(q, output_formats, collected_paths, play_audio, failures), daemon=True)
     rec.start()
     play.start()
@@ -268,46 +293,31 @@ def main() -> int:
             logger.error(f"Chunk {idx} failed: {type(err).__name__}: {err}")
         logger.error(f"{len(failures)}/{len(chunks)} chunk(s) failed; aborting with exit code 3.")
         return 3
+    if not collected_paths:
+        logger.error("No audio was generated: the text holds nothing to synthesize.")
+        return 1
 
-    saved: list[str] = []
-    if out_is_file and output_filename:
-        if len(collected_paths) == 1:
-            try:
-                shutil.copy2(collected_paths[0], output_filename)
-                safe_unlink(collected_paths[0])
-                saved.append(output_filename)
-            except Exception as exc:
-                logger.error(f"Failed to save {output_filename}: {exc}")
+    if out_is_file and output_target is not None:
+        extension = response_extension(LAST_RESPONSE["content_type"], collected_paths)
+        output_filename = output_path_for(output_target, target_is_dir, os.getenv("FILENAME_PREFIX", ""), extension)
+        try:
+            save_audio_file(collected_paths, output_filename)
+        except OSError as exc:
+            logger.error(f"Failed to save {output_filename}: {type(exc).__name__}: {exc}\n{traceback.format_exc()}")
+            return 1
+        if out_is_stdout:
+            # stdout carries the audio stream, so the filename goes to the log instead.
+            logger.info(output_filename)
         else:
-            base, ext_dot = os.path.splitext(output_filename)
-            for i, chunk_path in enumerate(collected_paths, start=1):
-                dst = f"{base}_{i:03d}{ext_dot}"
-                try:
-                    shutil.copy2(chunk_path, dst)
-                    safe_unlink(chunk_path)
-                    saved.append(dst)
-                except Exception as exc:
-                    logger.error(f"Failed to save chunk {i}: {exc}")
-        if not out_is_stdout:
             # Shell-pipeable output: FILE=$(ttsapi "Hi" --file) must capture the path alone.
-            for saved_path in saved:
-                print(saved_path, file=sys.stdout)
+            print(output_filename, file=sys.stdout)
 
     if out_is_stdout:
-        if ext == "mp3":
-            for chunk_path in saved if saved else collected_paths:
-                with open(chunk_path, "rb") as f:
-                    sys.stdout.buffer.write(f.read())
-            sys.stdout.buffer.flush()
-        else:
-            buf = io.BytesIO()
-            concat_wav_files(saved if saved else collected_paths, buf)
-            sys.stdout.buffer.write(buf.getvalue())
-            sys.stdout.buffer.flush()
+        write_audio(collected_paths, sys.stdout.buffer)
+        sys.stdout.buffer.flush()
 
-    if not out_is_file:
-        for chunk_path in collected_paths:
-            safe_unlink(chunk_path)
+    for chunk_path in collected_paths:
+        safe_unlink(chunk_path)
 
     return 0
 

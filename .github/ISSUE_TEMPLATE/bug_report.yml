@@ -1,0 +1,78 @@
+name: Bug report
+description: Something does not work the way the docs say it should.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: The exact behaviour you saw, including the full error message if there was one.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The command or request that triggers it, with the flags and the input text.
+      placeholder: |
+        ttsgen "Hello world" --engine pipertts --file out.wav
+    validations:
+      required: true
+  - type: textarea
+    id: list-output
+    attributes:
+      label: Output of `ttsgen --list`
+      render: text
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Engine
+      options:
+        - gtts
+        - pyttsx3
+        - pipertts
+        - silerotts
+        - coquitts
+        - kokorotts
+        - barktts
+        - not engine-specific
+    validations:
+      required: true
+  - type: dropdown
+    id: runs-as
+    attributes:
+      label: How it runs
+      options:
+        - pip install
+        - Docker (CPU)
+        - Docker (GPU)
+        - Web UI
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The release tag or the commit you are running.
+      placeholder: "1.0.6"
+    validations:
+      required: true
+  - type: input
+    id: os-python
+    attributes:
+      label: OS and Python version
+      placeholder: "Ubuntu 24.04, Python 3.12.3"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant output from the CLI, `docker compose logs ttssrv`, or the browser console. Remove tokens before pasting.
+      render: text

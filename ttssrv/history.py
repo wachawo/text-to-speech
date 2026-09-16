@@ -18,6 +18,11 @@ import uuid
 import wave
 from datetime import datetime
 
+# Local imports
+# Re-exported on purpose: ttssrv.app1 and the tests still reach the sniffer as
+# history.is_mp3 / history.audio_format.
+from libs.audio import audio_format, is_mp3  # noqa: F401
+
 logger = logging.getLogger(__name__)
 
 ITEM_ID_RE = re.compile(r"^\d{8}_\d{6}_[0-9a-f]{6}$")
@@ -33,27 +38,6 @@ def is_valid_id(item_id: str) -> bool:
 def new_item_id(now: datetime) -> str:
     """Build a fresh id: the timestamp of `now` plus six random hex characters."""
     return f"{now.strftime(ID_TIME_FMT)}_{uuid.uuid4().hex[:6]}"
-
-
-def is_mp3(audio_bytes: bytes) -> bool:
-    """Report whether the bytes open with an ID3 tag or an MPEG audio frame sync.
-
-    The frame sync is 11 set bits, so the second byte is masked rather than
-    compared: gTTS emits tagless MPEG-2 layer III (\xff\xf3), other encoders
-    MPEG-1 (\xff\xfb), and both are MP3.
-    """
-    if audio_bytes.startswith(b"ID3"):
-        return True
-    return len(audio_bytes) >= 2 and audio_bytes[0] == 0xFF and (audio_bytes[1] & 0xE0) == 0xE0
-
-
-def audio_format(audio_bytes: bytes) -> str:
-    """Return "mp3", "wav" or "bin" by sniffing the audio header."""
-    if is_mp3(audio_bytes):
-        return "mp3"
-    if audio_bytes.startswith(b"RIFF"):
-        return "wav"
-    return "bin"
 
 
 def audio_seconds(audio_bytes: bytes, fmt: str) -> float | None:

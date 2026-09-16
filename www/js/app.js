@@ -3,7 +3,10 @@
      wants a token (/api/health "auth"), the sign-in screen asks for one, keeps
      it in this browser and every request carries it
    - Minimal Vuex: the toasts, the theme in force, the two preference groups,
-     whether the settings dialog is asked for, the last health answer
+     whether the settings dialog is asked for, the last health answer, the
+     engine and voice catalogue the screens share
+   - The wait-queue mixin (TtsWait), the language list and the docs address,
+     each written once and read by every screen that needs it
    - Shared formatters, so every screen prints a size and a duration the same
      way
    - Shared error unwrapping, so no screen shows the operator raw JSON
@@ -41,29 +44,37 @@ const apiError = function (err) {
 Vue.prototype.$apiError = apiError;
 
 /* Screens are loaded from .vue files at runtime - there is no build step.
-   A screen whose file is missing must not take the shell down with it: the
-   header and the router keep working, and the router-view says which file
-   did not load.
+   A screen whose file is missing or does not parse must not take the shell
+   down with it: the header and the router keep working, the router-view says
+   which screen did not load and why, and the console has the full error.
 
    The fallback is resolved here rather than handed to vue-router as the
    `{component, error}` factory form: that form is Vue's own and vue-router 3
    does not read it - a rejected loader aborts the navigation, so the address
    stays where it was and the fallback never renders. Catching the rejection
    and answering the placeholder is what lets the navigation finish. */
-const MissingScreen = {
-  template:
-    '<div class="tts-page">' +
-    '<div class="tts-card">' +
-    '<div class="label">Screen unavailable</div>' +
-    '<div class="sub">This screen is not installed in this build. ' +
-    'Expected the component file to be served from /views/.</div>' +
-    '</div></div>',
+const missingScreen = function (name, err) {
+  var reason = (err && err.message) || String(err || 'unknown error');
+  return {
+    data: function () {
+      return { name: name, reason: reason };
+    },
+    template:
+      '<div class="tts-page">' +
+      '<div class="tts-card">' +
+      '<div class="label">Screen unavailable</div>' +
+      '<div class="sub">/views/{{ name }}.vue: {{ reason }}</div>' +
+      '</div></div>',
+  };
 };
 
-const screen = function (name) {
+const loadScreen = function (name) {
   var load = httpVueLoader('/views/' + name + '.vue');
   return function () {
-    return load().catch(function () { return MissingScreen; });
+    return load().catch(function (err) {
+      console.error(err);
+      return missingScreen(name, err);
+    });
   };
 };
 
@@ -113,6 +124,63 @@ Vue.prototype.$fmtSeconds = function (value) {
   var seconds = Number(value);
   if (!isFinite(seconds)) return '-';
   return seconds.toFixed(1) + ' s';
+};
+
+/* The languages xtts_v2 speaks, fixed here rather than asked of the server:
+   no engine reports its languages yet, and this list is the widest of them.
+   One copy, read by the studio's select and by the settings dialog - a
+   default picked in one that the other's select does not carry would render
+   as a blank select. */
+const LANGUAGES = [
+  { code: 'en', name: 'English' },
+  { code: 'es', name: 'Spanish' },
+  { code: 'fr', name: 'French' },
+  { code: 'de', name: 'German' },
+  { code: 'it', name: 'Italian' },
+  { code: 'pt', name: 'Portuguese' },
+  { code: 'pl', name: 'Polish' },
+  { code: 'tr', name: 'Turkish' },
+  { code: 'ru', name: 'Russian' },
+  { code: 'nl', name: 'Dutch' },
+  { code: 'cs', name: 'Czech' },
+  { code: 'ar', name: 'Arabic' },
+  { code: 'zh', name: 'Chinese' },
+  { code: 'ja', name: 'Japanese' },
+  { code: 'hu', name: 'Hungarian' },
+  { code: 'ko', name: 'Korean' },
+  { code: 'hi', name: 'Hindi' },
+];
+Vue.prototype.$languages = LANGUAGES;
+
+/* Whether a language code is one the selects carry. */
+Vue.prototype.$knownLanguage = function (code) {
+  return LANGUAGES.some(function (lang) { return lang.code === code; });
+};
+
+/* Where the engine guides live; the models screen links a missing engine to
+   its guide under this. */
+const DOCS_URL = 'https://github.com/wachawo/text-to-speech/blob/main/docs/';
+Vue.prototype.$docsUrl = DOCS_URL;
+
+/* The wait queue, shared by every screen that has one.
+
+   `wait` is an array of labels on the screen's own data - the strip above
+   the content joins them, and the controls are disabled while it is not
+   empty. A label goes on before the request and comes off in its `finally`,
+   by exact text: the one label that changes while it is queued (the studio's
+   ticking "generating 12s") is replaced in place by its timer and dropped
+   under its final text. Published on window so the .vue files, which are
+   loaded at runtime with no imports, can name it in `mixins`. */
+window.TtsWait = {
+  methods: {
+    waitPush: function (label) {
+      this.wait.push(label);
+    },
+    waitDrop: function (label) {
+      var i = this.wait.indexOf(label);
+      if (i !== -1) this.wait.splice(i, 1);
+    },
+  },
 };
 
 /* localStorage, or null where there is none.
@@ -310,6 +378,19 @@ const state = {
   // hold a reference to each other, and the dialog is not rendered inside the
   // bar (see Header.vue for why).
   settingsOpen: false,
+  // What the server holds, read by every screen from one copy: the answer to
+  // GET /api/engines unpacked, and the voices of each engine/language pair
+  // asked for so far, under "<engine>/<language>". Replaced whole by the two
+  // actions below, never edited in place, so a computed reading a pair sees
+  // the new list.
+  catalog: {
+    engines: [],
+    supported: [],
+    preload: [],
+    defaultEngine: '',
+    defaultLanguage: '',
+    voices: {},
+  },
 };
 
 /* Ask the server whether it wants a token. The health probe is the one
@@ -324,10 +405,59 @@ const auth_check = function (context) {
   });
 };
 
+/* GET /api/engines into the catalog. `engines` is what is installed here;
+   the default is TTS_ENGINE as configured, reported whether or not that engine
+   is installed, so a screen takes it only when `engines` carries it. The
+   promise answers the catalog; a failure leaves the catalog as it was and
+   rejects, so the screen that asked can say so. */
+const fetch_engines = function (context) {
+  return axios.get('/api/engines').then(function (resp) {
+    var data = resp.data || {};
+    context.state.catalog = {
+      engines: data.available || [],
+      supported: data.supported || [],
+      preload: data.preload || [],
+      defaultEngine: data['default'] || '',
+      defaultLanguage: data.language || '',
+      voices: context.state.catalog.voices,
+    };
+    return context.state.catalog;
+  });
+};
+
+/* GET /api/voices for one engine and language into the catalog, under
+   "<engine>/<language>", and the answer as sent - the voices screen reads the
+   sample files off it. Answers arriving out of order cannot cross: each lands
+   under its own pair, and a screen reads the pair it is on. A failure files
+   an empty list under the pair, so a select that read the old list is not
+   left offering voices the server just refused, and rejects. */
+const fetch_voices = function (context, payload) {
+  var engine = (payload && payload.engine) || '';
+  var language = (payload && payload.language) || '';
+  var key = engine + '/' + language;
+  var params = { engine: engine };
+  if (language) params.language = language;
+  var file = function (voices, fallback) {
+    var voicesByKey = Object.assign({}, context.state.catalog.voices);
+    voicesByKey[key] = { voices: voices, 'default': fallback };
+    context.state.catalog = Object.assign({}, context.state.catalog, { voices: voicesByKey });
+  };
+  return axios.get('/api/voices', { params: params }).then(function (resp) {
+    var data = resp.data || {};
+    file(data.voices || [], data['default'] || '');
+    return data;
+  }, function (err) {
+    file([], '');
+    return Promise.reject(err);
+  });
+};
+
 const actions = {
   push_toast,
   dismiss_toast,
   auth_check,
+  fetch_engines,
+  fetch_voices,
 };
 
 const store = new Vuex.Store({ state, actions });
@@ -413,11 +543,11 @@ Vue.prototype.$savePrefs = function (name, value) {
 const router = new VueRouter({
   mode: 'hash',
   routes: [
-    { path: '/login',   name: 'login',  component: screen('Login') },
+    { path: '/login',   name: 'login',  component: loadScreen('Login') },
     { path: '/',        redirect: '/studio' },
-    { path: '/studio',  name: 'studio', component: screen('Studio') },
-    { path: '/voices',  name: 'voices', component: screen('Voices') },
-    { path: '/models',  name: 'models', component: screen('Models') },
+    { path: '/studio',  name: 'studio', component: loadScreen('Studio') },
+    { path: '/voices',  name: 'voices', component: loadScreen('Voices') },
+    { path: '/models',  name: 'models', component: loadScreen('Models') },
     { path: '*',        redirect: '/studio' },
   ],
 });
@@ -484,13 +614,20 @@ router.beforeEach(function (to, from, next) {
   }).catch(function () { next(); });
 });
 
-/* Every request carries the token the browser holds; a 401 from any of them
-   means the token is gone or wrong, so it is forgotten and the operator is
-   sent to sign in with the destination kept. The sign-in screen's own probe
-   is excluded: its 401 is the answer "wrong token", not a lost session. */
+/* Every API request carries the token the browser holds; a 401 from any of
+   them means the token is gone or wrong, so it is forgotten and the operator
+   is sent to sign in with the destination kept. Only /api/ - the token is the
+   server's and nginx's own files (/ui-config.json) have no use for it. The
+   sign-in screen's own probe is excluded: its 401 is the answer "wrong
+   token", not a lost session. */
+const apiRequest = function (config) {
+  var url = (config && config.url) || '';
+  return url.indexOf('/api/') === 0;
+};
+
 axios.interceptors.request.use(function (config) {
   var token = store.state.auth.token;
-  if (token && !(config.headers && config.headers['X-Tts-Probe'])) {
+  if (token && apiRequest(config) && !(config.headers && config.headers['X-Tts-Probe'])) {
     config.headers = config.headers || {};
     config.headers.Authorization = 'Bearer ' + token;
   }

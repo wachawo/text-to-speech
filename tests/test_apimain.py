@@ -91,15 +91,17 @@ def test_main_file_output_auto_names_under_audio_dir(monkeypatch, quiet_main, ca
     assert str(files[0]) in captured.out
 
 
-def test_main_chunks_long_input_into_separate_files(monkeypatch, quiet_main):
-    """Text > 200 chars splits into multiple chunks → file per chunk
-    (the per-chunk file naming uses _NNN suffix)."""
+def test_main_chunks_long_input_into_one_file(monkeypatch, quiet_main):
+    """Text > 200 chars splits into multiple chunks that are concatenated into the requested file."""
     long_text = ". ".join(f"sentence number {i}" for i in range(40)) + "."
     out = quiet_main / "many.wav"
     rc = run_main(monkeypatch, [long_text, "-e", "coquitts", "-f", str(out), "--quiet"])
     assert rc == 0
-    suffixed = sorted(quiet_main.glob("many_*.wav"))
-    assert len(suffixed) >= 2  # at least 2 chunks given chunk size 200
+    assert sorted(quiet_main.glob("many*.wav")) == [out]
+    with wave.open(str(out), "rb") as merged:
+        # Every mocked chunk is 100 frames; at least 2 chunks given chunk size 200.
+        assert merged.getnframes() >= 200
+        assert merged.getnframes() % 100 == 0
 
 
 def test_main_engine_failure_returns_exit_code_3(monkeypatch, quiet_main):

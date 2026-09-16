@@ -1,5 +1,84 @@
 ## Changelog
 
+### [Unreleased]
+
+#### Added
+- OpenAI-compatible audio API: `POST /v1/audio/speech` (`model` is an engine
+  name or `tts-1`, `voice`, `response_format` mp3/wav/pcm/opus/flac/aac with
+  ffmpeg transcoding, `speed`, and a `language` extension), `GET /v1/models`
+  and `GET /v1/audio/voices`; errors use the OpenAI shape. Open WebUI,
+  SillyTavern and the official SDKs work with `base_url` pointing at the server.
+  nginx proxies `/v1/` next to `/api/`.
+- `TTS_QUEUE_SIZE` (default 8): how many synthesis requests may wait for a
+  free engine slot; any more are answered 503 at once, so a burst of `/api/tts`
+  cannot hold every server thread. `/api/health` reports it as `queue_size`.
+- `libs/audio.py`: one sniffer (`is_wav`, `is_mp3`, `audio_format`,
+  `audio_mime`, `extension_for`) used by the CLIs, the library, playback, the
+  history store and the server.
+- `CONTRIBUTING.md`, `SECURITY.md`, issue and pull request templates, a
+  Dependabot config, and a release workflow that publishes a GitHub Release
+  with the matching CHANGELOG section and the built wheel and sdist on every
+  version tag.
+- Frontend checks: `npm run lint` (eslint with eslint-plugin-vue) and
+  `npm test` (node tests for the WAV encoder and resampler, template
+  compilation of every `.vue`, a palette check on the CSS); CI runs them in a
+  `www` job and runs mypy in `lint`.
+- README: Configuration table, API reference, Security notes, the
+  `cp env.example .env` step and the CDI prerequisite for the GPU compose file.
+
+#### Changed
+- Config precedence is now, strongest first: CLI flags, shell environment,
+  `./ttsgen.conf`, `~/.config/ttsgen.conf`, `./.env.local`, `./.env`. Every
+  file loads with `override=False`, so no file beats the shell or a flag, and
+  `.env` is read only from the current directory. Engines no longer load config
+  at import time; the entrypoints do it once.
+- `ttsgen --file NAME` and `ttsapi --file NAME` write exactly `NAME` (chunks
+  are concatenated) instead of `NAME_001`, `NAME_002`; auto-named files take
+  their extension from the audio header; `--language` falls back to
+  `TTS_LANGUAGE`; `-o file` honours `-d`; saved files follow the umask instead
+  of being created mode 0600.
+- Engines are safe under the multithreaded server: model caches load once
+  behind a lock, synthesis inside coquitts, silerotts, kokorotts, barktts and
+  pyttsx3 is serialized per engine, environment variables are set once at load
+  time instead of on every call, and pyttsx3 picks its voice by `voice` or
+  `language`.
+- The web UI fetches history and sample audio through the API client, so
+  playback and downloads work when `TTS_TOKENS` is set; the curl card prints
+  `$TTS_TOKEN` instead of the token; the language list, the engine and voice
+  catalogues, the wait queue and the waiting banner live in one place each;
+  ~100 lines of unused CSS are gone.
+- `docker compose up` works without a `.env` file; the `.env` bind mount is
+  gone (the env file already carries every key).
+- Web stack and dev tooling moved off their 2023 pins: Flask 3.1, flask-cors
+  6.0, marshmallow 3.26, uvicorn 0.53, mypy 2.x, black 26, ruff 0.16;
+  third-party GitHub Actions are pinned by commit SHA.
+- Engine docs use the installed `ttsgen` command, the `cu121` torch index,
+  Python 3.11+, the maintained Coqui fork, one section on where models live,
+  and no longer suggest editing engine source to pick a voice.
+
+#### Removed
+- `gunicorn` and `ttssrv/gu.py`: the server runs under uvicorn and nothing
+  referenced them. `types-PyYAML`: no YAML in the code.
+
+#### Fixed
+- `text_to_speech_file(filename=None)` saved gTTS output as `.wav`: the sniffer
+  knew only one MP3 frame-sync byte pattern.
+- Bark wrote float32 WAV, which the streaming path and the history duration
+  reader could not parse; it is int16 PCM now.
+- A failure inside the streaming generator is logged with its traceback.
+- The Confirm dialog left the page unscrollable when the route changed while it
+  was open; a screen that fails to load reports the reason instead of a blank
+  "Screen unavailable".
+- `ttssrv` served the Flask app through asgiref's `WsgiToAsgi`, which runs every
+  request on one shared thread and guards it with a contextvar that a keep-alive
+  connection could carry into the next request: that request then failed with
+  `Single thread executor already being used, would deadlock` before reaching
+  Flask, as a plain-text 500. A long synthesis also blocked `/api/health`, and
+  `TTS_POOL_SIZE` above 1 never allowed parallel synthesis. The server now uses
+  uvicorn's own WSGI bridge on a thread pool sized from `TTS_POOL_SIZE` and
+  `TTS_QUEUE_SIZE` plus eight threads kept for the light routes; the engine pool
+  still bounds concurrency, and `asgiref` is no longer a dependency.
+
 ### [1.0.6] - 2026-09-16
 
 #### Added

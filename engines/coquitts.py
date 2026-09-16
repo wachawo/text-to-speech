@@ -10,6 +10,7 @@ GPU; CPU mode is very slow.
 import logging
 import os
 import tempfile
+import threading
 
 from libs.exceptions import CustomError, EngineNotAvailableError, TTSException, ValidationError
 from libs.sample_resolver import list_sample_files, resolve_sample_path, sample_path_for_voice
@@ -18,28 +19,6 @@ from libs.tempfiles import safe_unlink
 # Coqui xtts_v2 is the slowest engine but voice-cloning works on book-length text.
 # Kept high deliberately — chunking and pacing are the caller's job.
 MAX_TEXT_LENGTH = 1_000_000
-
-# .env via find_dotenv (walks up from cwd) then .env.local override.
-try:
-    from dotenv import find_dotenv, load_dotenv
-except ImportError:
-
-    def find_dotenv(*args, **kwargs):
-        """Return an empty path when python-dotenv is not installed."""
-        return ""
-
-    def load_dotenv(*args, **kwargs):
-        """Do nothing when python-dotenv is not installed."""
-        pass
-
-
-found = find_dotenv(usecwd=True)
-if found:
-    load_dotenv(found)
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-local_env_file = os.path.join(project_root, ".env.local")
-if os.path.exists(local_env_file):
-    load_dotenv(local_env_file, override=True)
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +31,13 @@ DEFAULT_COQUITTS_SAMPLE = str(os.path.expanduser("~/.config/ttsgen.wav"))
 # Cache TTS instances by (model_name, device) to avoid 15s reload of xtts_v2
 # checkpoint on every synthesis call. Keyed by tuple → instance.
 TTS_CACHE: dict = {}
+# TTS_CACHE_LOCK guards the first load (and the one-time TTS_HOME setup) so
+# concurrent first requests do not load the checkpoint twice. INFERENCE_LOCK
+# serialises tts_to_file: one XTTS instance is not safe to drive from several
+# threads at once. The engine pool bounds synthesis across engines; this lock
+# bounds this engine to one synthesis at a time.
+TTS_CACHE_LOCK = threading.Lock()
+INFERENCE_LOCK = threading.Lock()
 
 # Heavy/optional deps (torch + the Idiap `coqui-tts` fork) live inside the
 # try/except so the module still imports with AVAILABLE=False when they're
@@ -89,6 +75,38 @@ def get_models_directory() -> str:
     if os.path.isdir(local_dir):
         return os.path.abspath(local_dir)
     return os.path.abspath(os.path.expanduser("~/.local/share/tts"))
+
+
+def get_tts(model_name: str, device: str):
+    """Return the cached TTS instance for (model_name, device), loading it lazily.
+
+    Double-checked locking so concurrent first-time requests load the
+    checkpoint once. The models directory reaches Coqui only through the
+    TTS_HOME environment variable (TTS.api.TTS builds its ModelManager without
+    an output prefix), so it is set here, once, under the lock, and only when
+    it differs from what is already in the environment.
+    """
+    cache_key = (model_name, device)
+    tts = TTS_CACHE.get(cache_key)
+    if tts is not None:
+        return tts
+    with TTS_CACHE_LOCK:
+        tts = TTS_CACHE.get(cache_key)
+        if tts is not None:
+            return tts
+        models_dir = get_models_directory()
+        if os.environ.get("TTS_HOME") != models_dir:
+            os.environ["TTS_HOME"] = models_dir
+        logger.info(f"Coqui TTS models directory: {models_dir}")
+        try:
+            add_safe_globals([XttsConfig, XttsAudioConfig, BaseDatasetConfig, XttsArgs])
+        except Exception:
+            pass
+        logger.info(f"Loading {model_name} on {device} (first call - ~15s for xtts_v2)...")
+        with safe_globals([XttsConfig, XttsAudioConfig, BaseDatasetConfig, XttsArgs]):
+            tts = TTS(model_name=model_name, progress_bar=False).to(device)
+        TTS_CACHE[cache_key] = tts
+        return tts
 
 
 def generate(text: str, config: dict) -> bytes:
@@ -153,36 +171,22 @@ def generate(text: str, config: dict) -> bytes:
     try:
         language = config.get("language", "en")
         model_name = os.getenv("COQUITTS_MODEL", DEFAULT_COQUITTS_MODEL)
-        models_dir = get_models_directory()
-        # Coqui TTS uses TTS_HOME for model cache
-        os.environ["TTS_HOME"] = models_dir
-        os.environ["XDG_DATA_HOME"] = models_dir
-        logger.info(f"Coqui TTS models directory: {models_dir}")
-        try:
-            add_safe_globals([XttsConfig, XttsAudioConfig, BaseDatasetConfig, XttsArgs])
-        except Exception:
-            pass
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        cache_key = (model_name, device)
-        tts = TTS_CACHE.get(cache_key)
-        if tts is None:
-            logger.info(f"Loading {model_name} on {device} (first call — ~15s for xtts_v2)...")
-            with safe_globals([XttsConfig, XttsAudioConfig, BaseDatasetConfig, XttsArgs]):
-                tts = TTS(model_name=model_name, progress_bar=False).to(device)
-            TTS_CACHE[cache_key] = tts
+        tts = get_tts(model_name, device)
         # Coqui TTS can only write to a path, so synthesis goes through a scratch file.
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
             temp_filename = temp_file.name
         try:
-            if "multilingual" in model_name:
-                tts.tts_to_file(
-                    text=text,
-                    file_path=temp_filename,
-                    language=language,
-                    speaker_wav=sample_wav,
-                )
-            else:
-                tts.tts_to_file(text=text, file_path=temp_filename)
+            with INFERENCE_LOCK:
+                if "multilingual" in model_name:
+                    tts.tts_to_file(
+                        text=text,
+                        file_path=temp_filename,
+                        language=language,
+                        speaker_wav=sample_wav,
+                    )
+                else:
+                    tts.tts_to_file(text=text, file_path=temp_filename)
             if not os.path.exists(temp_filename) or os.path.getsize(temp_filename) == 0:
                 raise TTSException("Coqui TTS failed to generate audio")
             with open(temp_filename, "rb") as wav_file:

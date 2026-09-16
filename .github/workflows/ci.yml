@@ -10,31 +10,46 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
       - name: Install system audio libs
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg libsndfile1 libportaudio2
-      - name: Install package with dev extras (needed for pytest pre-commit hook)
+      - name: Install package with dev extras
         run: uv pip install --system -e ".[dev]"
-      - name: Install pre-commit
-        run: pip install pre-commit
       - name: Run pre-commit
         run: pre-commit run --all-files --show-diff-on-failure
+      - name: Run mypy
+        run: mypy
 
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
       - name: Install system audio libs
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg libsndfile1 libportaudio2
       - name: Install package with dev extras
         run: uv pip install --system -e ".[dev]"
       - name: Run pytest
         run: pytest
+
+  www:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "20"
+          cache: npm
+      - name: Install npm dependencies
+        run: npm ci
+      - name: Lint the web UI
+        run: npm run lint
+      - name: Test the web UI
+        run: npm test

@@ -13,7 +13,7 @@ jobs:
     steps:
       - name: Auto-assign and request reviewers
         if:  github.event_name == 'issues' || github.event_name == 'pull_request_target'
-        uses: wachawo/github-auto-assign@v1
+        uses: wachawo/github-auto-assign@738fa3934df7874fe0bafca24eb4ae48756c08ae # v1
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           assignees: wachawo

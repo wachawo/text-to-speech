@@ -12,17 +12,10 @@ See: https://github.com/nazdridoy/kokoro-tts (CLI upstream this engine wraps)
 import io
 import logging
 import os
+import threading
 
 # Local imports
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
-
-# Centralised config loader handles ./ttsgen.conf > ~/.config/ttsgen.conf > .env > defaults
-try:
-    from libs.config import load_config
-
-    load_config()
-except ImportError:
-    pass  # libs.config or dotenv not available — engine will fall back to env / defaults.
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +44,13 @@ LANGUAGE_MAP = {
 # Cache (model_path, voices_path) → Kokoro instance. Loading the ONNX model
 # costs ~1-3s on CPU; reuse across calls within one process.
 KOKORO_CACHE: dict = {}
+# Guards the first load only: two concurrent first requests must not both
+# build the ONNX session. Inference needs no lock, onnxruntime's run() is
+# thread-safe, so the engine pool alone bounds parallel synthesis.
+KOKORO_CACHE_LOCK = threading.Lock()
+# onnxruntime itself is thread-safe, but Kokoro phonemizes through espeak-ng,
+# a C library with global state, so one synthesis at a time per process.
+INFERENCE_LOCK = threading.Lock()
 
 # Both kokoro_onnx (ONNX runtime + model wrapper) and soundfile (WAV encoder)
 # are required for synthesis. If either is missing the engine is unusable —
@@ -133,6 +133,25 @@ def samples_to_wav_bytes(samples, sample_rate: int) -> bytes:
     return buf.getvalue()
 
 
+def get_kokoro(model_path: str, voices_path: str):
+    """Return the cached Kokoro instance for the file pair, loading it lazily.
+
+    Double-checked locking so concurrent first-time requests load the model once.
+    """
+    cache_key = (model_path, voices_path)
+    kokoro = KOKORO_CACHE.get(cache_key)
+    if kokoro is not None:
+        return kokoro
+    with KOKORO_CACHE_LOCK:
+        kokoro = KOKORO_CACHE.get(cache_key)
+        if kokoro is not None:
+            return kokoro
+        logger.info(f"Loading Kokoro model: {model_path}")
+        kokoro = Kokoro(model_path, voices_path)
+        KOKORO_CACHE[cache_key] = kokoro
+        return kokoro
+
+
 def generate(text: str, config: dict) -> bytes:
     """
     Generate TTS and return audio as bytes.
@@ -171,15 +190,11 @@ def generate(text: str, config: dict) -> bytes:
     if not os.path.exists(model_path) or not os.path.exists(voices_path):
         raise TTSException(get_download_instructions())
 
-    cache_key = (model_path, voices_path)
-    kokoro = KOKORO_CACHE.get(cache_key)
-    if kokoro is None:
-        logger.info(f"Loading Kokoro model: {model_path}")
-        kokoro = Kokoro(model_path, voices_path)
-        KOKORO_CACHE[cache_key] = kokoro
+    kokoro = get_kokoro(model_path, voices_path)
 
     try:
-        samples, sample_rate = kokoro.create(text, voice=voice, speed=speed, lang=lang_code)
+        with INFERENCE_LOCK:
+            samples, sample_rate = kokoro.create(text, voice=voice, speed=speed, lang=lang_code)
     except Exception as exc:
         raise TTSException(f"Kokoro TTS generation failed ({type(exc).__name__}): {exc}") from exc
 

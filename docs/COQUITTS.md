@@ -14,9 +14,9 @@ Coqui TTS (formerly Mozilla TTS) is a state-of-the-art text-to-speech library wi
 ### Python Version Compatibility
 
 This project uses the **Idiap community fork** (`coqui-tts`), which supports
-modern Python and PyTorch — unlike the abandoned upstream `TTS` package.
+modern Python and PyTorch - unlike the abandoned upstream `TTS` package.
 
-- Python 3.11+ (including 3.12)
+- Python 3.11+ (the Docker images use 3.12)
 - Pinned `transformers>=4.46,<5.0` (the version the fork needs under torch 2.9+)
 
 ### Minimum Requirements
@@ -30,7 +30,7 @@ modern Python and PyTorch — unlike the abandoned upstream `TTS` package.
 - 8GB+ RAM
 - NVIDIA GPU with 4GB+ VRAM
 - 5GB disk space
-- CUDA 11.8+ and cuDNN
+- NVIDIA driver 525+ (the installer uses the CUDA 12.1 wheel index)
 
 ## License Notice
 
@@ -43,59 +43,55 @@ The system will ask you to accept the license on first use of these models.
 
 ## Installation
 
-### Basic Installation (CPU only)
+### Installer (CPU or GPU)
 
 ```bash
-# Install Coqui TTS with compatible transformers version
-pip install "coqui-tts[codec]" "transformers>=4.46,<5.0"
+ttsgen --install coquitts
 
 # Test installation
 python -c "from TTS.api import TTS; print('Coqui TTS installed successfully')"
-```
-
-**Note:** This project pins `transformers>=4.46,<5.0` — the version the Idiap fork needs under torch 2.9+.
-
-**Note:** First run with certain models will prompt for license acceptance.
-
-### GPU Installation (Recommended)
-
-```bash
-# Install PyTorch with CUDA support first
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-
-# Install Coqui TTS with compatible transformers version
-pip install "coqui-tts[codec]" "transformers>=4.46,<5.0"
 
 # Verify GPU support
 python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
 ```
 
-### Quick Setup Script
+The installer asks where to store the models and the voice sample, installs
+PyTorch from an explicit wheel index (`https://download.pytorch.org/whl/cpu`
+or `https://download.pytorch.org/whl/cu121`, your choice), then installs
+`coqui-tts[codec]` with `transformers>=4.46,<5.0` and offers to pre-download a
+model. The default PyPI index ships torch wheels built for a newer CUDA that
+fail on NVIDIA drivers below about 580, which is why the installer picks the
+index for you.
+
+**Note:** This project pins `transformers>=4.46,<5.0` - the version the Idiap fork needs under torch 2.9+.
+
+**Note:** First run with certain models will prompt for license acceptance.
+
+### Manual install
+
+Only if you cannot run the installer:
 
 ```bash
-# Run installation script
-ttsgen --install coquitts
+# PyTorch first, from the explicit index (cpu or cu121)
+pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# Then the fork with the compatible transformers range
+pip install "coqui-tts[codec]" "transformers>=4.46,<5.0"
 ```
 
 ## Models Storage
 
-### Default Location
+Environment variable: `COQUITTS_MODELS`. Installer default:
+`~/.local/share/tts/` (Coqui's own `TTS_HOME`); the project-local choice is
+`cache/coquitts/`. Without the variable the engine falls back to
+`cache/coquitts` under the current directory. The three-way prompt and how the
+answer is persisted are described in
+[ENGINES.md, "Where models live"](ENGINES.md#where-models-live).
 
-Models are stored in `cache/coquitts/` directory in project root (created automatically during installation).
-
-Example: `/path/to/tts/cache/coquitts/`
-
-### Custom Location
-
-During installation, you can choose from:
-1. **Default:** `cache/coquitts/` (in project directory)
-2. **Standard:** `~/.local/share/tts/` (default Coqui location)
-3. **Custom:** any directory you specify
-
-To change directory after installation:
+To change the directory after installation:
 
 ```bash
-# Set environment variable (this project's canonical var — see CONTEXT.md)
+# Set environment variable
 export COQUITTS_MODELS="$HOME/.local/share/tts"
 
 # Or persist to ~/.config/ttsgen.conf
@@ -103,7 +99,13 @@ echo "COQUITTS_MODELS=$HOME/.local/share/tts" >> ~/.config/ttsgen.conf
 ```
 
 `engines/coquitts.py` then tunnels this through to Coqui's own
-`TTS_HOME` at runtime — you don't set `TTS_HOME` directly.
+`TTS_HOME` at runtime - you don't set `TTS_HOME` directly.
+
+Other variables: `COQUITTS_MODEL` (model id, default
+`tts_models/multilingual/multi-dataset/xtts_v2`, CLI flag `--coqui-model`),
+`COQUITTS_SAMPLE` (reference voice WAV, default `~/.config/ttsgen.wav`, CLI
+flag `--coqui-sample`) and `COQUITTS_SAMPLES` (directory of named voice
+samples, default `samples`), see [Voice Samples](#voice-samples).
 
 ## Available Models
 
@@ -149,16 +151,20 @@ tts_models/multilingual/multi-dataset/xtts_v2
 
 ```bash
 # English (will download model on first use)
-python ttsgen.py "Hello world" --engine coquitts
+ttsgen "Hello world" --engine coquitts
 
 # Spanish
-python ttsgen.py "Hola mundo" --engine coquitts --language es
+ttsgen "Hola mundo" --engine coquitts --language es
 
 # Save to file
-python ttsgen.py "Hello" --engine coquitts --file output.wav
+ttsgen "Hello" --engine coquitts --file output.wav
 
 # Play and save
-python ttsgen.py "Hello" --engine coquitts --file output.wav --play
+ttsgen "Hello" --engine coquitts --file output.wav --play
+
+# Pick a model or a reference voice for this run
+ttsgen "Hello" --engine coquitts --coqui-model tts_models/en/ljspeech/tacotron2-DDC
+ttsgen "Hello" --engine coquitts --coqui-sample samples/maria.wav
 ```
 
 ### First Run
@@ -179,7 +185,7 @@ Type `y` and press Enter to accept the non-commercial license.
 
 ### Pre-download Models
 
-To download models ahead of time:
+`ttsgen --install coquitts` offers to pre-download a model. To do it by hand:
 
 ```bash
 python << 'EOF'
@@ -232,27 +238,21 @@ DEFAULT_OUTPUT_FORMAT=play
 - Quality: High
 - Use for: Production, long texts
 
-To enable GPU, ensure PyTorch with CUDA is installed:
+To enable GPU, pick the CUDA build when `ttsgen --install coquitts` asks, or
+install it by hand from the same index:
 ```bash
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
 ```
 
 ## Advanced Features
 
-### Voice Cloning (XTTS)
-
-Coqui TTS supports voice cloning with XTTS models. This requires:
-- Reference audio sample (3-10 seconds)
-- XTTS model
-- More complex API usage
-
-See Coqui TTS documentation for voice cloning details.
-
 ### Voice Samples
 
-xtts_v2 clones the voice of a reference WAV. Samples live in the directory named
+xtts_v2 clones the voice of a reference WAV; this is the only form of voice
+selection the engine has. Samples live in the directory named
 by `COQUITTS_SAMPLES` (default `samples`, `/opt/samples` in Docker). `COQUITTS_SAMPLE`
-picks the default one; a bare file name is looked up in that directory.
+picks the default one (`~/.config/ttsgen.wav` unless set); a bare file name is
+looked up in that directory. `--coqui-sample PATH` overrides it for one run.
 
 On the server every `*.wav` in the directory is a voice: the `voice` field of a
 request is the sample's file name without `.wav`, so `samples/maria.wav` is
@@ -328,7 +328,7 @@ rm -rf ~/.local/share/tts/
 # This is normal on CPU
 # Solutions:
 # 1. Use GPU (install CUDA + PyTorch with CUDA)
-# 2. Use different engine (piper, gtts)
+# 2. Use different engine (pipertts, gtts)
 # 3. Use smaller/faster model
 ```
 
@@ -350,9 +350,9 @@ rm -rf ~/.local/share/tts/
 
 ## Resources
 
-- Official docs: https://github.com/coqui-ai/TTS
-- Models: https://github.com/coqui-ai/TTS#released-models
-- Voice samples: https://github.com/coqui-ai/TTS#example-demos
+- Maintained fork (the `coqui-tts` package this project installs): https://github.com/idiap/coqui-ai-TTS
+- Fork documentation: https://coqui-tts.readthedocs.io/
+- Model list: `python -c "from TTS.api import TTS; print(TTS().list_models())"`
 
 ## Model List
 

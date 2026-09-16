@@ -365,3 +365,100 @@ def test_generate_raises_tts_exception_when_output_file_empty(engine, monkeypatc
     engine.TTS_CACHE.clear()
     with pytest.raises(TTSException, match="generation failed|failed to generate"):
         engine.generate("hi", {"language": "en"})
+
+
+# Import-time side effects, TTS_HOME handling and concurrency
+
+
+def raise_on_call(*args, **kwargs):
+    """Fail the test: the patched config loader must never run at engine import."""
+    raise AssertionError("config loading must not happen at engine import time")
+
+
+def test_import_does_not_load_config(engine, monkeypatch):
+    """Importing the engine neither calls libs.config.load_config nor dotenv.load_dotenv."""
+    import dotenv
+
+    import libs.config
+
+    monkeypatch.setattr(libs.config, "load_config", raise_on_call)
+    monkeypatch.setattr(dotenv, "load_dotenv", raise_on_call)
+    monkeypatch.setattr(dotenv, "find_dotenv", raise_on_call)
+    importlib.reload(engine)
+
+
+def test_tts_home_set_once_at_load_and_left_alone_afterwards(engine, monkeypatch, tmp_path):
+    """TTS_HOME is written at model load, only when it differs, and not on later calls."""
+    import os
+
+    monkeypatch.delenv("TTS_HOME", raising=False)
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    models_dir = str(tmp_path / "cache" / "coquitts")
+    engine.generate("a", {"language": "en"})
+    assert os.environ["TTS_HOME"] == models_dir
+    assert "XDG_DATA_HOME" not in os.environ
+
+    # A later change of COQUITTS_MODELS does not touch the environment while
+    # the model is served from the cache.
+    monkeypatch.setenv("COQUITTS_MODELS", str(tmp_path / "elsewhere"))
+    engine.generate("b", {"language": "en"})
+    assert os.environ["TTS_HOME"] == models_dir
+
+
+def run_threads(target, count=4):
+    """Start `count` threads on `target` and wait for all of them."""
+    import threading
+
+    threads = [threading.Thread(target=target) for unused in range(count)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+
+def test_concurrent_first_load_constructs_tts_once(engine, monkeypatch):
+    """Four threads generating at once against an empty cache build exactly one TTS."""
+    import time
+
+    class SlowTTS(FakeTTS):
+        """FakeTTS whose constructor is slow enough for the threads to overlap."""
+
+        def __init__(self, model_name, progress_bar=False):
+            """Record the construction and sleep so concurrent callers pile up."""
+            super().__init__(model_name, progress_bar)
+            time.sleep(0.05)
+
+    monkeypatch.setattr(engine, "TTS", SlowTTS)
+    engine.TTS_CACHE.clear()
+    run_threads(lambda: engine.generate("hi", {"language": "en"}))
+    assert len(FakeTTS.instances) == 1
+    assert len(engine.TTS_CACHE) == 1
+
+
+def test_inference_is_serialised(engine, monkeypatch):
+    """tts_to_file never overlaps: with four threads the fake sees at most one caller inside."""
+    import threading
+    import time
+
+    state = {"inside": 0, "overlap": 0}
+    guard = threading.Lock()
+
+    class OverlapTTS(FakeTTS):
+        """FakeTTS that counts callers inside tts_to_file at the same time."""
+
+        def tts_to_file(self, text, file_path, language=None, speaker_wav=None):
+            """Track concurrent entries, then write the marker payload."""
+            with guard:
+                state["inside"] += 1
+                if state["inside"] > 1:
+                    state["overlap"] += 1
+            time.sleep(0.02)
+            super().tts_to_file(text, file_path, language=language, speaker_wav=speaker_wav)
+            with guard:
+                state["inside"] -= 1
+
+    monkeypatch.setattr(engine, "TTS", OverlapTTS)
+    engine.TTS_CACHE.clear()
+    run_threads(lambda: engine.generate("hi", {"language": "en"}))
+    assert len(FakeTTS.instances[-1].calls) == 4
+    assert state["overlap"] == 0

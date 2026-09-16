@@ -15,14 +15,6 @@ import wave
 # Local imports
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
 
-# Centralised config loader handles ./ttsgen.conf > ~/.config/ttsgen.conf > .env > defaults
-try:
-    from libs.config import load_config
-
-    load_config()
-except ImportError:
-    pass  # libs.config or dotenv not available — engine will fall back to env / defaults.
-
 logger = logging.getLogger(__name__)
 
 # Offline ONNX, ~300x realtime — large texts are fine but bound memory.

@@ -87,14 +87,20 @@ module.exports = {
     this.settle = null;
     this.answer = false;
     this.shown = false;
+    // Up from show() to `hidden`. `shown` is not the same thing: Bootstrap
+    // marks <body> the moment show() is called, before the fade-in ends.
+    this.open = false;
     this.modalEl.addEventListener('hidden.bs.modal', this.handleHidden);
     this.modalEl.addEventListener('shown.bs.modal', this.handleShown);
   },
 
-  /* A dialog left open when the route changes takes its backdrop with it -
-     Bootstrap appends that to <body>, outside this component's subtree - and
-     the next screen renders under a grey sheet it cannot dismiss, on a <body>
-     still carrying `overflow: hidden`. */
+  /* A dialog left open when the route changes (Back during a confirm) has to
+     be taken down by hand. Bootstrap appends its backdrop to <body>, outside
+     this component's subtree, and `dispose()` does remove that - but it does
+     not undo what `show()` did to <body> itself: the `modal-open` class and
+     the inline `overflow` / `padding-right` the scrollbar helper wrote. Left
+     there, the next screen renders on a page that cannot scroll. So, if the
+     dialog is up, <body> is put back first, then the modal is disposed. */
   beforeDestroy: function () {
     if (this.modalEl) {
       this.modalEl.removeEventListener('hidden.bs.modal', this.handleHidden);
@@ -105,6 +111,11 @@ module.exports = {
     // exists.
     this.finish(false);
     if (this.modal) {
+      if (this.open && document.body) {
+        document.body.classList.remove('modal-open');
+        document.body.style.removeProperty('overflow');
+        document.body.style.removeProperty('padding-right');
+      }
       this.modal.dispose();
       this.modal = null;
     }
@@ -128,6 +139,7 @@ module.exports = {
       if (!this.modal) return Promise.resolve(false);
       return new Promise(function (resolve) {
         self.settle = resolve;
+        self.open = true;
         self.modal.show();
       });
     },
@@ -149,6 +161,7 @@ module.exports = {
 
     handleHidden: function () {
       this.shown = false;
+      this.open = false;
       this.finish(this.answer);
     },
 

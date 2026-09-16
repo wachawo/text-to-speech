@@ -16,9 +16,11 @@ import logging
 import os
 import queue
 import sys
+import threading
 import time
 import traceback
 import uuid
+import warnings
 import wave
 from datetime import date, datetime
 from functools import wraps
@@ -37,11 +39,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from dotenv import find_dotenv, load_dotenv  # noqa: E402
-
 from engines import get_available_engines, get_engine_voices, get_supported_engines  # noqa: E402
 from libs.api import text_to_speech_bytes  # noqa: E402
+from libs.audio import audio_format, audio_mime  # noqa: E402
 from libs.cli import chunk_text  # noqa: E402
+from libs.config import load_config  # noqa: E402
 from libs.exceptions import (  # noqa: E402
     CustomError,
     EngineNotAvailableError,
@@ -56,21 +58,25 @@ from libs.sample_resolver import (  # noqa: E402
     sample_path_for_voice,
 )
 from ttssrv import history  # noqa: E402
+from ttssrv.openai_compat import (  # noqa: E402
+    OpenAIRequestError,
+    error_body,
+    map_model_name,
+    map_voice_name,
+    prepare_audio,
+    validation_error_body,
+)
 from ttssrv.streaming import streaming_wav_header, wav_data, wav_params  # noqa: E402
 from ttssrv.validators import (  # noqa: E402
     HistoryCreateSchema,
     HistoryListSchema,
+    SpeechRequestSchema,
     TtsRequestSchema,
     VoiceUploadSchema,
 )
 
-# .env via find_dotenv (walks up from cwd) → then .env.local override.
-found = find_dotenv(usecwd=True)
-if found:
-    load_dotenv(found)
-local_env = PROJECT_ROOT / ".env.local"
-if local_env.exists():
-    load_dotenv(local_env, override=True)
+# Shell env > ./ttsgen.conf > ~/.config/ttsgen.conf > ./.env.local > ./.env, cwd only.
+load_config()
 
 # Config
 TRUE_VALUES = ("1", "true", "yes", "on", "enabled")
@@ -79,6 +85,11 @@ TTS_PORT = int(os.getenv("TTS_PORT", "5000"))
 TTS_DEBUG = os.getenv("TTS_DEBUG", "False").lower() in TRUE_VALUES
 TTS_TOKENS = {t.strip() for t in os.getenv("TTS_TOKENS", "").split(",") if t.strip()}
 TTS_POOL_SIZE = int(os.getenv("TTS_POOL_SIZE", "1"))
+# Synthesis requests allowed to wait for a free pool slot; any more are answered 503 at once.
+TTS_QUEUE_SIZE = int(os.getenv("TTS_QUEUE_SIZE", "8"))
+# Threads the WSGI bridge keeps beyond the synthesis ones, so health, history,
+# voices and models never queue behind a full pool.
+LIGHT_THREADS = 8
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
 # Hard cap on request body size — Marshmallow validates `text` after parsing,
 # so without this Werkzeug would buffer arbitrarily large bodies into memory.
@@ -119,6 +130,9 @@ logger = logging.getLogger(__name__)
 # Engine pool — semaphore tokens; the actual model is cached inside engine module
 # (see engines/coquitts.py:TTS_CACHE). Pool limits concurrent synthesis calls.
 ENGINE_POOL: queue.Queue = queue.Queue()
+# Permits to wait for a pool slot: bounds how many server threads a burst of
+# /api/tts requests can hold while they wait.
+WAIT_QUEUE = threading.Semaphore(TTS_QUEUE_SIZE)
 
 
 def init_engine_pool(size: int = TTS_POOL_SIZE) -> None:
@@ -174,7 +188,7 @@ app.config.update(
         MAX_CONTENT_LENGTH=MAX_CONTENT_LENGTH,
     )
 )
-CORS(app, resources={r"/api/*": {"origins": CORS_ORIGINS}})
+CORS(app, resources={r"/api/*": {"origins": CORS_ORIGINS}, r"/v1/*": {"origins": CORS_ORIGINS}})
 
 
 def get_req_id() -> str:
@@ -184,11 +198,7 @@ def get_req_id() -> str:
 
 def detect_audio_mime(audio_bytes: bytes) -> tuple[str, str]:
     """Return (mimetype, extension) by sniffing audio bytes header."""
-    if history.is_mp3(audio_bytes):
-        return "audio/mpeg", "mp3"
-    if audio_bytes.startswith(b"RIFF"):
-        return "audio/wav", "wav"
-    return "application/octet-stream", "bin"
+    return audio_mime(audio_bytes), audio_format(audio_bytes)
 
 
 def parse_tts_payload() -> dict:
@@ -215,11 +225,17 @@ def acquire_slot() -> int | None:
     """Take one engine-pool token, or None when the pool is unlimited.
 
     Raises:
-        queue.Empty: No token freed up within 120 s (answered as 503 by handle_pool_busy).
+        queue.Empty: TTS_QUEUE_SIZE requests are already waiting, or no token
+            freed up within 120 s (both answered as 503 by handle_pool_busy).
     """
     if TTS_POOL_SIZE <= 0:
         return None
-    return ENGINE_POOL.get(timeout=120)
+    if not WAIT_QUEUE.acquire(blocking=False):
+        raise queue.Empty()
+    try:
+        return ENGINE_POOL.get(timeout=120)
+    finally:
+        WAIT_QUEUE.release()
 
 
 def release_slot(slot: int | None) -> None:
@@ -282,6 +298,7 @@ def health():
                 "engine": TTS_ENGINE_DEFAULT,
                 "engines": TTS_ENGINES,
                 "pool_size": TTS_POOL_SIZE,
+                "queue_size": TTS_QUEUE_SIZE,
                 "available": ENGINE_POOL.qsize(),
             }
         ),
@@ -439,7 +456,7 @@ def stream_tts(text: str, engine: str, language: str, voice: str | None = None):
 
     WAV engines emit one streaming WAV (single header + concatenated PCM); MP3
     (gtts) concatenates per-chunk bytes. One pool slot is held for the whole
-    stream and released when the generator is exhausted or the client disconnects.
+    stream and released when the generator is exhausted or closed.
 
     Args:
         text: Full utterance; split into chunks of TTS_STREAM_MAX_CHARS.
@@ -477,7 +494,7 @@ def stream_tts(text: str, engine: str, language: str, voice: str | None = None):
                 blob = text_to_speech_bytes(text=chunk, engine=engine, language=language, voice=voice)
                 yield wav_data(blob) if is_wav else blob
         except Exception as exc:
-            logger.error(f"[{get_req_id()}] stream aborted: {type(exc).__name__}: {exc}")
+            logger.error(f"[{get_req_id()}] stream aborted: {type(exc).__name__}: {exc}\n{traceback.format_exc()}")
         finally:
             release_slot(slot)
 
@@ -589,11 +606,84 @@ def history_delete(item_id: str):
     return jsonify({"result": True}), 200
 
 
+def openai_errors(view):
+    """Answer the failures of a /v1 route in the OpenAI error shape instead of the /api one."""
+
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        """Map validation errors to 400 and a busy pool to 503, both as {"error": {...}}."""
+        try:
+            return view(*args, **kwargs)
+        except MarshmallowValidationError as exc:
+            logger.warning(f"[{get_req_id()}] Validation error: {exc.messages}")
+            return jsonify(validation_error_body(exc.messages)), 400
+        except ValidationError as exc:
+            logger.warning(f"[{get_req_id()}] {type(exc).__name__}: {exc}")
+            return jsonify(error_body(str(exc))), 400
+        except OpenAIRequestError as exc:
+            logger.warning(f"[{get_req_id()}] {type(exc).__name__}: {exc.message}")
+            return jsonify(error_body(exc.message, exc.param, exc.error_type)), exc.status
+        except queue.Empty:
+            logger.warning(f"[{get_req_id()}] All engine slots busy")
+            return jsonify(error_body("All engine slots busy", error_type="server_error")), 503
+
+    return wrapper
+
+
+@app.route("/v1/audio/speech", methods=["POST"])
+@token_required
+@openai_errors
+def openai_speech():
+    """Synthesize `input` the way OpenAI's POST /v1/audio/speech does and return the audio body."""
+    data = SpeechRequestSchema().load(request.get_json(silent=True) or {})
+    engine = map_model_name(data["model"], TTS_ENGINE_DEFAULT)
+    if engine not in get_available_engines():
+        raise OpenAIRequestError(f"Model '{data['model']}' is not an installed engine", param="model")
+    text = data["input"]
+    voice = map_voice_name(data["voice"])
+    language = data["language"] or TTS_LANGUAGE_DEFAULT
+    response_format = data["response_format"]
+    speed = data["speed"]
+    logger.info(
+        f"[{get_req_id()}] OpenAI speech: engine={engine} language={language} "
+        f"voice={voice} chars={len(text)} format={response_format} speed={speed}"
+    )
+
+    slot = acquire_slot()
+    try:
+        audio_bytes = text_to_speech_bytes(text=text, engine=engine, language=language, voice=voice)
+    finally:
+        release_slot(slot)
+
+    unused_mime, native_format = detect_audio_mime(audio_bytes)
+    body, mimetype = prepare_audio(audio_bytes, native_format, response_format, speed)
+    return Response(body, mimetype=mimetype)
+
+
+@app.route("/v1/models", methods=["GET"])
+@token_required
+def openai_models():
+    """List the installed engines as OpenAI models, plus `tts-1` for clients that default to it."""
+    names = sorted(get_available_engines().keys()) + ["tts-1"]
+    data = [{"id": name, "object": "model", "created": 0, "owned_by": "text-to-speech"} for name in names]
+    return jsonify({"object": "list", "data": data}), 200
+
+
+@app.route("/v1/audio/voices", methods=["GET"])
+@token_required
+def openai_voices():
+    """List the voices of the engine behind ?model= (default engine when omitted), as {"voices": [...]}."""
+    engine = map_model_name(request.args.get("model"), TTS_ENGINE_DEFAULT)
+    language = request.args.get("language") or TTS_LANGUAGE_DEFAULT
+    info = get_engine_voices(engine, language)
+    return jsonify({"voices": info.get("voices", [])}), 200
+
+
 @app.errorhandler(queue.Empty)
 def handle_pool_busy(error):
-    """Answer 503 when acquire_slot waited out its timeout on a full engine pool."""
-    logger.warning(f"[{get_req_id()}] All engine slots busy (timeout)")
-    return jsonify({"error": "All engine slots busy (timeout)"}), 503
+    """Answer 503 when acquire_slot found the wait queue full or waited out its timeout."""
+    logger.warning(f"[{get_req_id()}] All engine slots busy")
+    return jsonify({"error": "All engine slots busy"}), 503
 
 
 @app.errorhandler(MarshmallowValidationError)
@@ -667,6 +757,29 @@ def handle_exception(exc):
     return jsonify({"error": "Internal Server Error", "request_id": get_req_id()}), 500
 
 
+def close_wsgi_responses(wsgi_app):
+    """Wrap a WSGI app so every response iterable gets its close() call.
+
+    uvicorn's WSGI bridge iterates the response and drops it without calling
+    close(), which is what releases the file behind a send_file response. CPython
+    closes it on the next garbage collection anyway, but the WSGI contract says
+    close() is called, and the streaming generator's finally block, which
+    returns its pool slot, runs when its response is closed.
+    """
+
+    def wrapper(environ, start_response):
+        """Yield the wrapped app's response and close it afterwards, whatever happened."""
+        response = wsgi_app(environ, start_response)
+        try:
+            yield from response
+        finally:
+            close = getattr(response, "close", None)
+            if close is not None:
+                close()
+
+    return wrapper
+
+
 def main() -> int:
     """Warm the engine pool and serve the app via Flask (debug) or uvicorn.
 
@@ -676,19 +789,37 @@ def main() -> int:
     logger.info(
         f"Starting TTS server on {TTS_HOST}:{TTS_PORT} "
         f"debug={TTS_DEBUG} engines={TTS_ENGINES} default={TTS_ENGINE_DEFAULT} pool={TTS_POOL_SIZE} "
+        f"queue={TTS_QUEUE_SIZE} "
         f"auth={'on' if TTS_TOKENS else 'off'}"
     )
     init_engine_pool()
     if TTS_DEBUG:
         app.run(host=TTS_HOST, port=TTS_PORT, debug=True)
     else:
-        # Imported lazily: the ASGI stack is only needed for production serving,
-        # so a debug-only install does not have to provide uvicorn/asgiref.
+        # Imported lazily: uvicorn is only needed for production serving, so a
+        # debug-only install does not have to provide it.
         import uvicorn
-        from asgiref.wsgi import WsgiToAsgi
 
+        # uvicorn's own WSGI bridge, not asgiref's WsgiToAsgi. asgiref ran every
+        # WSGI call on one shared thread, so a synthesis blocked /api/health and
+        # TTS_POOL_SIZE above 1 never meant anything, and its deadlock guard is a
+        # contextvar that a keep-alive connection can carry into the next
+        # request: that request then died with "Single thread executor already
+        # being used, would deadlock" before Flask saw it, answered as a
+        # plain-text 500. uvicorn's bridge runs requests on a thread pool and
+        # has no such guard. It is built here rather than through
+        # interface="wsgi" because that spelling fixes the pool at 10 threads:
+        # the synthesis requests allowed in (running plus waiting, see
+        # acquire_slot) get their own threads and LIGHT_THREADS stay free for
+        # the rest, so /api/health answers during a burst. uvicorn warns that
+        # this bridge is deprecated in favour of a2wsgi; the warning is silenced
+        # rather than adding a dependency to the image for the same behaviour.
+        warnings.filterwarnings("ignore", message="Uvicorn's native WSGI implementation is deprecated")
+        from uvicorn.middleware.wsgi import WSGIMiddleware
+
+        threads = max(TTS_POOL_SIZE, 1) + TTS_QUEUE_SIZE + LIGHT_THREADS
         uvicorn.run(
-            WsgiToAsgi(app),
+            WSGIMiddleware(close_wsgi_responses(app), workers=threads),
             host=TTS_HOST,
             port=TTS_PORT,
             log_config=None,  # always None: keep our LOGGING, never run uvicorn's own dictConfig

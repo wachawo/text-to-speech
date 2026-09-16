@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Shared CLI helpers — chunking, WAV concat, producer/consumer pipeline.
+"""Shared CLI helpers: chunking, output resolution, chunk concat, producer/consumer pipeline.
 
 Used by both `ttsgen` (offline, calls `libs.api.text_to_speech_bytes`) and `ttsapi`
 (remote, calls HTTP endpoint). The producer is injected as a callable so the same
@@ -11,13 +11,21 @@ import logging
 import os
 import queue
 import re
+import shutil
 import tempfile
 import traceback
 import wave
 from collections.abc import Callable
 from typing import IO, NamedTuple
 
+# Local imports
+from .audio import extension_for, is_wav
+from .tools import ensure_audio_directory, generate_timestamp_filename
+
 logger = logging.getLogger(__name__)
+
+# Scratch files hold one chunk each; the container is sniffed, never read off the name.
+CHUNK_SUFFIX = ".part"
 
 # Zero-width split after sentence-ish punctuation, so each fragment keeps its own
 # terminator and can be regrouped into chunks without re-parsing.
@@ -83,12 +91,97 @@ def chunk_text(text: str, max_len: int = 5000) -> list[str]:
     return chunks
 
 
+def is_directory_target(path: str) -> bool:
+    """Report whether a --file value names a directory: a trailing separator or an existing directory."""
+    separators = (os.sep, os.altsep) if os.altsep else (os.sep,)
+    return path.endswith(separators) or os.path.isdir(path)
+
+
+def resolve_output_target(file_arg: str | None, audio_dir: str) -> tuple[str, bool]:
+    """Turn the --file value into (path, is_directory), creating the directory part.
+
+    Args:
+        file_arg: The --file value: None (file mode via --output), "" (bare --file),
+            a directory (trailing separator or existing) or an exact file name.
+        audio_dir: Directory for auto-named files when file_arg names none.
+
+    Returns:
+        (directory, True) when the file name is generated after synthesis from the
+        audio header, (file name, False) when the caller asked for an exact name.
+    """
+    if not file_arg:
+        return ensure_audio_directory(audio_dir), True
+    if is_directory_target(file_arg):
+        return ensure_audio_directory(file_arg), True
+    parent_dir = os.path.dirname(file_arg)
+    if parent_dir:
+        ensure_audio_directory(parent_dir)
+    return file_arg, False
+
+
+def output_path_for(target: str, is_directory: bool, prefix: str, extension: str) -> str:
+    """Return the exact file name: the target itself, or a timestamped name inside it."""
+    if not is_directory:
+        return target
+    return os.path.join(target, generate_timestamp_filename(prefix, extension))
+
+
+def scratch_dir(target: str | None, is_directory: bool) -> str | None:
+    """Return the directory for the chunk temp files: next to the output, or None for the system temp dir."""
+    if target is None:
+        return None
+    if is_directory:
+        return target
+    return os.path.dirname(target) or "."
+
+
+def read_header(path: str, size: int = 12) -> bytes:
+    """Return the first `size` bytes of a file, enough for the container sniffers."""
+    with open(path, "rb") as handle:
+        return handle.read(size)
+
+
+def write_audio(chunk_paths: list[str], out_stream: IO[bytes]) -> None:
+    """Write the chunks as one audio stream: WAV through the wave module, anything else byte-wise.
+
+    MP3 frames concatenate as they are (the server's streaming path does the
+    same and players accept it), so only WAV needs its headers merged.
+
+    Args:
+        chunk_paths: Chunk files in playback order; an empty list is a no-op.
+        out_stream: Writable binary stream receiving the combined audio.
+    """
+    if not chunk_paths:
+        return
+    if len(chunk_paths) > 1 and is_wav(read_header(chunk_paths[0])):
+        concat_wav_files(chunk_paths, out_stream)
+        return
+    for path in chunk_paths:
+        with open(path, "rb") as handle:
+            shutil.copyfileobj(handle, out_stream)
+
+
+def save_audio_file(chunk_paths: list[str], destination: str) -> None:
+    """Write the chunks into `destination` as one file.
+
+    The file is created with a plain open(), so its mode follows the umask
+    instead of the 0600 the temp chunks were created with.
+    """
+    with open(destination, "wb") as out_stream:
+        write_audio(chunk_paths, out_stream)
+
+
+def chunk_extension(chunk_paths: list[str]) -> str:
+    """Return the file extension matching the container of the first chunk."""
+    return extension_for(read_header(chunk_paths[0]))
+
+
 def concat_wav_files(in_paths: list[str], out_stream: IO[bytes]) -> None:
     """Append several WAV files into one WAV written to out_stream.
 
     Output format is taken from the first input. Inputs whose channel count,
     sample width or frame rate differ are appended anyway and logged as a
-    warning — the result may be malformed, but no chunk is silently dropped.
+    warning: the result may be malformed, but no chunk is silently dropped.
 
     Args:
         in_paths: WAV file paths in playback order; an empty list is a no-op.
@@ -208,7 +301,7 @@ def play_worker(
 
 
 def main():
-    """Module entrypoint placeholder — this file is import-only."""
+    """Module entrypoint placeholder, this file is import-only."""
     pass
 
 

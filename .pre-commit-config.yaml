@@ -1,21 +1,12 @@
 exclude: ^(models|\.backup|audio|samples)/
 repos:
   - repo: https://github.com/psf/black
-    rev: 23.3.0
+    rev: 26.5.1
     hooks:
       - id: black
         args: ["--line-length=128"]
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.5.7
+    rev: v0.16.7
     hooks:
-      - id: ruff
+      - id: ruff-check
         args: ["--fix"]
-  - repo: local
-    hooks:
-      - id: pytest
-        name: pytest
-        entry: python -m pytest --no-cov -q
-        language: system
-        pass_filenames: false
-        always_run: true
-        stages: [pre-commit]
