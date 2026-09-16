@@ -1014,6 +1014,14 @@ table thead { text-transform: uppercase; font-weight: 700; }
    with the 24px controls beside it, and its colours follow the theme through
    `color-scheme` on the palette rather than through anything a stylesheet can
    reach. */
+/* Login: the form alone in the middle of the page, under the brand bar. */
+#loginPage { min-height: calc(100vh - var(--tts-header-height, 28px)); display: flex; flex-direction: column; }
+#loginPage main { flex: 1; display: flex; align-items: center; justify-content: center; }
+#loginPage article { width: 280px; }
+/* Fixed-width label so the field lines up the way the reference form does. */
+#loginPage .login .input-group-text { width: 56px; }
+#loginPage .login .input-group-text label { margin: 0; }
+
 .tts-studio textarea { min-height: 320px; resize: vertical; font-size: 12px; }
 .tts-player { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .tts-player audio { height: 32px; }

@@ -49,7 +49,12 @@ from libs.exceptions import (  # noqa: E402
     ValidationError,
 )
 from libs.models import collect_engine_rows  # noqa: E402
-from libs.sample_resolver import describe_sample_files, get_samples_dir, sample_path_for_voice  # noqa: E402
+from libs.sample_resolver import (  # noqa: E402
+    describe_sample_files,
+    get_samples_dir,
+    list_sample_files,
+    sample_path_for_voice,
+)
 from ttssrv import history  # noqa: E402
 from ttssrv.streaming import streaming_wav_header, wav_data, wav_params  # noqa: E402
 from ttssrv.validators import (  # noqa: E402
@@ -80,6 +85,8 @@ CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if 
 TTS_MAX_BODY_BYTES = int(os.getenv("TTS_MAX_BODY_BYTES", str(2 * 1024 * 1024)))
 # Voice samples are uploaded as multipart WAV and need a larger cap than JSON text.
 TTS_MAX_SAMPLE_BYTES = int(os.getenv("TTS_MAX_SAMPLE_BYTES", str(16 * 1024 * 1024)))
+# Ceiling on the number of voice samples, so an authenticated client cannot fill the disk one upload at a time.
+TTS_MAX_SAMPLES = int(os.getenv("TTS_MAX_SAMPLES", "100"))
 # Werkzeug enforces a single body cap for every route, so it is the larger of the two.
 MAX_CONTENT_LENGTH = max(TTS_MAX_BODY_BYTES, TTS_MAX_SAMPLE_BYTES)
 MAX_CONTENT_LENGTH_MB = MAX_CONTENT_LENGTH // (1024 * 1024)
@@ -269,6 +276,9 @@ def health():
         jsonify(
             {
                 "status": "ok",
+                # Whether requests need a bearer token: the web UI reads this
+                # before deciding to show its sign-in screen.
+                "auth": bool(TTS_TOKENS),
                 "engine": TTS_ENGINE_DEFAULT,
                 "engines": TTS_ENGINES,
                 "pool_size": TTS_POOL_SIZE,
@@ -364,6 +374,8 @@ def voices_upload():
     if os.path.exists(target):
         logger.warning(f"[{get_req_id()}] Voice '{form['name']}' already exists: {target}")
         raise ValidationError(f"Voice '{form['name']}' already exists")
+    if len(list_sample_files()) >= TTS_MAX_SAMPLES:
+        raise ValidationError(f"Sample limit reached ({TTS_MAX_SAMPLES}); delete one first")
     os.makedirs(get_samples_dir(), exist_ok=True)
     # Written through a .tmp neighbour so a half-written sample never shows up in list_voices().
     tmp_path = f"{target}.tmp"

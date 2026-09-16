@@ -71,9 +71,21 @@ def audio_seconds(audio_bytes: bytes, fmt: str) -> float | None:
         return None
 
 
+def path_within(history_dir: str, filename: str) -> str:
+    """Join `filename` onto the history directory, refusing anything that resolves outside it.
+
+    The id regex already admits no separators; this is the second fence.
+    """
+    base = os.path.realpath(history_dir)
+    target = os.path.realpath(os.path.join(base, filename))
+    if os.path.dirname(target) != base:
+        raise ValueError(f"Path escapes the history directory: {filename!r}")
+    return target
+
+
 def json_path(history_dir: str, item_id: str) -> str:
-    """Return the sidecar path for `item_id` (no validation, callers check the id)."""
-    return os.path.join(history_dir, f"{item_id}.json")
+    """Return the sidecar path for `item_id` (callers check the id first)."""
+    return path_within(history_dir, f"{item_id}.json")
 
 
 def write_atomic(path: str, data: bytes) -> None:
@@ -104,7 +116,7 @@ def save_item(history_dir: str, audio_bytes: bytes, meta: dict, now: datetime, m
         "elapsed": round(float(meta.get("elapsed") or 0.0), 2),
     }
     # Audio first, then the sidecar: a crash in between never leaves a json without audio.
-    write_atomic(os.path.join(history_dir, f"{item_id}.{fmt}"), audio_bytes)
+    write_atomic(path_within(history_dir, f"{item_id}.{fmt}"), audio_bytes)
     write_atomic(json_path(history_dir, item_id), json.dumps(item, ensure_ascii=False).encode("utf-8"))
     logger.info(f"History item {item_id} saved ({fmt}, {len(audio_bytes)} bytes)")
     prune(history_dir, max_items)
@@ -176,7 +188,7 @@ def audio_path(history_dir: str, item_id: str) -> str | None:
     if not isinstance(fmt, str) or not re.fullmatch(r"[a-z0-9]{1,8}", fmt):
         logger.warning(f"History item {item_id} has an invalid format: {fmt!r}")
         return None
-    path = os.path.join(history_dir, f"{item_id}.{fmt}")
+    path = path_within(history_dir, f"{item_id}.{fmt}")
     return path if os.path.isfile(path) else None
 
 

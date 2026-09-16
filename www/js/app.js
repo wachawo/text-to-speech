@@ -1,6 +1,7 @@
 /* TTS - Vue 2 entry point.
-   - Hash-mode router with named routes and no guard: the web UI has no
-     sign-in, nginx carries the API token on its behalf
+   - Hash-mode router with named routes and a guard: when the server says it
+     wants a token (/api/health "auth"), the sign-in screen asks for one, keeps
+     it in this browser and every request carries it
    - Minimal Vuex: the toasts, the theme in force, the two preference groups,
      whether the settings dialog is asked for, the last health answer
    - Shared formatters, so every screen prints a size and a duration the same
@@ -259,6 +260,26 @@ const dismiss_toast = function (context, id) {
   if (i !== -1) context.state.toasts.splice(i, 1);
 };
 
+/* The API token, when the server wants one.
+
+   Kept in this browser under its own key, like the theme: the sign-in screen
+   writes it after the server has accepted it, every request carries it from
+   the store, and a 401 anywhere clears it and sends the operator back to sign
+   in. Only a string is accepted on the way in; anything else reads as "not
+   signed in". */
+const TOKEN_KEY = 'tts.token';
+
+const readToken = function () {
+  var box = browserStorage();
+  if (!box) return '';
+  try {
+    var stored = box.getItem(TOKEN_KEY);
+    return typeof stored === 'string' ? stored : '';
+  } catch (err) {
+    return '';
+  }
+};
+
 const state = {
   toasts: [],
   // The theme in force, always resolved to one of the two rather than left as
@@ -273,6 +294,10 @@ const state = {
   // screen opened later does not have to ask again to know the server is
   // ready.
   health: null,
+  // Whether the server wants a token (null until /api/health has answered)
+  // and the token this browser holds. Replaced whole by $saveToken and by
+  // auth_check, never edited in place.
+  auth: { required: null, token: readToken() },
   // The two preference groups, already validated. Screens read these and
   // never localStorage: the store is the copy that holds for the session in
   // a browser that refused to keep them, and it is what a screen can watch.
@@ -287,12 +312,44 @@ const state = {
   settingsOpen: false,
 };
 
+/* Ask the server whether it wants a token. The health probe is the one
+   route that answers without one, and it says so in "auth". The answer is
+   published to the store so the guard and the header read one copy. */
+const auth_check = function (context) {
+  return axios.get('/api/health').then(function (resp) {
+    var data = resp.data || {};
+    context.state.health = data;
+    context.state.auth = { required: !!data.auth, token: context.state.auth.token };
+    return context.state.auth;
+  });
+};
+
 const actions = {
   push_toast,
   dismiss_toast,
+  auth_check,
 };
 
 const store = new Vuex.Store({ state, actions });
+
+/* Write the token, or forget it with ''. Answers whether the browser kept it;
+   the store holds it for the session either way. */
+Vue.prototype.$saveToken = function (token) {
+  var value = typeof token === 'string' ? token : '';
+  var box = browserStorage();
+  var kept = false;
+  if (box) {
+    try {
+      if (value) box.setItem(TOKEN_KEY, value);
+      else box.removeItem(TOKEN_KEY);
+      kept = true;
+    } catch (err) {
+      kept = false;
+    }
+  }
+  store.state.auth = { required: store.state.auth.required, token: value };
+  return kept;
+};
 
 /* Write the theme: to storage, to the store so the header re-renders, and to
    the document so the page changes under it.
@@ -356,6 +413,7 @@ Vue.prototype.$savePrefs = function (name, value) {
 const router = new VueRouter({
   mode: 'hash',
   routes: [
+    { path: '/login',   name: 'login',  component: screen('Login') },
     { path: '/',        redirect: '/studio' },
     { path: '/studio',  name: 'studio', component: screen('Studio') },
     { path: '/voices',  name: 'voices', component: screen('Voices') },
@@ -381,6 +439,7 @@ Vue.prototype.$goto = goto;
    would leave the previous one's name in the tab, which is worse than a name
    that never changes. */
 const TAB_TITLES = {
+  login: 'Sign in',
   studio: 'Studio',
   voices: 'Voices',
   models: 'Models',
@@ -391,7 +450,68 @@ router.afterEach(function (to) {
   document.title = name ? 'TTS - ' + name : 'TTS';
 });
 
-/* App root. Mounted at once - there is no session to check first. */
+/* A route this app may send someone back to after signing in. `next=` arrives
+   from the address bar, so it is typed by anyone: a value starting "//" is an
+   absolute URL to a browser, and anything that is not a path of ours is
+   dropped rather than corrected. */
+const internalPath = function (value) {
+  if (typeof value !== 'string') return '';
+  if (value.charAt(0) !== '/' || value.charAt(1) === '/') return '';
+  if (value === '/' || value.indexOf('/login') === 0) return '';
+  return value;
+};
+Vue.prototype.$internalPath = internalPath;
+
+/* Where an operator without a token is sent, remembering where they were
+   going: a bookmark to /#/voices must end on /#/voices after signing in. */
+const loginRoute = function (to) {
+  var wanted = internalPath(to && to.fullPath);
+  return wanted ? { path: '/login', query: { next: wanted } } : '/login';
+};
+
+/* The guard. The server is asked once whether it wants a token; from then on
+   the store answers. A server that wants none never shows the sign-in screen,
+   and a health probe that fails (the server still starting) lets the screen
+   through - the studio shows the warm-up itself and asks again. */
+router.beforeEach(function (to, from, next) {
+  if (to.name === 'login') return next();
+  var auth = store.state.auth;
+  if (auth.required === false || (auth.required === true && auth.token)) return next();
+  if (auth.required === true) return next(loginRoute(to));
+  store.dispatch('auth_check').then(function (fresh) {
+    if (fresh.required && !fresh.token) next(loginRoute(to));
+    else next();
+  }).catch(function () { next(); });
+});
+
+/* Every request carries the token the browser holds; a 401 from any of them
+   means the token is gone or wrong, so it is forgotten and the operator is
+   sent to sign in with the destination kept. The sign-in screen's own probe
+   is excluded: its 401 is the answer "wrong token", not a lost session. */
+axios.interceptors.request.use(function (config) {
+  var token = store.state.auth.token;
+  if (token && !(config.headers && config.headers['X-Tts-Probe'])) {
+    config.headers = config.headers || {};
+    config.headers.Authorization = 'Bearer ' + token;
+  }
+  return config;
+});
+
+axios.interceptors.response.use(
+  function (resp) { return resp; },
+  function (err) {
+    var probe = err && err.config && err.config.headers && err.config.headers['X-Tts-Probe'];
+    if (err && err.response && err.response.status === 401 && !probe) {
+      Vue.prototype.$saveToken('');
+      store.state.auth = { required: true, token: '' };
+      if (router.currentRoute.name !== 'login') goto(loginRoute(router.currentRoute));
+    }
+    return Promise.reject(err);
+  }
+);
+
+/* App root. Mounted at once: the guard asks the server about the token on
+   the first navigation, so nothing has to be awaited here. */
 const App = {
   template:
     '<div>' +

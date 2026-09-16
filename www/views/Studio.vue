@@ -229,8 +229,6 @@ module.exports = {
       // where a saved preference goes back to "server default".
       serverEngine: '',
       serverLanguage: '',
-      // The token nginx injects, from /ui-config.json; '' when auth is off.
-      apiToken: '',
       items: [],
       total: 0,
       selected: null,
@@ -240,7 +238,6 @@ module.exports = {
   },
 
   created: function () {
-    this.fetchUiConfig();
     // Timers and the voices request counter are kept off `data`: nothing
     // renders from them, and a reactive interval handle is just noise.
     this.healthTimer = null;
@@ -312,9 +309,10 @@ module.exports = {
       var json = JSON.stringify(body).split("'").join("'\\''");
       var ext = this.form.engine === 'gtts' ? 'mp3' : 'wav';
       var lines = ['curl -sS -X POST ' + window.location.origin + '/api/tts'];
-      // The token nginx adds on the way through, spelled out so the command
-      // also works against ttssrv directly; absent when the server has none.
-      if (this.apiToken) lines.push("-H 'Authorization: Bearer " + this.apiToken.split("'").join("'\\''") + "'");
+      // The token this browser signed in with, so the command also works
+      // against ttssrv directly; absent when the server wants none.
+      var token = this.$store.state.auth.token;
+      if (token) lines.push("-H 'Authorization: Bearer " + token.split("'").join("'\\''") + "'");
       lines.push("-H 'Content-Type: application/json'", "-d '" + json + "'", '-o out.' + ext);
       return lines.join(' \\\n  ');
     },
@@ -372,18 +370,6 @@ module.exports = {
   },
 
   methods: {
-    /* Deployment facts that live in nginx rather than in the API; a missing
-       or older nginx answers 404 and the command simply carries no token. */
-    fetchUiConfig: function () {
-      var self = this;
-      this.$http.get('/ui-config.json')
-        .then(function (resp) {
-          var token = resp.data && resp.data.token;
-          self.apiToken = typeof token === 'string' ? token : '';
-        })
-        .catch(function () { self.apiToken = ''; });
-    },
-
     /* Health */
 
     /* Until the server says ok, GENERATE stays off and the info bar says why:

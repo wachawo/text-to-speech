@@ -177,3 +177,13 @@ def test_voice_audio_missing_404_and_bad_name_400(client, samples_dir):
     resp = client.get("/api/voices/..%2Fetc/audio?engine=coquitts")
     assert resp.status_code in (400, 404)
     assert not samples_dir.exists()
+
+
+def test_upload_refused_past_the_sample_ceiling(client, make_wav, samples_dir, monkeypatch, app_module):
+    """TTS_MAX_SAMPLES caps how many samples the directory may hold."""
+    monkeypatch.setattr(app_module, "TTS_MAX_SAMPLES", 1, raising=False)
+    assert upload(client, make_wav(), name="first").status_code == 201
+    resp = upload(client, make_wav(), name="second")
+    assert resp.status_code == 400
+    assert "limit" in resp.get_json()["message"]
+    assert not (samples_dir / "second.wav").exists()

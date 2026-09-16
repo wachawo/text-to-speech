@@ -10,6 +10,7 @@ callers when its optional dependencies are importable.
 
 import importlib
 import logging
+import re
 from collections.abc import Callable
 from pathlib import Path
 
@@ -17,6 +18,9 @@ logger = logging.getLogger(__name__)
 
 # Signature every engine module's `generate` must satisfy.
 EngineFunction = Callable[[str, dict], bytes]
+
+# What an engine name may look like: the stem of an engines/<name>.py file.
+ENGINE_NAME_REGEX = re.compile(r"[a-z0-9_]{1,32}")
 
 
 def get_engine_module_path(engine_name: str) -> Path | None:
@@ -28,6 +32,11 @@ def get_engine_module_path(engine_name: str) -> Path | None:
     Returns:
         Path to the module file, or None when no such file is shipped.
     """
+    # A module name and nothing else: the name can arrive from a query
+    # string, and anything with a separator or a dot must not reach the
+    # filesystem lookup or import_module.
+    if not isinstance(engine_name, str) or not ENGINE_NAME_REGEX.fullmatch(engine_name):
+        return None
     engines_dir = Path(__file__).parent
     module_path = engines_dir / f"{engine_name}.py"
 

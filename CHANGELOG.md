@@ -1,5 +1,24 @@
 ## Changelog
 
+### [1.0.6] - 2026-09-16
+
+#### Added
+- The web UI signs in when the server has `TTS_TOKENS`: `/api/health` reports
+  `auth`, the sign-in screen tries the token against `/api/engines`, keeps it in
+  the browser and sends it with every request; a 401 anywhere returns to sign-in.
+  The `curl` example carries that token.
+- `TTS_MAX_SAMPLES` (default 100) caps the number of voice samples.
+
+#### Changed
+- A second fence behind the voice-name and history-id whitelists refuses any
+  path that resolves outside the samples or history directory; engine names
+  from a query string must be a plain module stem.
+
+#### Removed
+- `TTS_WWW_TOKEN`: nginx no longer injects a token into proxied requests, and
+  `/ui-config.json` no longer publishes one. A deployment that relied on it
+  signs in through the UI instead.
+
 ### [1.0.5] - 2026-09-16
 
 #### Added
