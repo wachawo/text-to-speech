@@ -57,6 +57,9 @@ claude/
 ._*
 Thumbs.db
 
+# Frontend
+node_modules/
+
 # Logs
 *.log
 logs/
@@ -80,4 +83,7 @@ htmlcov/
 *.md
 !README.md
 !CHANGELOG.md
+!CONTRIBUTING.md
+!SECURITY.md
+!.github/PULL_REQUEST_TEMPLATE.md
 !docs/*.md

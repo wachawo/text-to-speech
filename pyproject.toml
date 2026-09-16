@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "text-to-speech"
 version = "1.0.6"
-description = "Universal TTS CLI and library — gTTS, espeak/pyttsx3, Piper, Silero, Coqui, Bark behind a single interface."
+description = "Universal TTS CLI and library - gTTS, espeak/pyttsx3, Piper, Silero, Coqui, Bark behind a single interface."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
@@ -50,24 +50,25 @@ dependencies = [
 # (pygame for playback, requests/dotenv, sounddevice/numpy for ttsrec).
 dev = [
     # Lint / format / typecheck / test runner
-    "black==23.3.0",
-    "ruff>=0.5",
-    "pre-commit>=3.5",
-    "mypy==1.4.1",
-    "pytest>=8.0",
-    "pytest-cov>=4.1",
-    "types-requests==2.28.11.0",
-    "types-PyYAML==6.0.12.0",
-    # Web stack — needed by tests/ to exercise ttssrv handlers locally.
+    "black>=26.5,<27",
+    "ruff>=0.14",
+    "pre-commit>=4.0",
+    "mypy>=2.3,<3",
+    "pytest>=9.1",
+    "pytest-cov>=7.1",
+    # 2.31.0.7+ requires urllib3>=2, but gtts 2.3.0 pins requests~=2.28.0 (urllib3 1.x).
+    "types-requests>=2.28,<2.31.0.7",
+    # Web stack - needed by tests/ to exercise ttssrv handlers locally.
     # In production ttssrv runs only inside Docker (see docker/{cpu,gpu}/Dockerfile
     # and docker-compose*.yml); these wheels exist in [dev] solely so that
     # `pytest` and ad-hoc `python3 ttssrv/app1.py` work in the dev venv.
-    "Flask==2.3.3",
-    "flask-cors==4.0.0",
-    "marshmallow==3.20.1",
-    "gunicorn==21.2.0",
-    "uvicorn==0.23.2",
-    "pytz>=2023.3",
+    # Exact pins for the Docker image live in ttssrv/requirements.txt - keep
+    # the two lists on the same major/minor.
+    "Flask>=3.1,<4",
+    "flask-cors>=6.0,<7",
+    "marshmallow>=3.26,<4",
+    "uvicorn>=0.53,<1",
+    "pytz>=2026.3",
 ]
 
 [project.urls]
@@ -90,9 +91,6 @@ where   = ["."]
 include = ["libs*", "engines*", "install*"]
 exclude = ["audio*", "samples*", "bin*", "docs*", ".backup*", "tests*", "ttssrv*"]
 
-[tool.setuptools.package-data]
-"*" = ["*.md"]
-
 [tool.black]
 line-length    = 128
 target-version = ["py311"]
@@ -108,17 +106,28 @@ extend-exclude = '''
 
 [tool.ruff]
 line-length = 128
-target-version = "py312"
+target-version = "py311"
 extend-exclude = ["models", ".venv", ".backup", "audio", "samples"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
-# E501 — handled by black; UP009 — project style requires `# -*- coding: utf-8 -*-`;
-# E203/E266/W503 — historic flake8 ignores carried over.
+# E501 - handled by black; UP009 - project style requires `# -*- coding: utf-8 -*-`;
+# E203/E266/W503 - historic flake8 ignores carried over.
 ignore = ["E501", "UP009", "E203", "E266"]
 # Project style forbids leading underscores, so deliberately unused names are
 # spelled `unused_*`; teach ruff to treat that prefix as a throwaway.
 dummy-variable-rgx = "^(_+|unused_[a-zA-Z0-9_]*)$"
+
+[tool.mypy]
+ignore_missing_imports = true
+files                  = ["libs", "engines", "ttssrv", "ttsgen.py", "ttsapi.py", "ttsplay.py", "ttsrec.py"]
+
+[[tool.mypy.overrides]]
+# `logging.basicConfig(**LOGGING)` is the project's logging idiom and the
+# `# type: ignore[arg-type]` comments on it predate mypy 2, which reports the
+# call as call-overload instead; app1 also rebinds `app.wsgi_app` (method-assign).
+module             = ["ttsapi", "ttsrec", "ttssrv.app1"]
+disable_error_code = ["call-overload", "method-assign"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

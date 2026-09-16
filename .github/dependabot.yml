@@ -1,0 +1,25 @@
+version: 2
+updates:
+  - package-ecosystem: pip
+    # pyproject.toml and requirements*.txt at the root, plus the exact pins
+    # the Docker images install from ttssrv/requirements.txt.
+    directories: ["/", "/ttssrv"]
+    schedule:
+      interval: weekly
+    groups:
+      python-minor-and-patch:
+        update-types: ["minor", "patch"]
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        update-types: ["minor", "patch"]
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      npm-minor-and-patch:
+        update-types: ["minor", "patch"]

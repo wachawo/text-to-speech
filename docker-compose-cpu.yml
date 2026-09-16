@@ -10,8 +10,10 @@ services:
     restart: unless-stopped
     networks:
       - tts_network
+    # Optional: a fresh clone runs on the defaults below, `.env` only overrides them.
     env_file:
-      - ./.env
+      - path: ./.env
+        required: false
     environment:
       TZ:                   ${TZ:-America/New_York}
       TTS_HOST:             ${TTS_HOST:-0.0.0.0}
@@ -44,7 +46,6 @@ services:
       - ./data:/opt/data
       - ./cache:/opt/cache
       - ./samples:/opt/samples
-      - ./.env:/opt/.env:ro
       - ./libs:/opt/libs:ro
       - ./engines:/opt/engines:ro
       - ./install:/opt/install:ro

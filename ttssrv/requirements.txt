@@ -1,16 +1,15 @@
-# Lightweight runtime deps for `ttssrv` — web stack + zero-config engines.
+# Lightweight runtime deps for `ttssrv` - web stack + zero-config engines.
 # Used by both Docker images (docker/{cpu,gpu}/Dockerfile pulls this file plus
 # its own docker/<flavor>/requirements.txt with the heavy ML stack). Outside
 # Docker the same web stack is available via `pip install -e ".[dev]"` for
 # tests and local debugging.
 
-# Web stack
-Flask==2.3.3
-flask-cors==4.0.0
-marshmallow==3.20.1
-gunicorn==21.2.0
-uvicorn==0.23.2
-pytz>=2023.3
+# Web stack (exact pins: this is what the Docker images ship)
+Flask==3.1.3
+flask-cors==6.0.5
+marshmallow==3.26.2
+uvicorn==0.53.0
+pytz>=2026.3
 
 # Lightweight TTS engines (always available on the server)
 gtts==2.3.0
