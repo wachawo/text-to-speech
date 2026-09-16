@@ -1,6 +1,6 @@
 ## Changelog
 
-### [Unreleased]
+### [1.0.5] - 2026-09-16
 
 #### Added
 - `ttswww` also listens on https (`TTS_WWW_TLS_PORT`, default 8443) with a
