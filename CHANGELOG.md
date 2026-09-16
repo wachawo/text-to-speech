@@ -3,6 +3,19 @@
 ### [Unreleased]
 
 #### Added
+- `X-Request-Id` on every response of `ttssrv`, error responses included; a
+  well-formed id sent by the client is kept as the correlation id, so one
+  request can be followed through nginx, the server log and the error body.
+- `TTS_LOG_FORMAT=json`: every server log line becomes one JSON object with
+  `ts`, `level`, `logger`, `func`, `msg`, `request_id`, and the request line
+  and the `Synthesis` line carry their fields as keys (`method`, `path`,
+  `status`, `ms`; `engine`, `language`, `voice`, `chars`, `bytes`, `ms`, `ok`,
+  `error`). `text` (default) keeps the format shared with nginx.
+- `GET /api/metrics` (JSON) and `GET /metrics` (Prometheus text): uptime, pool
+  slots in use, requests waiting for a slot, and per engine the call and
+  failure counts, the last error, p50/p95/p99 and average latency, whether the
+  engine is installed and whether its warmup succeeded. Both take the bearer
+  token; nginx proxies `/metrics` next to `/api/` and `/v1/`.
 - `ttssrv` logs one line per engine call (`Synthesis: engine= language= voice=
   chars= bytes= ms= ok`, or `failed <Exception>`), including one per chunk of a
   streamed response, so a slow engine can be told apart from a request that
@@ -31,6 +44,9 @@
   `cp env.example .env` step and the CDI prerequisite for the GPU compose file.
 
 #### Changed
+- `libs/cached_loader.py`: the double-checked cache fill that pipertts, coquitts,
+  silerotts, kokorotts and barktts each spelled by hand (check, lock, check
+  again, load, store) lives in one tested `load_cached()`; no behaviour change.
 - Frontend lint moved to eslint 10 with a flat config (`eslint.config.js`) and
   eslint-plugin-vue 10 in its Vue 2 preset; Dependabot no longer proposes a
   Vue 3 bump, the UI runs on the vendored Vue 2.7 and `vue-template-compiler`

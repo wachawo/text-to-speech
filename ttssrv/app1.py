@@ -15,6 +15,7 @@ import io
 import logging
 import os
 import queue
+import re
 import sys
 import threading
 import time
@@ -50,6 +51,7 @@ from libs.exceptions import (  # noqa: E402
     TTSException,
     ValidationError,
 )
+from libs.logjson import JsonFormatter  # noqa: E402
 from libs.models import collect_engine_rows  # noqa: E402
 from libs.sample_resolver import (  # noqa: E402
     describe_sample_files,
@@ -57,7 +59,7 @@ from libs.sample_resolver import (  # noqa: E402
     list_sample_files,
     sample_path_for_voice,
 )
-from ttssrv import history  # noqa: E402
+from ttssrv import history, metrics  # noqa: E402
 from ttssrv.openai_compat import (  # noqa: E402
     OpenAIRequestError,
     error_body,
@@ -83,6 +85,8 @@ TRUE_VALUES = ("1", "true", "yes", "on", "enabled")
 TTS_HOST = os.getenv("TTS_HOST", "0.0.0.0")
 TTS_PORT = int(os.getenv("TTS_PORT", "5000"))
 TTS_DEBUG = os.getenv("TTS_DEBUG", "False").lower() in TRUE_VALUES
+# text: the human format shared with nginx; json: one object per line with request_id and the synthesis fields.
+TTS_LOG_FORMAT = os.getenv("TTS_LOG_FORMAT", "text").strip().lower()
 TTS_TOKENS = {t.strip() for t in os.getenv("TTS_TOKENS", "").split(",") if t.strip()}
 TTS_POOL_SIZE = int(os.getenv("TTS_POOL_SIZE", "1"))
 # Synthesis requests allowed to wait for a free pool slot; any more are answered 503 at once.
@@ -116,10 +120,19 @@ TTS_LANGUAGE_DEFAULT = os.getenv("TTS_LANGUAGE", "en")
 TTS_STREAM_MAX_CHARS = int(os.getenv("TTS_STREAM_MAX_CHARS", "200"))
 TIMEZONE = pytz.timezone(os.getenv("TZ", "America/New_York"))
 DATETIME_FMT = "%Y-%m-%d %H:%M:%S"
+# An X-Request-Id a client sends is kept when it looks like one; anything else is replaced.
+REQUEST_ID_RE = re.compile(r"[A-Za-z0-9._-]{1,64}\Z")
+# Routes polled by probes and scrapers: their request line is logged at debug level.
+QUIET_PATHS = ("/api/health", "/api/metrics", "/metrics")
 
 # Logging
+LOG_HANDLER = logging.StreamHandler()
+# basicConfig leaves a handler that already has a formatter alone, so the text
+# format below only reaches the handler when no JsonFormatter was set on it.
+if TTS_LOG_FORMAT == "json":
+    LOG_HANDLER.setFormatter(JsonFormatter())
 LOGGING = {
-    "handlers": [logging.StreamHandler()],
+    "handlers": [LOG_HANDLER],
     "format": "%(asctime)s.%(msecs)03d [%(levelname)s]: (%(name)s.%(funcName)s) %(message)s",
     "level": logging.DEBUG if TTS_DEBUG else logging.INFO,
     "datefmt": "%Y-%m-%d %H:%M:%S",
@@ -153,13 +166,21 @@ def init_engine_pool(size: int = TTS_POOL_SIZE) -> None:
 
     for engine in TTS_ENGINES:
         if engine in ("gtts", "pyttsx3"):
+            # Nothing to load for these, so they count as warm from the start.
+            metrics.set_warm(engine, True)
             continue
         logger.info(f"Warming up {engine}...")
         start_time = time.monotonic()
         try:
             text_to_speech_bytes(text=".", engine=engine, language=TTS_LANGUAGE_DEFAULT)
+            elapsed_ms = int((time.monotonic() - start_time) * 1000)
+            metrics.record(engine, elapsed_ms, True)
+            metrics.set_warm(engine, True)
             logger.info(f"Warmup OK {engine} ({time.monotonic() - start_time:.2f}s)")
         except Exception as exc:
+            elapsed_ms = int((time.monotonic() - start_time) * 1000)
+            metrics.record(engine, elapsed_ms, False, type(exc).__name__)
+            metrics.set_warm(engine, False)
             logger.warning(f"Warmup failed for {engine}: {type(exc).__name__}: {exc} — will retry on first request")
 
     for slot_index in range(size):
@@ -188,7 +209,11 @@ app.config.update(
         MAX_CONTENT_LENGTH=MAX_CONTENT_LENGTH,
     )
 )
-CORS(app, resources={r"/api/*": {"origins": CORS_ORIGINS}, r"/v1/*": {"origins": CORS_ORIGINS}})
+CORS(
+    app,
+    resources={r"/api/*": {"origins": CORS_ORIGINS}, r"/v1/*": {"origins": CORS_ORIGINS}},
+    expose_headers=["X-Request-Id"],
+)
 
 
 def get_req_id() -> str:
@@ -232,9 +257,11 @@ def acquire_slot() -> int | None:
         return None
     if not WAIT_QUEUE.acquire(blocking=False):
         raise queue.Empty()
+    metrics.wait_begin()
     try:
         return ENGINE_POOL.get(timeout=120)
     finally:
+        metrics.wait_end()
         WAIT_QUEUE.release()
 
 
@@ -264,22 +291,46 @@ def synthesize(text: str, engine: str, language: str, voice: str | None = None, 
     """
     start_time = time.monotonic()
     size_part = ""
+    audio_size: int | None = None
+    error_name: str | None = None
     status = "failed"
+    # A request whose text, language or engine name failed validation never
+    # reached an engine, so it must not become a registry key: the engine name
+    # is request input, and one registry entry per unknown name would grow
+    # /metrics without bound.
+    reached_engine = True
     try:
         audio = text_to_speech_bytes(text=text, engine=engine, language=language, voice=voice)
-        size_part = f"bytes={len(audio)} "
+        audio_size = len(audio)
+        size_part = f"bytes={audio_size} "
         status = "ok"
         return audio
     except Exception as exc:
-        status = f"failed {type(exc).__name__}"
+        error_name = type(exc).__name__
+        status = f"failed {error_name}"
+        reached_engine = not isinstance(exc, ValidationError)
         raise
     finally:
         elapsed_ms = int((time.monotonic() - start_time) * 1000)
         name = f"Synthesis {label}" if label else "Synthesis"
         logger.info(
             f"[{get_req_id()}] {name}: engine={engine} language={language} "
-            f"voice={voice} chars={len(text)} {size_part}ms={elapsed_ms} {status}"
+            f"voice={voice} chars={len(text)} {size_part}ms={elapsed_ms} {status}",
+            extra={
+                "request_id": get_req_id(),
+                "event": "synthesis",
+                "engine": engine,
+                "language": language,
+                "voice": voice,
+                "chars": len(text),
+                "bytes": audio_size,
+                "ms": elapsed_ms,
+                "ok": status == "ok",
+                "error": error_name,
+            },
         )
+        if reached_engine:
+            metrics.record(engine, elapsed_ms, status == "ok", error_name)
 
 
 def token_required(view):
@@ -309,17 +360,28 @@ def token_required(view):
 
 @app.before_request
 def assign_request_id():
-    """Attach a short correlation id and a start timestamp to the request context."""
-    g.request_id = uuid.uuid4().hex[:12]
+    """Attach a correlation id (the client's X-Request-Id when well-formed) and a start timestamp."""
+    incoming = request.headers.get("X-Request-Id", "")
+    g.request_id = incoming if REQUEST_ID_RE.match(incoming) else uuid.uuid4().hex[:12]
     g.start_time = time.monotonic()
 
 
 @app.after_request
 def after_request(resp):
-    """Log the request line with its status and duration, then return the response."""
-    log_fn = logger.debug if request.path == "/api/health" else logger.info
+    """Log the request line with its status and duration, echo the request id, then return the response."""
+    log_fn = logger.debug if request.path in QUIET_PATHS else logger.info
     elapsed = time.monotonic() - getattr(g, "start_time", time.monotonic())
-    log_fn(f"[{get_req_id()}] {request.method} {request.path}: {resp.status} ({elapsed:.3f}s)")
+    log_fn(
+        f"[{get_req_id()}] {request.method} {request.path}: {resp.status} ({elapsed:.3f}s)",
+        extra={
+            "request_id": get_req_id(),
+            "method": request.method,
+            "path": request.path,
+            "status": resp.status_code,
+            "ms": int(elapsed * 1000),
+        },
+    )
+    resp.headers["X-Request-Id"] = get_req_id()
     return resp
 
 
@@ -342,6 +404,30 @@ def health():
         ),
         200,
     )
+
+
+def metrics_snapshot() -> dict:
+    """Return the registry snapshot with this server's pool numbers and the installed engines."""
+    return metrics.snapshot(
+        pool_size=TTS_POOL_SIZE,
+        pool_available=ENGINE_POOL.qsize(),
+        queue_size=TTS_QUEUE_SIZE,
+        available=get_available_engines().keys(),
+    )
+
+
+@app.route("/api/metrics", methods=["GET"])
+@token_required
+def metrics_json():
+    """Uptime, pool occupancy and per-engine call counts, failures and latency percentiles as JSON."""
+    return jsonify(metrics_snapshot()), 200
+
+
+@app.route("/metrics", methods=["GET"])
+@token_required
+def metrics_prometheus():
+    """The same numbers in the Prometheus exposition format, for a scraper sending the bearer token."""
+    return Response(metrics.prometheus_text(metrics_snapshot()), content_type=metrics.PROMETHEUS_CONTENT_TYPE)
 
 
 @app.route("/api/engines", methods=["GET"])
@@ -863,7 +949,7 @@ def main() -> int:
             host=TTS_HOST,
             port=TTS_PORT,
             log_config=None,  # always None: keep our LOGGING, never run uvicorn's own dictConfig
-            access_log=False,  # after_request logs every request line; only /api/health is demoted to debug
+            access_log=False,  # after_request logs every request line; only QUIET_PATHS are demoted to debug
             # send_file responses already carry a Date header from Werkzeug; uvicorn's
             # own copy made every audio fetch a duplicate-header warning in nginx.
             date_header=False,

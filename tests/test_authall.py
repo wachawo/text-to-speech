@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Every /api and /v1 route except the health probe must refuse a request without a token."""
+"""Every /api, /v1 and /metrics route except the health probe must refuse a request without a token."""
 
 # Local imports
 import pytest
 
 
 def api_rules(app_module):
-    """Yield (rule, method) for every /api/* and /v1/* URL rule other than /api/health."""
+    """Yield (rule, method) for every /api/*, /v1/* and /metrics URL rule other than /api/health."""
     for rule in app_module.app.url_map.iter_rules():
-        if not rule.rule.startswith(("/api/", "/v1/")) or rule.rule == "/api/health":
+        guarded = rule.rule.startswith(("/api/", "/v1/")) or rule.rule == "/metrics"
+        if not guarded or rule.rule == "/api/health":
             continue
         for method in sorted(rule.methods - {"HEAD", "OPTIONS"}):
             yield rule.rule, method
@@ -26,6 +27,7 @@ def test_every_api_route_requires_a_token(client, monkeypatch, app_module):
         checked += 1
     assert checked >= 15
     assert ("/v1/audio/speech", "POST") in api_rules(app_module)
+    assert ("/metrics", "GET") in api_rules(app_module)
 
 
 def test_health_stays_open(client, monkeypatch, app_module):

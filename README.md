@@ -202,6 +202,8 @@ Every route except `/api/health` requires `Authorization: Bearer <token>` when `
 | POST | `/v1/audio/speech` | OpenAI-compatible synthesis, see above. |
 | GET | `/v1/models` | OpenAI-compatible model list. |
 | GET | `/v1/audio/voices?model=` | Voices of one engine. |
+| GET | `/api/metrics` | Uptime, pool occupancy and per-engine calls, failures and latency percentiles as JSON. |
+| GET | `/metrics` | The same in the Prometheus text format. |
 
 #### Web UI
 
@@ -238,6 +240,7 @@ Every setting is an environment variable; `env.example` documents them all and `
 | `TTS_MAX_SAMPLES` | `100` | Voice samples kept on the server. |
 | `TTS_MAX_BODY_BYTES` | `2097152` | Largest JSON request body (2 MiB). |
 | `TTS_STREAM_MAX_CHARS` | `200` | Chunk size for `stream=true`. |
+| `TTS_LOG_FORMAT` | `text` | Log format of the server: `text`, or `json` for one JSON object per line with `request_id` and the synthesis fields. |
 | `CORS_ORIGINS` | `*` | Allowed origins for `/api/*`. |
 | `TTS_PORT` | `5000` | Port of `ttssrv`. |
 | `TTS_WWW_PORT`, `TTS_WWW_TLS_PORT` | `8080`, `8443` | http and https ports of the web UI. |
@@ -247,6 +250,17 @@ Every setting is an environment variable; `env.example` documents them all and `
 Outside Docker the CLIs and the server read the same keys from, strongest first: CLI flags, the shell environment, `./ttsgen.conf`, `~/.config/ttsgen.conf`, `./.env.local`, `./.env`. A file never overrides the shell, and `.env` is read only from the current directory.
 
 `TTS_POOL_SIZE` above 1 lets different engines synthesize in parallel; inside one engine the calls are serialized, because the underlying models are not safe to share between threads.
+
+#### Observability
+
+- Every response carries an `X-Request-Id` header; a well-formed one sent by the client (`[A-Za-z0-9._-]`, up to 64 characters) is kept, so a request can be followed through nginx, the server log and the error body.
+- Each engine call writes one `Synthesis` log line with the engine, the text length and the engine time, one per chunk of a streamed response, so a slow engine can be told apart from a request that waited for a pool slot.
+- `TTS_LOG_FORMAT=json` writes every log line as one JSON object with the request id and those fields as keys.
+- `GET /api/metrics` returns the uptime, the pool occupancy and per-engine counters and latency percentiles as JSON; `GET /metrics` exposes the same numbers for Prometheus. Both take the bearer token when `TTS_TOKENS` is set:
+
+```bash
+curl localhost:5000/metrics -H "Authorization: Bearer $TTS_TOKEN"
+```
 
 #### Security
 
