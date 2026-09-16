@@ -15,6 +15,7 @@ import os
 import threading
 
 # Local imports
+from libs.cached_loader import load_cached
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
 
 logger = logging.getLogger(__name__)
@@ -138,18 +139,13 @@ def get_kokoro(model_path: str, voices_path: str):
 
     Double-checked locking so concurrent first-time requests load the model once.
     """
-    cache_key = (model_path, voices_path)
-    kokoro = KOKORO_CACHE.get(cache_key)
-    if kokoro is not None:
-        return kokoro
-    with KOKORO_CACHE_LOCK:
-        kokoro = KOKORO_CACHE.get(cache_key)
-        if kokoro is not None:
-            return kokoro
+
+    def load_kokoro():
+        """Build the ONNX session for the model and voices files."""
         logger.info(f"Loading Kokoro model: {model_path}")
-        kokoro = Kokoro(model_path, voices_path)
-        KOKORO_CACHE[cache_key] = kokoro
-        return kokoro
+        return Kokoro(model_path, voices_path)
+
+    return load_cached(KOKORO_CACHE, KOKORO_CACHE_LOCK, (model_path, voices_path), load_kokoro)
 
 
 def generate(text: str, config: dict) -> bytes:

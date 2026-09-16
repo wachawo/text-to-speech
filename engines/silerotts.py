@@ -15,6 +15,7 @@ import wave
 import numpy as np
 
 # Local imports
+from libs.cached_loader import load_cached
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
 
 logger = logging.getLogger(__name__)
@@ -115,14 +116,9 @@ def load_model(language: str) -> tuple:
     """
     model_id, default_speaker, sample_rate = get_model_info(language)
     device = torch.device("cpu")
-    cache_key = (model_id, str(device))
-    model = TTS_CACHE.get(cache_key)
-    if model is not None:
-        return model, default_speaker, sample_rate
-    with TTS_CACHE_LOCK:
-        model = TTS_CACHE.get(cache_key)
-        if model is not None:
-            return model, default_speaker, sample_rate
+
+    def load_silero():
+        """Pin the torch hub directory, then fetch and check the model."""
         # torch.hub.load takes no directory argument; the hub dir is process
         # state set through set_dir, so it is set once here, under the lock,
         # and only when it differs from the current one.
@@ -162,8 +158,10 @@ def load_model(language: str) -> tuple:
 
         # Note: model.to() returns None for some Silero models, use in-place
         model.to(device)
-        TTS_CACHE[cache_key] = model
-        return model, default_speaker, sample_rate
+        return model
+
+    model = load_cached(TTS_CACHE, TTS_CACHE_LOCK, (model_id, str(device)), load_silero)
+    return model, default_speaker, sample_rate
 
 
 def list_voices(language: str = "en") -> dict:

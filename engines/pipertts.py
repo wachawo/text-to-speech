@@ -13,6 +13,7 @@ import threading
 import wave
 
 # Local imports
+from libs.cached_loader import load_cached
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
 
 logger = logging.getLogger(__name__)
@@ -45,16 +46,7 @@ def get_voice(voice_path: str):
     so two concurrent first-time requests don't both pay the load cost.
     """
     key = os.path.abspath(os.path.expanduser(voice_path))
-    cached = VOICE_CACHE.get(key)
-    if cached is not None:
-        return cached
-    with VOICE_CACHE_LOCK:
-        cached = VOICE_CACHE.get(key)
-        if cached is not None:
-            return cached
-        voice = PiperVoice.load(key)
-        VOICE_CACHE[key] = voice
-        return voice
+    return load_cached(VOICE_CACHE, VOICE_CACHE_LOCK, key, lambda: PiperVoice.load(key))
 
 
 def is_available() -> bool:

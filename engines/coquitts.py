@@ -12,6 +12,7 @@ import os
 import tempfile
 import threading
 
+from libs.cached_loader import load_cached
 from libs.exceptions import CustomError, EngineNotAvailableError, TTSException, ValidationError
 from libs.sample_resolver import list_sample_files, resolve_sample_path, sample_path_for_voice
 from libs.tempfiles import safe_unlink
@@ -86,14 +87,9 @@ def get_tts(model_name: str, device: str):
     an output prefix), so it is set here, once, under the lock, and only when
     it differs from what is already in the environment.
     """
-    cache_key = (model_name, device)
-    tts = TTS_CACHE.get(cache_key)
-    if tts is not None:
-        return tts
-    with TTS_CACHE_LOCK:
-        tts = TTS_CACHE.get(cache_key)
-        if tts is not None:
-            return tts
+
+    def load_tts():
+        """Point Coqui at the models directory, then load the checkpoint."""
         models_dir = get_models_directory()
         if os.environ.get("TTS_HOME") != models_dir:
             os.environ["TTS_HOME"] = models_dir
@@ -104,9 +100,9 @@ def get_tts(model_name: str, device: str):
             pass
         logger.info(f"Loading {model_name} on {device} (first call - ~15s for xtts_v2)...")
         with safe_globals([XttsConfig, XttsAudioConfig, BaseDatasetConfig, XttsArgs]):
-            tts = TTS(model_name=model_name, progress_bar=False).to(device)
-        TTS_CACHE[cache_key] = tts
-        return tts
+            return TTS(model_name=model_name, progress_bar=False).to(device)
+
+    return load_cached(TTS_CACHE, TTS_CACHE_LOCK, (model_name, device), load_tts)
 
 
 def generate(text: str, config: dict) -> bytes:

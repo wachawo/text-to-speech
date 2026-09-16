@@ -11,6 +11,7 @@ import os
 import threading
 
 # Local imports
+from libs.cached_loader import load_cached
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
 from libs.tempfiles import safe_unlink
 
@@ -33,12 +34,14 @@ except ImportError:
     logger.warning("Bark TTS not available. Install with: pip install git+https://github.com/suno-ai/bark.git")
 
 # PRELOAD_LOCK guards the first preload_models() so concurrent first requests
-# do not load the 10GB of weights twice; MODELS_PRELOADED is its
-# double-checked flag. INFERENCE_LOCK serialises generate_audio: Bark keeps
-# its models in module globals and is not safe to drive from several threads
-# at once. The engine pool bounds synthesis across engines; this lock bounds
-# this engine to one synthesis at a time.
+# do not load the 10GB of weights twice; PRELOAD_CACHE holds a single "models"
+# entry once they are in, and MODELS_PRELOADED mirrors it for callers that
+# read a flag. INFERENCE_LOCK serialises generate_audio: Bark keeps its models
+# in module globals and is not safe to drive from several threads at once.
+# The engine pool bounds synthesis across engines; this lock bounds this
+# engine to one synthesis at a time.
 PRELOAD_LOCK = threading.Lock()
+PRELOAD_CACHE: dict = {}
 MODELS_PRELOADED = False
 INFERENCE_LOCK = threading.Lock()
 
@@ -116,12 +119,10 @@ def ensure_models_loaded() -> None:
     is imported, which happened at engine import, so BARKTTS_MODELS cannot
     relocate the weights from here (see docs/BARKTTS.md); it is only reported.
     """
-    global MODELS_PRELOADED
-    if MODELS_PRELOADED:
-        return
-    with PRELOAD_LOCK:
-        if MODELS_PRELOADED:
-            return
+
+    def preload() -> bool:
+        """Allow-list the numpy globals Bark checkpoints need, then preload."""
+        global MODELS_PRELOADED
         models_dir = get_models_directory()
         if models_dir != os.path.expanduser("~/.cache/suno/bark_v0"):
             logger.info(f"BARKTTS_MODELS is {models_dir}, but Bark loads its weights from ~/.cache/suno/bark_v0")
@@ -140,6 +141,9 @@ def ensure_models_loaded() -> None:
         # First run downloads the weights; later runs load them from cache.
         preload_models()
         MODELS_PRELOADED = True
+        return True
+
+    load_cached(PRELOAD_CACHE, PRELOAD_LOCK, "models", preload)
 
 
 def to_pcm16(audio_array):
