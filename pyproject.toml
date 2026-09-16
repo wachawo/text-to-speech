@@ -57,7 +57,7 @@ dev = [
     "pytest>=9.1",
     "pytest-cov>=7.1",
     # 2.31.0.7+ requires urllib3>=2, but gtts 2.3.0 pins requests~=2.28.0 (urllib3 1.x).
-    "types-requests>=2.28,<2.31.0.7",
+    "types-requests>=2.33.0.20260906,<2.33.0.20260907",
     # Web stack - needed by tests/ to exercise ttssrv handlers locally.
     # In production ttssrv runs only inside Docker (see docker/{cpu,gpu}/Dockerfile
     # and docker-compose*.yml); these wheels exist in [dev] solely so that
