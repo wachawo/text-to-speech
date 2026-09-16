@@ -21,6 +21,6 @@ types-requests>=2.28,<2.31.0.7
 # the Docker image; exact pins for it live in ttssrv/requirements.txt.
 Flask>=3.1,<4
 flask-cors>=6.0,<7
-marshmallow>=3.26,<4
+marshmallow>=4.3.1,<5
 uvicorn>=0.53,<1
 pytz>=2026.3
