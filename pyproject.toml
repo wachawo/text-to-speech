@@ -50,7 +50,7 @@ dependencies = [
 # (pygame for playback, requests/dotenv, sounddevice/numpy for ttsrec).
 dev = [
     # Lint / format / typecheck / test runner
-    "black>=26.5,<27",
+    "black>=26.5.1,<27",
     "ruff>=0.16.7",
     "pre-commit>=4.6.2",
     "mypy>=2.3.1,<3",
