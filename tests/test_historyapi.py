@@ -90,7 +90,7 @@ def test_create_503_when_pool_busy(client, history_dir, monkeypatch, app_module)
     monkeypatch.setattr(app_module, "ENGINE_POOL", types.SimpleNamespace(get=never_free))
     resp = create(client)
     assert resp.status_code == 503
-    assert resp.get_json() == {"error": "All engine slots busy (timeout)"}
+    assert resp.get_json() == {"error": "All engine slots busy"}
     assert not history_dir.exists()
 
 

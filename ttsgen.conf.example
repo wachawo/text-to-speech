@@ -86,6 +86,9 @@ TTS_TOKENS=
 # Engine pool size for ttssrv (number of pre-warmed engine slots).
 # 0 = unlimited concurrency, no warmup. 1+ = bound on parallel synthesis.
 TTS_POOL_SIZE=1
+# Synthesis requests allowed to wait for a free slot (default 8); any more get
+# 503 at once instead of holding a server thread.
+TTS_QUEUE_SIZE=8
 # Where /api/history keeps generated audio and its metadata (in Docker: /opt/data/history).
 TTS_HISTORY_DIR=data/history
 # Max history items kept; the oldest are removed when a new one is saved.

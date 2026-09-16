@@ -2,6 +2,11 @@
 
 ### [Unreleased]
 
+#### Added
+- `TTS_QUEUE_SIZE` (default 8): how many synthesis requests may wait for a
+  free engine slot; any more are answered 503 at once, so a burst of `/api/tts`
+  cannot hold every server thread. `/api/health` reports it as `queue_size`.
+
 #### Fixed
 - `ttssrv` served the Flask app through asgiref's `WsgiToAsgi`, which runs every
   request on one shared thread and guards it with a contextvar that a keep-alive
@@ -9,7 +14,8 @@
   `Single thread executor already being used, would deadlock` before reaching
   Flask, as a plain-text 500. A long synthesis also blocked `/api/health`, and
   `TTS_POOL_SIZE` above 1 never allowed parallel synthesis. The server now uses
-  uvicorn's own WSGI bridge (`interface="wsgi"`, a thread pool); the engine pool
+  uvicorn's own WSGI bridge on a thread pool sized from `TTS_POOL_SIZE` and
+  `TTS_QUEUE_SIZE` plus eight threads kept for the light routes; the engine pool
   still bounds concurrency, and `asgiref` is no longer a dependency.
 
 ### [1.0.6] - 2026-09-16
