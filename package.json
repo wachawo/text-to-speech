@@ -7,7 +7,7 @@
     "test": "node --test tests/www/"
   },
   "devDependencies": {
-    "eslint": "^8.57.1",
+    "eslint": "^10.10.0",
     "eslint-plugin-vue": "^9.33.0",
     "vue": "2.7.16",
     "vue-template-compiler": "2.7.16"
