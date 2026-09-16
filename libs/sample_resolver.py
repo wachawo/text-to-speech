@@ -109,7 +109,13 @@ def sample_path_for_voice(voice: str) -> str:
     """
     if not isinstance(voice, str) or not VOICE_NAME_REGEX.match(voice):
         raise ValidationError(f"Invalid voice name: {voice!r} (expected ^[A-Za-z0-9_-]{{1,48}}$)")
-    return os.path.join(get_samples_dir(), voice + ".wav")
+    samples_dir = get_samples_dir()
+    target = os.path.realpath(os.path.join(samples_dir, voice + ".wav"))
+    # The regex already leaves no way out of the directory; this is the second
+    # fence, so a future loosening of the pattern cannot silently open one.
+    if os.path.dirname(target) != os.path.realpath(samples_dir):
+        raise ValidationError(f"Invalid voice name: {voice!r}")
+    return target
 
 
 def main():
