@@ -177,7 +177,7 @@ var copyByTextarea = function (text) {
   box.style.opacity = '0';
   document.body.appendChild(box);
   box.select();
-  var copied = false;
+  var copied;
   try {
     copied = document.execCommand('copy');
   } catch (err) {
