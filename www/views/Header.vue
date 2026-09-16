@@ -5,6 +5,9 @@
         <router-link to="/studio">TTS</router-link>
       </li>
 
+      <!-- The sign-in screen gets the brand alone: the tabs lead to screens
+           that would only send the visitor back here. -->
+      <template v-if="$route.name !== 'login'">
       <li class="nav-item" :class="{ active: tabActive('/studio') }">
         <router-link to="/studio">STUDIO</router-link>
       </li>
@@ -53,6 +56,16 @@
           <i class="fa fa-gear"></i>
         </button>
       </li>
+
+      <!-- The way out, only when there was a way in: a server without tokens
+           has nothing to sign out of. -->
+      <li class="nav-item nav-theme" v-if="signedIn">
+        <button type="button" class="tts-theme-toggle"
+          title="Sign out" aria-label="Sign out" @click="logout">
+          <i class="fa fa-right-from-bracket"></i>
+        </button>
+      </li>
+      </template>
     </ul>
   </header>
 </template>
@@ -67,6 +80,11 @@ var TAB_ROUTES = {};
 
 module.exports = {
   computed: {
+    signedIn: function () {
+      var auth = this.$store.state.auth;
+      return !!(auth && auth.required && auth.token);
+    },
+
     /* Which half of the palette is in force. Read from the store rather than off
        the document element: app.js is what owns the attribute, and a bar that
        read the DOM back would show the wrong glyph for as long as it took Vue to
@@ -88,6 +106,13 @@ module.exports = {
   },
 
   methods: {
+    /* Forget the token and go to the sign-in screen. Nothing to tell the
+       server: a bearer token has no session behind it. */
+    logout: function () {
+      this.$saveToken('');
+      this.$goto('/login');
+    },
+
     /* Whether a tab is the one the operator is on. By path rather than by
        name, through TAB_ROUTES, so a screen that belongs to a tab without
        being it can be declared rather than guessed. */

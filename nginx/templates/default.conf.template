@@ -1,8 +1,8 @@
 # Rendered by the official nginx image entrypoint (envsubst) into
 # /etc/nginx/conf.d/default.conf. Only the names present in the container
 # environment are substituted, so nginx's own $remote_addr, $uri, $host and the
-# rest survive untouched. The substituted names are ${TTS_UPSTREAM},
-# ${TTS_WWW_TOKEN} and ${TTS_WWW_TLS_PORT}; all are set by docker-compose.
+# rest survive untouched. The substituted names are ${TTS_UPSTREAM} and
+# ${TTS_WWW_TLS_PORT}; both are set by docker-compose.
 
 # The access log mirrors the Python log line of ttssrv:
 #   YYYY-MM-DD HH:MM:SS.mmm [INFO]: (nginx) client METHOD /path: status
@@ -61,12 +61,11 @@ server {
         proxy_set_header X-Forwarded-Port  $server_port;
         proxy_set_header Connection        "";
 
-        # The web UI has no login of its own. nginx adds the API token to every
-        # proxied request, so the browser never sees it and the API stays
-        # closed to everyone else. An empty TTS_WWW_TOKEN yields "Bearer ",
-        # which ttssrv ignores when TTS_TOKENS is empty and rejects with 401
-        # when it is set.
-        proxy_set_header Authorization "Bearer ${TTS_WWW_TOKEN}";
+        # No Authorization header of nginx's own: when ttssrv has TTS_TOKENS the
+        # web UI asks for the token on its sign-in screen and sends it itself,
+        # and nginx passes that header through untouched (the default for
+        # request headers). A token pasted here would make the sign-in
+        # screen decorative.
 
         # xtts_v2 on CPU takes minutes for a long text; the default 60 s would
         # cut the response with a 504 while ttssrv is still synthesizing.
@@ -97,15 +96,12 @@ server {
     }
 
     # What the UI needs to know about this deployment and cannot ask the API:
-    # the token nginx adds to proxied requests, so the curl example on the
-    # Studio can carry it for callers that go to ttssrv directly. The UI has
-    # no login, so anyone who can open it can already use the API through
-    # this proxy; printing the token adds no reach, only convenience.
+    # the https port, for the note that explains why REC is off on http.
     location = /ui-config.json {
         access_log off;
         default_type application/json;
         add_header Cache-Control "no-cache";
-        return 200 '{"token":"${TTS_WWW_TOKEN}","tls_port":"${TTS_WWW_TLS_PORT}"}';
+        return 200 '{"tls_port":"${TTS_WWW_TLS_PORT}"}';
     }
 
     # nginx-side liveness for the docker healthcheck, no round trip to the API.

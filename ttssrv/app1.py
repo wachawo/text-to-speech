@@ -276,6 +276,9 @@ def health():
         jsonify(
             {
                 "status": "ok",
+                # Whether requests need a bearer token: the web UI reads this
+                # before deciding to show its sign-in screen.
+                "auth": bool(TTS_TOKENS),
                 "engine": TTS_ENGINE_DEFAULT,
                 "engines": TTS_ENGINES,
                 "pool_size": TTS_POOL_SIZE,
