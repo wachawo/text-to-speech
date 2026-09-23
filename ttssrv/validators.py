@@ -18,7 +18,9 @@ class TtsRequestSchema(Schema):
     language = fields.Str(load_default=None, validate=validate.Length(equal=2))
     # Engine-specific voice/speaker id (e.g. Silero 'baya'). Validated against the
     # engine's available voices downstream; None keeps the engine default.
-    voice = fields.Str(load_default=None, validate=validate.Length(max=64))
+    # 128, not 64: a four-voice kokorotts mix such as
+    # "af_nicole(0.35)+af_jessica(0.25)+am_michael(0.25)+bf_isabella(0.15)" runs past 64.
+    voice = fields.Str(load_default=None, validate=validate.Length(max=128))
     # When true, stream audio chunk-by-chunk (chunked transfer) for low latency.
     stream = fields.Bool(load_default=False)
 
@@ -61,8 +63,9 @@ class SpeechRequestSchema(Schema):
     model = fields.Str(load_default=None, validate=validate.Length(min=1, max=64))
     # OpenAI's own limit; the engines accept up to 5000 characters in one call.
     input = fields.Str(required=True, validate=validate.Length(min=1, max=4096))
-    # An OpenAI voice name means the engine default; anything else is the engine voice id.
-    voice = fields.Str(load_default=None, validate=validate.Length(max=64))
+    # An OpenAI voice name means the engine default; anything else is the engine voice id
+    # or a kokorotts mix, hence the same 128 as TtsRequestSchema.
+    voice = fields.Str(load_default=None, validate=validate.Length(max=128))
     response_format = fields.Str(load_default="mp3", validate=validate.OneOf(sorted(RESPONSE_FORMATS)))
     speed = fields.Float(load_default=1.0, validate=validate.Range(min=0.25, max=4.0))
     language = fields.Str(load_default=None, validate=validate.Length(equal=2))

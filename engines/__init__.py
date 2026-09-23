@@ -145,15 +145,18 @@ def get_engine_voices(engine_name: str, language: str = "en") -> dict[str, objec
     """Fetch the selectable voices of an engine for a given language.
 
     Engines that support multiple voices implement `list_voices(language) -> dict`
-    with keys 'voices' (list) and 'default' (str|None). Engines without voice
-    selection return an empty list.
+    with keys 'voices' (list) and 'default' (str|None), and optionally 'mix'
+    (bool), True when the engine blends voices ('af_bella(2)+af_sky(1)'); a
+    missing 'mix' counts as False. Engines without voice selection return an
+    empty list.
 
     Args:
         engine_name: Name of the engine.
         language: Language code.
 
     Returns:
-        Dict {'voices': [...], 'default': str|None}.
+        Dict {'voices': [...], 'default': str|None}, plus 'mix' when the
+        engine reports it.
     """
     # Imported without the is_available() gate: a catalogue such as the coquitts
     # sample directory is readable whether or not torch is installed, and an

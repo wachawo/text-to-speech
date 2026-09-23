@@ -11,12 +11,27 @@ import importlib
 import io
 import os
 import sys
+import time
 import types
 import wave
 
+import numpy as np
 import pytest
 
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
+
+# Voices of the fake voices file, each a tiny style array with its own values.
+FAKE_VOICE_NAMES = ("af_bella", "af_sky", "am_adam", "bf_emma", "jf_alpha")
+FAKE_STYLES = {
+    name: np.arange(8, dtype=np.float32).reshape(2, 1, 4) + 10 * index for index, name in enumerate(FAKE_VOICE_NAMES)
+}
+
+
+def write_fake_voices(directory):
+    """Write an .npz voices file holding FAKE_STYLES as the real voices-v1.0.bin would."""
+    # Written through a handle: np.savez appends .npz to a bare filename.
+    with open(directory / "voices-v1.0.bin", "wb") as voices_file:
+        np.savez(voices_file, **FAKE_STYLES)
 
 
 def make_fake_kokoro_onnx():
@@ -26,13 +41,23 @@ def make_fake_kokoro_onnx():
     class FakeKokoro:
         """Stand-in for kokoro_onnx.Kokoro that returns silence instead of running ONNX."""
 
+        instances: list = []
+        created: list = []
+
         def __init__(self, model_path, voices_path):
             """Remember the model and voice bundle paths the engine resolved."""
             self.model_path = model_path
             self.voices_path = voices_path
+            FakeKokoro.instances.append(self)
+
+        def get_voice_style(self, name):
+            """Return the style array stored under `name` in the voices file."""
+            with np.load(self.voices_path) as archive:
+                return archive[name]
 
         def create(self, text, voice, speed, lang):
-            """Return a fixed block of silent samples and the sample rate."""
+            """Record the call and return a fixed block of silent samples and the sample rate."""
+            FakeKokoro.created.append({"text": text, "voice": voice, "speed": speed, "lang": lang})
             # Return 2400 zero samples, about 0.1s at 24000 Hz mono.
             return array.array("h", [0] * 2400), 24000
 
@@ -187,7 +212,7 @@ def test_generate_returns_wav_bytes(engine, monkeypatch, tmp_path):
     """Synthesis returns parseable 24 kHz mono WAV bytes."""
     # Plant the expected model files so the missing-files check passes.
     (tmp_path / "kokoro-v1.0.onnx").write_bytes(b"fake-onnx")
-    (tmp_path / "voices-v1.0.bin").write_bytes(b"fake-voices")
+    write_fake_voices(tmp_path)
     monkeypatch.setenv("KOKOROTTS_MODELS", str(tmp_path))
 
     result = engine.generate("hello world", {"language": "en"})
@@ -201,7 +226,7 @@ def test_generate_returns_wav_bytes(engine, monkeypatch, tmp_path):
 def test_generate_caches_kokoro_instance(engine, monkeypatch, tmp_path):
     """Second call with same paths must reuse the cached Kokoro instance."""
     (tmp_path / "kokoro-v1.0.onnx").write_bytes(b"x")
-    (tmp_path / "voices-v1.0.bin").write_bytes(b"x")
+    write_fake_voices(tmp_path)
     monkeypatch.setenv("KOKOROTTS_MODELS", str(tmp_path))
 
     engine.generate("first", {"language": "en"})
@@ -228,7 +253,7 @@ def test_language_map_has_expected_entries(engine):
 def test_generate_unknown_language_falls_back_to_en(engine, monkeypatch, tmp_path):
     """An unmapped language code silently falls back to the English entry."""
     (tmp_path / "kokoro-v1.0.onnx").write_bytes(b"x")
-    (tmp_path / "voices-v1.0.bin").write_bytes(b"x")
+    write_fake_voices(tmp_path)
     monkeypatch.setenv("KOKOROTTS_MODELS", str(tmp_path))
 
     # Should not raise — unknown language falls back to LANGUAGE_MAP["en"].
@@ -276,7 +301,7 @@ def test_concurrent_first_load_constructs_kokoro_once(engine, monkeypatch, tmp_p
             return array.array("h", [0] * 240), 24000
 
     (tmp_path / "kokoro-v1.0.onnx").write_bytes(b"x")
-    (tmp_path / "voices-v1.0.bin").write_bytes(b"x")
+    write_fake_voices(tmp_path)
     monkeypatch.setenv("KOKOROTTS_MODELS", str(tmp_path))
     monkeypatch.setattr(engine, "Kokoro", SlowKokoro)
 
@@ -287,3 +312,321 @@ def test_concurrent_first_load_constructs_kokoro_once(engine, monkeypatch, tmp_p
         thread.join()
     assert len(constructions) == 1
     assert len(engine.KOKORO_CACHE) == 1
+
+
+# Voice listing, voice specs and voice mixing
+
+
+@pytest.fixture
+def kokoro_dir(monkeypatch, tmp_path):
+    """Model directory holding a placeholder model and the fake voices file, with no voice overrides."""
+    (tmp_path / "kokoro-v1.0.onnx").write_bytes(b"x")
+    write_fake_voices(tmp_path)
+    monkeypatch.setenv("KOKOROTTS_MODELS", str(tmp_path))
+    for name in ("KOKOROTTS_MODEL", "KOKOROTTS_VOICES", "KOKOROTTS_VOICE", "KOKOROTTS_SPEED"):
+        monkeypatch.delenv(name, raising=False)
+    return tmp_path
+
+
+def test_list_voices_english_has_american_and_british(engine, kokoro_dir):
+    """English lists the a* and b* voices, sorted, and allows mixing."""
+    info = engine.list_voices("en")
+    assert info["voices"] == ["af_bella", "af_sky", "am_adam", "bf_emma"]
+    assert info["mix"] is True
+
+
+def test_list_voices_japanese_only_japanese(engine, kokoro_dir):
+    """Japanese lists only the j* voices."""
+    assert engine.list_voices("ja")["voices"] == ["jf_alpha"]
+
+
+def test_list_voices_unknown_language_lists_english(engine, kokoro_dir):
+    """An unmapped language code lists the English voices, as generate() falls back to English."""
+    assert engine.list_voices("xx") == engine.list_voices("en")
+
+
+def test_list_voices_default_is_language_map_voice_when_present(engine, kokoro_dir):
+    """The LANGUAGE_MAP default is reported when the voices file has it."""
+    assert engine.list_voices("ja")["default"] == "jf_alpha"
+
+
+def test_list_voices_default_falls_back_to_first_voice(engine, kokoro_dir):
+    """Without the LANGUAGE_MAP default (af_sarah) in the file, the first listed voice is the default."""
+    assert engine.list_voices("en")["default"] == "af_bella"
+
+
+def test_default_voice_prefers_language_map_voice_over_first(engine):
+    """The LANGUAGE_MAP voice wins even when another voice sorts before it."""
+    assert engine.default_voice("en", ["af_alloy", "af_sarah"]) == "af_sarah"
+
+
+@pytest.mark.parametrize("language", ["en", "ja", "fr"])
+def test_list_voices_default_is_the_env_voice_generate_uses(engine, monkeypatch, kokoro_dir, language):
+    """With KOKOROTTS_VOICE set, the reported default is the voice a request without one is spoken in."""
+    monkeypatch.setenv("KOKOROTTS_VOICE", " af_sky ")
+    engine.generate("hi", {"language": language})
+    assert engine.list_voices(language)["default"] == engine.Kokoro.created[-1]["voice"] == "af_sky"
+
+
+def test_list_voices_default_may_be_an_env_mix(engine, monkeypatch, kokoro_dir):
+    """A mix in KOKOROTTS_VOICE is reported as the default, the spec generate() blends."""
+    monkeypatch.setenv("KOKOROTTS_VOICE", "af_sky+bf_emma")
+    assert engine.list_voices("en")["default"] == "af_sky+bf_emma"
+
+
+def test_list_voices_language_without_voices(engine, kokoro_dir):
+    """A language with no voices in the file lists nothing, no default and no mix."""
+    assert engine.list_voices("fr") == {"voices": [], "default": None, "mix": False}
+
+
+def test_list_voices_missing_file_is_empty(engine, monkeypatch, tmp_path):
+    """A missing voices file lists nothing instead of raising."""
+    monkeypatch.setenv("KOKOROTTS_MODELS", str(tmp_path))
+    monkeypatch.delenv("KOKOROTTS_VOICES", raising=False)
+    assert engine.list_voices("en") == {"voices": [], "default": None, "mix": False}
+
+
+def test_list_voices_missing_file_is_not_cached(engine, monkeypatch, tmp_path):
+    """A voices file downloaded after an empty listing shows up on the next listing."""
+    monkeypatch.setenv("KOKOROTTS_MODELS", str(tmp_path))
+    monkeypatch.delenv("KOKOROTTS_VOICES", raising=False)
+    assert engine.list_voices("ja")["voices"] == []
+    write_fake_voices(tmp_path)
+    assert engine.list_voices("ja")["voices"] == ["jf_alpha"]
+
+
+def test_list_voices_works_without_kokoro_onnx(monkeypatch, kokoro_dir):
+    """Listing reads only the voices file, so it works while the engine itself is unavailable."""
+    monkeypatch.setitem(sys.modules, "kokoro_onnx", None)
+    monkeypatch.setitem(sys.modules, "soundfile", make_fake_soundfile())
+    monkeypatch.delitem(sys.modules, "engines.kokorotts", raising=False)
+    mod = importlib.import_module("engines.kokorotts")
+    assert mod.is_available() is False
+    assert mod.list_voices("ja") == {"voices": ["jf_alpha"], "default": "jf_alpha", "mix": True}
+
+
+def test_voice_names_reads_the_archive_once(engine, monkeypatch, kokoro_dir):
+    """Repeated listings and lookups for one voices file open the archive once."""
+    loads = []
+    real_load = np.load
+
+    def counting_load(*args, **kwargs):
+        """Count the call and delegate to the real np.load."""
+        loads.append(args[0])
+        return real_load(*args, **kwargs)
+
+    monkeypatch.setattr(np, "load", counting_load)
+    voices_path = str(kokoro_dir / "voices-v1.0.bin")
+    assert engine.voice_names(voices_path) == FAKE_VOICE_NAMES
+    assert engine.voice_names(voices_path) == FAKE_VOICE_NAMES
+    engine.list_voices("en")
+    engine.list_voices("ja")
+    assert loads == [voices_path]
+
+
+def test_parse_voice_spec_single_voice(engine):
+    """One name is one component with weight 1."""
+    assert engine.parse_voice_spec("af_bella") == [("af_bella", 1.0)]
+
+
+def test_parse_voice_spec_weights_are_normalized(engine):
+    """Weights are scaled to sum to 1, keeping their order."""
+    components = engine.parse_voice_spec("af_bella(2)+af_sky(1)")
+    assert [name for name, unused_weight in components] == ["af_bella", "af_sky"]
+    assert [weight for unused_name, weight in components] == pytest.approx([2 / 3, 1 / 3])
+
+
+def test_parse_voice_spec_missing_weight_defaults_to_one(engine):
+    """A component without a weight counts as weight 1 beside weighted ones."""
+    components = engine.parse_voice_spec("af_bella(3)+af_sky")
+    assert [weight for unused_name, weight in components] == pytest.approx([0.75, 0.25])
+
+
+def test_parse_voice_spec_ignores_whitespace(engine):
+    """Whitespace around names, weights, parentheses and plus signs is ignored."""
+    components = engine.parse_voice_spec("  af_bella ( 0.5 )  +  af_sky(1.5)  ")
+    assert [name for name, unused_weight in components] == ["af_bella", "af_sky"]
+    assert [weight for unused_name, weight in components] == pytest.approx([0.25, 0.75])
+
+
+def test_parse_voice_spec_huge_weights_do_not_overflow(engine):
+    """Weights near the float limit still normalize instead of summing to infinity."""
+    components = engine.parse_voice_spec("af_bella(1e308)+af_sky(1e308)")
+    assert [weight for unused_name, weight in components] == pytest.approx([0.5, 0.5])
+
+
+def test_parse_voice_spec_accepts_max_mix_voices(engine):
+    """Exactly MAX_MIX_VOICES components is still a valid mix."""
+    assert len(engine.parse_voice_spec("af_bella+af_sky+am_adam+bf_emma")) == engine.MAX_MIX_VOICES
+
+
+@pytest.mark.parametrize(
+    "spec, token",
+    [
+        ("", "empty"),
+        ("   ", "empty"),
+        ("af_bella+", "Empty"),
+        ("+af_sky", "Empty"),
+        ("af_bella++af_sky", "Empty"),
+        ("AF_BELLA", "AF_BELLA"),
+        ("af-bella", "af-bella"),
+        ("bella", "bella"),
+        ("af_bella(2", "af_bella(2"),
+        ("af_bella)2(", "af_bella)2("),
+        ("af_bella(x)", "'x'"),
+        ("af_bella()", "af_bella"),
+        ("af_bella(inf)", "'inf'"),
+        ("af_bella(nan)", "'nan'"),
+        ("af_bella(1e999)", "'1e999'"),
+        ("af_bella(0)", "'0'"),
+        ("af_bella(0)+af_sky", "'0'"),
+        ("af_sky+af_bella(0.0)", "'0.0'"),
+        ("af_bella(-1)", "'-1'"),
+        ("af_bella+af_sky+am_adam+bf_emma+jf_alpha", "5 > 4"),
+        ("af_bella+af_bella", "'af_bella'"),
+        ("af_bella(1)+af_sky+af_bella(2)", "'af_bella'"),
+    ],
+)
+def test_parse_voice_spec_rejects_malformed(engine, spec, token):
+    """Every malformed spec raises ValidationError whose message names the bad token."""
+    with pytest.raises(ValidationError) as exc:
+        engine.parse_voice_spec(spec)
+    assert token in str(exc.value)
+
+
+def test_resolve_voice_unknown_name_is_named_without_a_path(engine, kokoro_dir):
+    """An unknown name is reported by name, and the message carries no filesystem path."""
+    with pytest.raises(ValidationError) as exc:
+        engine.resolve_voice("af_bella+zz_nobody", FAKE_VOICE_NAMES)
+    assert "zz_nobody" in str(exc.value)
+    assert str(kokoro_dir) not in str(exc.value)
+    assert "/" not in str(exc.value)
+
+
+def test_generate_passes_requested_voice_as_name(engine, kokoro_dir):
+    """A single requested voice reaches Kokoro.create() as its name."""
+    engine.generate("hi", {"language": "en", "voice": "am_adam"})
+    assert engine.Kokoro.created[-1]["voice"] == "am_adam"
+
+
+def test_generate_uses_env_voice_without_request(engine, monkeypatch, kokoro_dir):
+    """KOKOROTTS_VOICE is used when the request names no voice."""
+    monkeypatch.setenv("KOKOROTTS_VOICE", "af_sky")
+    engine.generate("hi", {"language": "en"})
+    assert engine.Kokoro.created[-1]["voice"] == "af_sky"
+
+
+def test_generate_request_voice_beats_env(engine, monkeypatch, kokoro_dir):
+    """The request's voice wins over KOKOROTTS_VOICE."""
+    monkeypatch.setenv("KOKOROTTS_VOICE", "af_sky")
+    engine.generate("hi", {"language": "en", "voice": "am_adam"})
+    assert engine.Kokoro.created[-1]["voice"] == "am_adam"
+
+
+@pytest.mark.parametrize("language, expected", [("en", "af_bella"), ("ja", "jf_alpha")])
+def test_generate_uses_language_default_voice(engine, kokoro_dir, language, expected):
+    """Without request or env voice, the voice list_voices() reports as default is used."""
+    engine.generate("hi", {"language": language})
+    assert engine.Kokoro.created[-1]["voice"] == expected
+
+
+def test_generate_blends_a_mix_into_one_style(engine, kokoro_dir):
+    """A two-voice mix reaches create() as the float32 weighted sum of the normalized styles."""
+    engine.generate("hi", {"language": "en", "voice": "af_bella(3)+am_adam(1)"})
+    voice = engine.Kokoro.created[-1]["voice"]
+    expected = 0.75 * FAKE_STYLES["af_bella"] + 0.25 * FAKE_STYLES["am_adam"]
+    assert isinstance(voice, np.ndarray)
+    assert voice.dtype == np.float32
+    np.testing.assert_allclose(voice, expected, rtol=1e-6)
+
+
+def test_generate_env_voice_may_be_a_mix(engine, monkeypatch, kokoro_dir):
+    """KOKOROTTS_VOICE accepts the same mix syntax as the request."""
+    monkeypatch.setenv("KOKOROTTS_VOICE", "af_sky+bf_emma")
+    engine.generate("hi", {"language": "en"})
+    voice = engine.Kokoro.created[-1]["voice"]
+    np.testing.assert_allclose(voice, 0.5 * FAKE_STYLES["af_sky"] + 0.5 * FAKE_STYLES["bf_emma"], rtol=1e-6)
+
+
+@pytest.mark.parametrize(
+    "request_voice, env_voice, error",
+    [
+        ("zz_nobody", "", ValidationError),
+        ("", "zz_nobody", TTSException),
+        ("af_bella+zz_nobody", "", ValidationError),
+    ],
+)
+def test_generate_unknown_voice_never_loads_the_model(engine, monkeypatch, kokoro_dir, request_voice, env_voice, error):
+    """An unknown voice fails before any Kokoro instance is built (a TTSException when it came from KOKOROTTS_VOICE)."""
+    monkeypatch.setenv("KOKOROTTS_VOICE", env_voice)
+    with pytest.raises(error) as exc:
+        engine.generate("hi", {"language": "en", "voice": request_voice})
+    assert "zz_nobody" in str(exc.value)
+    assert engine.Kokoro.instances == []
+    assert engine.KOKORO_CACHE == {}
+
+
+@pytest.mark.parametrize(
+    "language, voice, expected_lang",
+    [
+        ("en", "bf_emma", "en-gb"),
+        ("en", "af_bella", "en-us"),
+        ("en", "bf_emma(2)+af_bella", "en-gb"),
+        ("en", "af_bella+bf_emma", "en-us"),
+        ("xx", "bf_emma", "en-gb"),
+        ("ja", "jf_alpha", "ja"),
+        ("ja", "bf_emma", "ja"),
+    ],
+)
+def test_generate_lang_code_follows_language_and_first_voice(engine, kokoro_dir, language, voice, expected_lang):
+    """English led by a b* voice is spoken as en-gb; every other language keeps its own code."""
+    engine.generate("hi", {"language": language, "voice": voice})
+    assert engine.Kokoro.created[-1]["lang"] == expected_lang
+
+
+def test_voice_names_are_sorted(engine, tmp_path):
+    """The names come back sorted whatever order the archive stores them in."""
+    with open(tmp_path / "voices-v1.0.bin", "wb") as voices_file:
+        np.savez(voices_file, zf_b=np.zeros(1, np.float32), af_a=np.zeros(1, np.float32), bm_c=np.zeros(1, np.float32))
+    assert engine.voice_names(str(tmp_path / "voices-v1.0.bin")) == ("af_a", "bm_c", "zf_b")
+
+
+@pytest.mark.parametrize("weight", ["\u0662", "\uff12", "1_0", "nan", "0x10", "1,5"])
+def test_parse_voice_spec_rejects_non_ascii_or_odd_weights(engine, weight):
+    """Only plain ASCII decimals are weights; float() alone would accept some of these."""
+    with pytest.raises(ValidationError):
+        engine.parse_voice_spec(f"af_bella({weight})+af_sky")
+
+
+def test_parse_voice_spec_unclosed_parenthesis_is_fast(engine):
+    """An unclosed parenthesis with a long run of spaces is rejected without backtracking blowup."""
+    started = time.monotonic()
+    with pytest.raises(ValidationError):
+        engine.parse_voice_spec("af_bella(" + " " * 5000)
+    assert time.monotonic() - started < 0.5
+
+
+def test_whitespace_request_voice_falls_back_to_env(engine, kokoro_dir, monkeypatch):
+    """A voice of only spaces counts as no voice, so KOKOROTTS_VOICE applies."""
+    monkeypatch.setenv("KOKOROTTS_VOICE", "am_adam")
+    names = engine.voice_names(str(kokoro_dir / "voices-v1.0.bin"))
+    assert engine.requested_voice_spec({"voice": "   "}, "en", names) == "am_adam"
+
+
+def test_language_without_voices_falls_back_to_language_map_voice(engine):
+    """With no voice of the language in the file, the LANGUAGE_MAP voice is named (and then refused as unknown)."""
+    assert engine.requested_voice_spec({}, "fr", ("af_bella",)) == "ff_siwis"
+
+
+def test_invalid_env_voice_blames_the_variable(engine, kokoro_dir, monkeypatch):
+    """A bad KOKOROTTS_VOICE for a request without a voice is a server error naming the variable."""
+    monkeypatch.setenv("KOKOROTTS_VOICE", "af_nobody")
+    with pytest.raises(TTSException, match="KOKOROTTS_VOICE"):
+        engine.generate("hi", {"language": "en"})
+
+
+def test_invalid_request_voice_is_still_a_validation_error_with_env_set(engine, kokoro_dir, monkeypatch):
+    """With KOKOROTTS_VOICE set, a bad voice sent by the client stays the client's error."""
+    monkeypatch.setenv("KOKOROTTS_VOICE", "am_adam")
+    with pytest.raises(ValidationError, match="af_nobody"):
+        engine.generate("hi", {"language": "en", "voice": "af_nobody"})

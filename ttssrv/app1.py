@@ -474,6 +474,9 @@ def voices_list():
                 "language": language,
                 "voices": info.get("voices", []),
                 "default": info.get("default"),
+                # Whether the engine blends voices ("af_bella(2)+af_sky(1)"); the
+                # Studio offers free text instead of a select when it does.
+                "mix": bool(info.get("mix")),
                 "samples": samples,
             }
         ),

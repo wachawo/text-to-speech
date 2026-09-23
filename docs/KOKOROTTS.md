@@ -46,10 +46,64 @@ ttsgen "你好世界"     --engine kokorotts --language zh   # cmn   / zf_xiaobe
 ttsgen "こんにちは"    --engine kokorotts --language ja   # ja    / jf_alpha
 ttsgen "Hola mundo"  --engine kokorotts --language es   # es    / ef_dora
 
-# Override voice / speed via env (no CLI flags; the `voice` request field is ignored by this engine)
+# Override voice / speed via env (no CLI flags; the server also takes a voice per request)
 KOKOROTTS_VOICE=am_adam     ttsgen "Hi" --engine kokorotts
 KOKOROTTS_VOICE=af_heart    ttsgen "Hi" --engine kokorotts
 KOKOROTTS_SPEED=1.2         ttsgen "Hi" --engine kokorotts
+```
+
+## Voices and mixing
+
+The voice is picked, strongest first, from the request (`voice` of `/api/tts`,
+`/api/history` and `/v1/audio/speech`, or the Voice field of the Studio), then
+`KOKOROTTS_VOICE`, then the language default (see
+[Supported languages](#supported-languages-and-default-voices)). A voice that is
+not in the voices file is refused with a 400 that names it.
+
+The voices of one language come from the server:
+
+```bash
+curl "localhost:5000/api/voices?engine=kokorotts&language=en" \
+  -H "Authorization: Bearer $TTS_TOKEN"
+```
+
+English lists the American (`a*`) and the British (`b*`) voices; a `b*` voice
+switches the phonemizer from `en-us` to `en-gb`. The reported `default` is
+`KOKOROTTS_VOICE` when it is set, else the language default.
+
+A mix blends up to four voices: `name(weight)+name(weight)`, for example
+`af_bella(2)+af_sky(1)`.
+
+- Weights are positive numbers, 1 when left out, and are normalized to sum 1:
+  `af_bella(2)+af_sky(1)` is two thirds `af_bella` and one third `af_sky`.
+- Each name comes from the voices file and appears once; spaces around names,
+  weights and `+` are ignored.
+- The first voice decides the English accent: `bf_emma+af_bella` reads as `en-gb`.
+- Over HTTP the value is at most 128 characters, the limit of the request
+  field. In a query string or a form body write `+` as `%2B`, otherwise it
+  arrives as a space; JSON bodies need no escaping.
+
+In the Studio and its settings dialog, the Voice field of this engine takes a
+name or a mix typed by hand, with the voices of the language offered as
+suggestions.
+
+```bash
+# One voice through /api/tts
+curl -X POST localhost:5000/api/tts \
+  -H "Authorization: Bearer $TTS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Hello world","engine":"kokorotts","language":"en","voice":"bf_emma"}' \
+  -o out.wav
+
+# A mix through the OpenAI-compatible route
+curl -X POST localhost:5000/v1/audio/speech \
+  -H "Authorization: Bearer $TTS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"kokorotts","input":"Hello world","voice":"af_bella(2)+af_sky(1)","response_format":"wav"}' \
+  -o out.wav
+
+# A mix as the default voice of the CLI (quoted: the shell reads the parentheses)
+KOKOROTTS_VOICE="af_bella(2)+af_sky(1)" ttsgen "Hello world" --engine kokorotts
 ```
 
 ## Configuration
@@ -59,7 +113,7 @@ KOKOROTTS_SPEED=1.2         ttsgen "Hi" --engine kokorotts
 | `KOKOROTTS_MODELS` | `~/.local/share/ttsgen/kokorotts` | Directory holding the two model files; `cache/kokorotts/` in the project root is used first when it exists (see [ENGINES.md, "Where models live"](ENGINES.md#where-models-live)) |
 | `KOKOROTTS_MODEL` | `kokoro-v1.0.onnx` | Filename inside `KOKOROTTS_MODELS` |
 | `KOKOROTTS_VOICES` | `voices-v1.0.bin` | Filename inside `KOKOROTTS_MODELS` |
-| `KOKOROTTS_VOICE` | per-language default (`af_sarah`, `ff_siwis`, ...) | Any voice ID supported by the model |
+| `KOKOROTTS_VOICE` | per-language default (`af_sarah`, `ff_siwis`, ...) | A voice ID or a mix (`af_bella(2)+af_sky(1)`); a request `voice` wins over it |
 | `KOKOROTTS_SPEED` | `1.0` | Speech speed multiplier |
 
 Config precedence, strongest first: CLI flags > shell environment > `./ttsgen.conf` >
@@ -79,7 +133,8 @@ shell; `.env` is read only from the current directory.
 | `hi` | `hi`    | `hf_alpha` | Hindi |
 | `pt` | `pt-br` | `pf_dora`  | Brazilian Portuguese |
 
-Override `KOKOROTTS_VOICE` to pick male / British / blended voices. The full
+Pick male, British or blended voices with the request `voice` or
+`KOKOROTTS_VOICE` (see [Voices and mixing](#voices-and-mixing)). The full
 catalog (mirrored from <https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md>)
 is below. Grades come from upstream subjective evaluation (A best to F worst);
 ungraded voices are listed without one.
@@ -116,7 +171,7 @@ Japanese, `zf_*`/`zm_*` Mandarin, `ef_*`/`em_*` Spanish, `ff_*` French,
 | `am_santa` | Male | D- |
 | `am_adam` | Male | F+ |
 
-### British English (no default - set `KOKOROTTS_VOICE` and use `--language en`)
+### British English (`--language en` with a `b*` voice, Kokoro lang `en-gb`; no default, name one)
 
 | Voice ID | Gender | Grade |
 |---|---|---|

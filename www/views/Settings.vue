@@ -33,8 +33,19 @@
             </select>
 
             <label for="set-voice">Voice</label>
+            <!-- An engine that mixes takes free text with the list as
+                 suggestions, as in the Studio. -->
+            <template v-if="voiceMix">
+              <input id="set-voice" type="text" class="form-control form-control-sm set-select" style="width: 220px"
+                     list="set-voices" :placeholder="'default (' + (serverVoice || '-') + ')'"
+                     autocomplete="off" spellcheck="false" title="Voice or mix, e.g. af_bella(2)+af_sky(1)"
+                     maxlength="128" v-model="form.voice" :disabled="wait.length > 0">
+              <datalist id="set-voices">
+                <option v-for="name in voices" :key="name" :value="name"></option>
+              </datalist>
+            </template>
             <select id="set-voice" class="form-select form-select-sm set-select" style="width: 220px"
-                    v-model="form.voice" :disabled="wait.length > 0 || voices.length === 0">
+                    v-model="form.voice" :disabled="wait.length > 0 || voices.length === 0" v-else>
               <option value="">default ({{ serverVoice || '-' }})</option>
               <option v-for="name in voices" :key="name" :value="name">{{ name }}</option>
             </select>
@@ -148,6 +159,11 @@ module.exports = {
     serverVoice: function () {
       return this.voiceEntry ? this.voiceEntry['default'] : '';
     },
+    /* Whether the engine of the pair in force blends voices; false until its
+       list is in. */
+    voiceMix: function () {
+      return !!(this.voiceEntry && this.voiceEntry.mix);
+    },
 
     /* The pair the voices are asked for, with the server's own values in
        place of "server default" - the list the operator picks from must be
@@ -223,8 +239,9 @@ module.exports = {
     /* The voices of the pair in force, through the store. An answer for a
        pair the dialog has since moved off is not applied: the store files it
        under its own pair, and the select reads the pair in force. A stored
-       voice the new list does not carry falls back to the server default;
-       the select cannot show a value it has no option for. */
+       voice the new list does not know (every name of a mix, for an engine
+       that mixes) falls back to the server default; the select cannot show a
+       value it has no option for. */
     fetchVoices: function () {
       var self = this;
       var key = this.voiceKey;
@@ -234,7 +251,7 @@ module.exports = {
       this.$store.dispatch('fetch_voices', { engine: parts[0], language: parts[1] })
         .then(function () {
           if (key !== self.voiceKey) return;
-          if (self.voices.indexOf(self.form.voice) === -1) self.form.voice = '';
+          if (!self.$knownVoice(self.form.voice, self.voices, self.voiceMix)) self.form.voice = '';
         })
         .catch(function (err) {
           if (key !== self.voiceKey) return;
