@@ -1,6 +1,6 @@
 ## Changelog
 
-### [Unreleased]
+### [1.0.7] - 2026-09-23
 
 #### Added
 - `kokorotts` voice selection: the request `voice` picks the voice, ahead of
