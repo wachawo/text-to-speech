@@ -33,7 +33,7 @@ gtts==2.5.4
 pyttsx3==2.99
 pygame==2.6.1
 requests>=2.34.2
-python-dotenv>=1.0.0
+python-dotenv>=1.2.3
 
 # Microphone capture for ttsrec (xtts_v2 voice samples)
 sounddevice
