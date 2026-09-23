@@ -23,7 +23,20 @@
       </div>
 
       <div style="margin-right: 0.25rem">
-        <div class="input-group input-group-sm" title="Voice">
+        <!-- An engine that mixes takes free text with the list as suggestions;
+             the datalist sits outside the group so the input keeps its right
+             corners. -->
+        <template v-if="voiceMix">
+          <div class="input-group input-group-sm" title="Voice or mix, e.g. af_bella(2)+af_sky(1)">
+            <input type="text" class="form-control form-control-sm" style="width: 220px"
+                   list="studio-voices" placeholder="default" autocomplete="off" spellcheck="false"
+                   maxlength="128" v-model="form.voice" :disabled="wait.length > 0">
+          </div>
+          <datalist id="studio-voices">
+            <option v-for="name in voices" :key="name" :value="name"></option>
+          </datalist>
+        </template>
+        <div class="input-group input-group-sm" title="Voice" v-else>
           <select class="form-select form-select-sm" style="width: 150px"
                   v-model="form.voice" :disabled="wait.length > 0 || voices.length === 0">
             <option value="">default</option>
@@ -253,6 +266,11 @@ module.exports = {
       var entry = this.$store.state.catalog.voices[this.voiceKey];
       return entry ? entry.voices : [];
     },
+    /* Whether the engine in force blends voices; false until its list is in. */
+    voiceMix: function () {
+      var entry = this.$store.state.catalog.voices[this.voiceKey];
+      return !!(entry && entry.mix);
+    },
 
     /* "WAV - 4.2 s - 186 KB - generated in 3.1 s". The duration is only known
        for WAV, so an MP3 take simply has no duration part. */
@@ -331,7 +349,7 @@ module.exports = {
        already on the selects, so they move nothing. A saved engine or
        language change refetches the voices through voiceKey and the stored
        voice is picked up there; a voice-only change is applied directly when
-       the current list has it. */
+       voiceKnown accepts it (a listed name, or a mix of listed names). */
     '$store.state.studio': function (prefs) {
       if (!this.settled) return;
       var self = this;
@@ -347,7 +365,7 @@ module.exports = {
         moved = true;
       }
       if (moved) return;
-      if (prefs.voice && prefs.voice !== this.form.voice && self.voices.indexOf(prefs.voice) !== -1) {
+      if (prefs.voice && prefs.voice !== this.form.voice && self.voiceKnown(prefs.voice)) {
         this.form.voice = prefs.voice;
       }
     },
@@ -413,13 +431,19 @@ module.exports = {
         .finally(function () { self.waitDrop('engines'); });
     },
 
+    /* Whether a voice value can stay on the control against the list in
+       force; the rule is $knownVoice's, shared with the settings dialog. */
+    voiceKnown: function (value) {
+      return this.$knownVoice(value, this.voices, this.voiceMix);
+    },
+
     /* The voices of the engine and language in force, through the store.
-       The chosen voice is kept when the new list still has it - a row click
-       sets the voice before this runs, and the answer must not undo it -
-       otherwise the remembered one, otherwise the server's default,
-       otherwise the engine default. An answer for a pair the selects have
-       since moved off is not applied: the store files it under its own
-       pair, and `voices` reads the pair in force.
+       The chosen voice is kept when the new list still knows it (every name
+       of a mix) - a row click sets the voice before this runs, and the
+       answer must not undo it - otherwise the remembered one, otherwise the
+       server's default, otherwise the engine default. An answer for a pair
+       the selects have since moved off is not applied: the store files it
+       under its own pair, and `voices` reads the pair in force.
 
        The first answer applied is what settles the initial load. Marked on the
        next tick rather than here: the watcher that this answer's assignment
@@ -432,9 +456,9 @@ module.exports = {
       this.$store.dispatch('fetch_voices', { engine: this.form.engine, language: this.form.language })
         .then(function (data) {
           if (key !== self.voiceKey) return;
-          if (self.voices.indexOf(self.form.voice) !== -1) return;
+          if (self.form.voice && self.voiceKnown(self.form.voice)) return;
           var stored = self.$store.state.studio.voice;
-          if (self.voices.indexOf(stored) !== -1) self.form.voice = stored;
+          if (stored && self.voiceKnown(stored)) self.form.voice = stored;
           else self.form.voice = self.voices.indexOf(data['default']) !== -1 ? data['default'] : '';
         })
         .catch(function (err) {

@@ -157,6 +157,19 @@ Vue.prototype.$knownLanguage = function (code) {
   return LANGUAGES.some(function (lang) { return lang.code === code; });
 };
 
+/* Whether a voice value can stay on a voice control against the list in
+   force: '' (the engine default), a listed name, and, for an engine that
+   mixes, a spec whose every name is listed. The weights are left to the
+   server, which answers a bad one with a 400 naming it. */
+Vue.prototype.$knownVoice = function (value, voices, mix) {
+  if (!value) return true;
+  if (voices.indexOf(value) !== -1) return true;
+  if (!mix) return false;
+  return value.split('+').every(function (part) {
+    return voices.indexOf(part.replace(/\([^()]*\)\s*$/, '').trim()) !== -1;
+  });
+};
+
 /* Where the engine guides live; the models screen links a missing engine to
    its guide under this. */
 const DOCS_URL = 'https://github.com/wachawo/text-to-speech/blob/main/docs/';
@@ -430,24 +443,26 @@ const fetch_engines = function (context) {
    sample files off it. Answers arriving out of order cannot cross: each lands
    under its own pair, and a screen reads the pair it is on. A failure files
    an empty list under the pair, so a select that read the old list is not
-   left offering voices the server just refused, and rejects. */
+   left offering voices the server just refused, and rejects. `mix` is
+   whether the engine blends voices ("af_bella(2)+af_sky(1)"), false unless
+   the server says so. */
 const fetch_voices = function (context, payload) {
   var engine = (payload && payload.engine) || '';
   var language = (payload && payload.language) || '';
   var key = engine + '/' + language;
   var params = { engine: engine };
   if (language) params.language = language;
-  var file = function (voices, fallback) {
+  var file = function (voices, fallback, mix) {
     var voicesByKey = Object.assign({}, context.state.catalog.voices);
-    voicesByKey[key] = { voices: voices, 'default': fallback };
+    voicesByKey[key] = { voices: voices, 'default': fallback, mix: mix };
     context.state.catalog = Object.assign({}, context.state.catalog, { voices: voicesByKey });
   };
   return axios.get('/api/voices', { params: params }).then(function (resp) {
     var data = resp.data || {};
-    file(data.voices || [], data['default'] || '');
+    file(data.voices || [], data['default'] || '', data.mix === true);
     return data;
   }, function (err) {
-    file([], '');
+    file([], '', false);
     return Promise.reject(err);
   });
 };

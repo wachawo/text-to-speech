@@ -3,6 +3,21 @@
 ### [Unreleased]
 
 #### Added
+- `kokorotts` voice selection: the request `voice` picks the voice, ahead of
+  `KOKOROTTS_VOICE` and the language default. `GET /api/voices?engine=kokorotts&language=xx`
+  lists the voices of that language straight from the voices file, without
+  loading the model (English lists the American `a*` and British `b*` voices),
+  with `KOKOROTTS_VOICE` as the default when it is set;
+  a `b*` voice switches the phonemizer to `en-gb`; an unknown or malformed
+  voice is a 400 that names it, and a bad `KOKOROTTS_VOICE` is a server error
+  that names the variable.
+- `kokorotts` voice mixing: `name(weight)+name(weight)`, such as
+  `af_bella(2)+af_sky(1)`, blends up to four voices, each named once, with
+  positive weights (1 when left out) normalized to sum 1. It works in
+  `/api/tts`, `/api/history`, `/v1/audio/speech`, the Studio and
+  `KOKOROTTS_VOICE`. `/api/voices` reports `mix` for every engine, and the
+  Studio and the settings dialog turn their Voice select into a text field
+  with the voices as suggestions when it is true.
 - `X-Request-Id` on every response of `ttssrv`, error responses included; a
   well-formed id sent by the client is kept as the correlation id, so one
   request can be followed through nginx, the server log and the error body.
@@ -44,6 +59,9 @@
   `cp env.example .env` step and the CDI prerequisite for the GPU compose file.
 
 #### Changed
+- The `voice` field of `/api/tts`, `/api/history` and `/v1/audio/speech`
+  accepts up to 128 characters instead of 64, room for a four-voice kokorotts
+  mix; coquitts sample names keep their own 48-character rule.
 - `libs/cached_loader.py`: the double-checked cache fill that pipertts, coquitts,
   silerotts, kokorotts and barktts each spelled by hand (check, lock, check
   again, load, store) lives in one tested `load_cached()`; no behaviour change.
