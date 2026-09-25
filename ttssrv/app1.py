@@ -51,6 +51,7 @@ from libs.exceptions import (  # noqa: E402
     TTSException,
     ValidationError,
 )
+from libs.languages import normalize_language  # noqa: E402
 from libs.logjson import JsonFormatter  # noqa: E402
 from libs.models import collect_engine_rows  # noqa: E402
 from libs.sample_resolver import (  # noqa: E402
@@ -275,6 +276,17 @@ def release_slot(slot: int | None) -> None:
     """Return a token taken by acquire_slot to the pool (no-op for None)."""
     if slot is not None:
         ENGINE_POOL.put(slot)
+
+
+def resolve_request_language(requested: str | None) -> str:
+    """Return the request's language, or TTS_LANGUAGE when it names none, normalized.
+
+    A tag is lowercased and written with '-' ('pt_BR' -> 'pt-br'); a 2-character
+    code is only lowercased, as libs.api does before the engine call. The logs,
+    the strict-mode message and the history item then show the code the audio
+    was made with.
+    """
+    return normalize_language(requested or TTS_LANGUAGE_DEFAULT)
 
 
 def validate_selection(engine: str, language: str) -> None:
@@ -659,7 +671,7 @@ def tts_generate():
     data = parse_tts_payload()
     text = data["text"]
     engine = data.get("engine") or TTS_ENGINE_DEFAULT
-    language = data.get("language") or TTS_LANGUAGE_DEFAULT
+    language = resolve_request_language(data.get("language"))
     voice = data.get("voice")
 
     logger.info(
@@ -694,7 +706,7 @@ def history_create():
     data = HistoryCreateSchema().load(request.get_json(silent=True) or {})
     text = data["text"]
     engine = data.get("engine") or TTS_ENGINE_DEFAULT
-    language = data.get("language") or TTS_LANGUAGE_DEFAULT
+    language = resolve_request_language(data.get("language"))
     voice = data.get("voice")
     logger.info(f"[{get_req_id()}] History request: engine={engine} language={language} voice={voice} chars={len(text)}")
 
@@ -794,7 +806,7 @@ def openai_speech():
         raise OpenAIRequestError(f"Model '{data['model']}' is not an installed engine", param="model")
     text = data["input"]
     voice = map_voice_name(data["voice"])
-    language = data["language"] or TTS_LANGUAGE_DEFAULT
+    language = resolve_request_language(data["language"])
     response_format = data["response_format"]
     speed = data["speed"]
     logger.info(

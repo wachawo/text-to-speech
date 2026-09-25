@@ -15,7 +15,11 @@
   language part (`pt-br` is `pt`) instead of falling back to English.
   `/api/tts` with `stream=true` keeps the 2-character rule for the request's
   `language` and answers a tag there with a 400; a stream request without
-  `language` uses `TTS_LANGUAGE` as set, a tag included.
+  `language` uses `TTS_LANGUAGE` as set, a tag included. The server
+  normalizes the request's `language` (or `TTS_LANGUAGE` when there is none)
+  before it logs, checks or stores it, so a history item and a strict-mode
+  400 show the code the audio is made with (`pt_BR` is stored as `pt-br`,
+  `EN` as `en`).
 - `TTS_LANGUAGE_STRICT` (default `false`): when true, a language the engine
   does not list is a 400 that names the engine and the languages it has,
   checked before a pool slot is taken, on `/api/tts` without `stream`,

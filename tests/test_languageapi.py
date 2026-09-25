@@ -48,13 +48,16 @@ def installed(monkeypatch, app_module):
 # Language tags
 
 
-@pytest.mark.parametrize("language", ["zh-cn", "pt_BR", "es-419", "en-gb"])
-def test_tts_accepts_language_tag(client, monkeypatch, app_module, make_wav, language):
-    """A tag reaches synthesis as sent; libs.api normalizes it."""
+@pytest.mark.parametrize(
+    ("language", "expected"),
+    [("zh-cn", "zh-cn"), ("pt_BR", "pt-br"), ("es-419", "es-419"), ("EN-GB", "en-gb"), ("EN", "en")],
+)
+def test_tts_accepts_language_tag(client, monkeypatch, app_module, make_wav, language, expected):
+    """A tag reaches synthesis lowercased and written with '-'; a 2-character code is only lowercased."""
     calls = record_synthesis(monkeypatch, app_module, make_wav())
     resp = client.post("/api/tts", json={"text": "hi", "language": language})
     assert resp.status_code == 200
-    assert calls[-1]["language"] == language
+    assert calls[-1]["language"] == expected
 
 
 def test_tts_get_accepts_language_tag(client, monkeypatch, app_module, make_wav):
@@ -88,9 +91,9 @@ def test_stream_keeps_two_character_rule(client, monkeypatch, app_module, make_w
 
 
 def test_stream_uses_a_tag_set_as_the_default_language(client, monkeypatch, app_module, make_wav):
-    """The stream rule covers the request field only: TTS_LANGUAGE as a tag reaches the engine as set."""
+    """The stream rule covers the request field only: TTS_LANGUAGE as a tag reaches the engine normalized."""
     calls = record_synthesis(monkeypatch, app_module, make_wav())
-    monkeypatch.setattr(app_module, "TTS_LANGUAGE_DEFAULT", "zh-cn")
+    monkeypatch.setattr(app_module, "TTS_LANGUAGE_DEFAULT", "ZH_cn")
     resp = client.post("/api/tts", json={"text": "hi", "stream": True})
     assert resp.status_code == 200
     assert resp.data  # drain the stream so its pool slot and request context are released
@@ -117,6 +120,17 @@ def test_history_accepts_language_tag(client, history_dir, monkeypatch, app_modu
     assert resp.get_json()["language"] == "pt-br"
 
 
+def test_history_stores_normalized_language(client, history_dir, monkeypatch, app_module, make_wav):
+    """The history item keeps the code the audio was made with, not the raw spelling of the request."""
+    calls = record_synthesis(monkeypatch, app_module, make_wav())
+    resp = client.post("/api/history", json={"text": "hi", "language": "pt_BR"})
+    assert resp.status_code == 201
+    assert resp.get_json()["language"] == "pt-br"
+    assert calls[-1]["language"] == "pt-br"
+    listed = client.get("/api/history").get_json()
+    assert listed["items"][0]["language"] == "pt-br"
+
+
 def test_openai_speech_accepts_language_tag(client, installed, monkeypatch, app_module, make_wav):
     """/v1/audio/speech takes a tag in its `language` extension; `model` still names the engine."""
     calls = record_synthesis(monkeypatch, app_module, make_wav())
@@ -125,6 +139,16 @@ def test_openai_speech_accepts_language_tag(client, installed, monkeypatch, app_
     )
     assert resp.status_code == 200
     assert calls[-1]["engine"] == "kokorotts"
+    assert calls[-1]["language"] == "pt-br"
+
+
+def test_openai_speech_normalizes_language_tag(client, installed, monkeypatch, app_module, make_wav):
+    """/v1/audio/speech passes a tag on lowercased and written with '-'."""
+    calls = record_synthesis(monkeypatch, app_module, make_wav())
+    resp = client.post(
+        "/v1/audio/speech", json={"model": "kokorotts", "input": "hi", "language": "PT_br", "response_format": "wav"}
+    )
+    assert resp.status_code == 200
     assert calls[-1]["language"] == "pt-br"
 
 
@@ -179,6 +203,14 @@ def test_strict_does_not_apply_to_stream(client, strict, monkeypatch, app_module
     assert resp.status_code == 200
     assert resp.data  # drain the stream so its pool slot and request context are released
     assert calls[-1]["language"] == "ru"
+
+
+def test_strict_message_names_normalized_language(client, strict, monkeypatch, app_module, make_wav):
+    """The strict-mode 400 names the language as normalized, not as the request spelled it."""
+    record_synthesis(monkeypatch, app_module, make_wav())
+    resp = client.post("/api/tts", json={"text": "hi", "engine": "kokorotts", "language": "RU_ru"})
+    assert resp.status_code == 400
+    assert resp.get_json()["message"].startswith("Language 'ru-ru' is not supported by engine 'kokorotts'")
 
 
 def test_strict_rejects_history_request(client, strict, history_dir, monkeypatch, app_module, make_wav):
