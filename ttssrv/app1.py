@@ -75,6 +75,7 @@ from ttssrv.validators import (  # noqa: E402
     SpeechRequestSchema,
     TtsRequestSchema,
     VoiceUploadSchema,
+    format_validation_messages,
 )
 
 # Shell env > ./ttsgen.conf > ~/.config/ttsgen.conf > ./.env.local > ./.env, cwd only.
@@ -817,9 +818,10 @@ def handle_pool_busy(error):
 
 @app.errorhandler(MarshmallowValidationError)
 def handle_marshmallow_validation_error(error):
-    """Answer 400 when the request payload fails schema validation."""
+    """Answer 400 when the request payload fails schema validation, with the field messages as `message`."""
     logger.warning(f"[{get_req_id()}] Validation error: {error.messages}")
-    return jsonify({"error": "Bad Request", "request_id": get_req_id()}), 400
+    body = {"error": "Bad Request", "message": format_validation_messages(error.messages), "request_id": get_req_id()}
+    return jsonify(body), 400
 
 
 @app.errorhandler(ValidationError)

@@ -26,8 +26,9 @@ def test_tts_empty_text_400(client):
     resp = client.post("/api/tts", json={"text": ""})
     assert resp.status_code == 400
     body = resp.get_json()
-    assert set(body.keys()) == {"error", "request_id"}
+    assert set(body.keys()) == {"error", "message", "request_id"}
     assert body["error"] == "Bad Request"
+    assert body["message"].startswith("text: ")
 
 
 def test_tts_missing_text_400(client):
@@ -35,7 +36,8 @@ def test_tts_missing_text_400(client):
     resp = client.post("/api/tts", json={})
     assert resp.status_code == 400
     body = resp.get_json()
-    assert set(body.keys()) == {"error", "request_id"}
+    assert set(body.keys()) == {"error", "message", "request_id"}
+    assert body["message"] == "text: Missing data for required field."
 
 
 def test_tts_text_too_long_400(client):
@@ -43,7 +45,7 @@ def test_tts_text_too_long_400(client):
     resp = client.post("/api/tts", json={"text": "a" * 1_000_001})
     assert resp.status_code == 400
     body = resp.get_json()
-    assert set(body.keys()) == {"error", "request_id"}
+    assert set(body.keys()) == {"error", "message", "request_id"}
 
 
 def test_tts_long_text_under_limit_ok(client):
@@ -57,7 +59,8 @@ def test_tts_invalid_language_400(client):
     resp = client.post("/api/tts", json={"text": "hi", "language": "english"})
     assert resp.status_code == 400
     body = resp.get_json()
-    assert set(body.keys()) == {"error", "request_id"}
+    assert set(body.keys()) == {"error", "message", "request_id"}
+    assert body["message"].startswith("language: ")
 
 
 def test_tts_engine_not_available_503(client, monkeypatch, app_module):

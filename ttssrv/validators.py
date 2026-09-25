@@ -7,6 +7,27 @@ from marshmallow import EXCLUDE, Schema, fields, validate
 # Local imports
 from ttssrv.openai_compat import RESPONSE_FORMATS
 
+# Upper bound of the `message` built from schema errors, so a payload with many
+# bad fields cannot produce an unbounded error body.
+MAX_VALIDATION_MESSAGE_LENGTH = 1000
+
+
+def flatten_validation_messages(messages: object) -> str:
+    """Join the messages under one field (a string, a list or a nested dict) into one line."""
+    if isinstance(messages, dict):
+        return "; ".join(f"{key}: {flatten_validation_messages(value)}" for key, value in messages.items())
+    if isinstance(messages, list | tuple):
+        return " ".join(flatten_validation_messages(item) for item in messages)
+    return str(messages)
+
+
+def format_validation_messages(messages: dict | list) -> str:
+    """Render Marshmallow's `messages` as "field: msg msg; field2: msg", cut to MAX_VALIDATION_MESSAGE_LENGTH."""
+    text = flatten_validation_messages(messages)
+    if len(text) > MAX_VALIDATION_MESSAGE_LENGTH:
+        return text[: MAX_VALIDATION_MESSAGE_LENGTH - 3] + "..."
+    return text
+
 
 class TtsRequestSchema(Schema):
     """Request body / query string for /api/tts."""

@@ -2,6 +2,14 @@
 
 ### [Unreleased]
 
+#### Changed
+- A 400 for a request that fails schema validation now carries `message`
+  (`field: reason; field2: reason`, at most 1000 characters) next to `error`
+  and `request_id`, on every `/api/` route with a schema: `/api/tts`,
+  `POST /api/history`, `GET /api/history`, `POST /api/voices`,
+  `DELETE /api/voices/<name>` and `GET /api/voices/<name>/audio`. The other
+  400s already had it, and the web UI shows it next to the control.
+
 #### Fixed
 - `silerotts` failed to load for `uk` in a fresh process: the Ukrainian alias
   picked the `v3_ua` model but passed `en` as the torch.hub language, and

@@ -56,7 +56,7 @@ def test_create_validation_400(client, history_dir):
     for body in ({"text": ""}, {}, {"text": "hi", "language": "english"}, {"text": "hi", "stream": True}):
         resp = client.post("/api/history", json=body)
         assert resp.status_code == 400, body
-        assert set(resp.get_json().keys()) == {"error", "request_id"}
+        assert set(resp.get_json().keys()) == {"error", "message", "request_id"}
     assert not history_dir.exists()
 
 
