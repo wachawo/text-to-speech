@@ -14,7 +14,9 @@ from engines import (
     get_engine_default_model,
     get_engine_languages,
     get_engine_models,
+    get_engine_module_path,
     get_engine_voices,
+    list_engine_model_ids,
     list_engine_models,
 )
 
@@ -115,6 +117,36 @@ def test_list_engine_models_raises_where_get_engine_models_logs(monkeypatch, cap
     with caplog.at_level(logging.WARNING, logger="engines"):
         assert get_engine_models("fake") == []
     assert "list_models failed: PermissionError" in caplog.text
+
+
+def test_list_engine_models_leaves_out_ids_a_request_cannot_send(monkeypatch, caplog):
+    """A file named `my model.onnx` or `_x.onnx` would be refused by the request schema, so it is not listed."""
+    models = [
+        {"id": "my model.onnx", "languages": None, "installed": True},
+        {"id": "_x.onnx", "languages": None, "installed": True},
+        {"id": "kokoro-v1.0.onnx", "languages": None, "installed": True},
+    ]
+    use_fake_engine(monkeypatch, types.SimpleNamespace(list_models=lambda: models))
+    with caplog.at_level(logging.INFO, logger="engines"):
+        assert [model["id"] for model in list_engine_models("fake")] == ["kokoro-v1.0.onnx"]
+    assert "'my model.onnx' left out" in caplog.text
+
+
+def test_list_engine_model_ids_reads_the_ids_hook(monkeypatch):
+    """The optional list_model_ids() hook answers the ids alone; without it the helper answers None."""
+    use_fake_engine(monkeypatch, types.SimpleNamespace(list_model_ids=lambda: ["v3_en", "bad id"]))
+    assert list_engine_model_ids("fake") == ["v3_en"]
+    use_fake_engine(monkeypatch, fake_engine_with_hooks())
+    assert list_engine_model_ids("fake") is None
+
+
+def test_underscore_modules_are_not_engines(monkeypatch, tmp_path):
+    """Any engines/_*.py helper module is refused as an engine name, not only the package file."""
+    (tmp_path / "_helper.py").write_text("")
+    (tmp_path / "real.py").write_text("")
+    monkeypatch.setattr(engines_pkg, "__file__", str(tmp_path / "__init__.py"))
+    assert get_engine_module_path("_helper") is None
+    assert get_engine_module_path("real") == tmp_path / "real.py"
 
 
 @pytest.mark.parametrize("hook", ["list_models", "default_model", "list_languages"])

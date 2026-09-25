@@ -160,6 +160,10 @@ The named voice wins over the language. An id that is not an installed voice
 is a 400 that lists the installed ones; the id is looked up, never used as a
 path. The `voice` field is still ignored by this engine.
 
+At most 8 voices stay loaded at once (about 60 MB each for a `medium` voice,
+so about 500 MB at most); loading one more drops the voice loaded earliest,
+which the next request for it loads again (about 1.5 s on CPU).
+
 ## Troubleshooting
 
 ### `piper` not found after install

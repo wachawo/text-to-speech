@@ -275,6 +275,16 @@ def test_voices_with_malformed_model_is_refused_by_the_schema(client, kokoro_mod
     assert model not in caplog.text
 
 
+@pytest.mark.parametrize("engine", ["\n2026-01-01 [INFO] forged", "a" * 5000])
+def test_voices_with_malformed_engine_is_not_echoed(client, engine, caplog):
+    """An engine name that is not a module stem gets a short 400 that neither repeats nor logs the raw value."""
+    caplog.set_level("WARNING")
+    resp = client.get("/api/voices", query_string={"engine": engine, "model": "x"})
+    assert resp.status_code == 400
+    assert resp.get_json()["message"] == "Engine not found"
+    assert engine not in caplog.text
+
+
 def test_voices_with_model_lists_that_models_voices(client, kokoro_models, monkeypatch, app_module):
     """A listed model is passed on to the voices listing and echoed back."""
     calls = []

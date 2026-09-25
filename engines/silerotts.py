@@ -121,6 +121,11 @@ def default_model(language: str | None = None) -> str | None:
     return LANGUAGE_DEFAULT_MODELS.get(primary_language(language), LANGUAGE_DEFAULT_MODELS["en"])
 
 
+def list_model_ids() -> list[str]:
+    """Return the ids a request may name, the MODEL_CATALOG keys, without the walk list_models() makes for `installed`."""
+    return list(MODEL_CATALOG)
+
+
 def list_downloaded_files() -> set[str]:
     """Return the names of the `*.pt` files under the models directory (one walk, no torch)."""
     names: set[str] = set()

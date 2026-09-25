@@ -187,6 +187,23 @@ def test_generate_raises_custom_error_when_sample_missing(engine, monkeypatch, t
     assert excinfo.value.status == 422
 
 
+def test_single_language_model_needs_no_voice_sample(engine, monkeypatch, tmp_path):
+    """A listed single-speaker model never clones, so a missing COQUITTS_SAMPLE or `voice` file does not stop it."""
+    monkeypatch.setenv("COQUITTS_SAMPLE", str(tmp_path / "no_such_sample.wav"))
+    audio = engine.generate("Hallo", {"language": "de", "model": "tts_models/de/thorsten/vits", "voice": "nobody"})
+    assert audio == b"RIFFFAKECOQUI"
+    assert FakeTTS.instances[-1].calls[-1]["speaker"] is None
+
+
+def test_named_xtts_model_still_needs_the_voice_sample(engine, monkeypatch, tmp_path):
+    """Naming xtts as `model` checks the sample as the default model does."""
+    monkeypatch.setenv("COQUITTS_MODEL", "tts_models/de/thorsten/vits")
+    monkeypatch.setenv("COQUITTS_SAMPLE", str(tmp_path / "no_such_sample.wav"))
+    with pytest.raises(CustomError) as excinfo:
+        engine.generate("hi", {"model": "tts_models/multilingual/multi-dataset/xtts_v2"})
+    assert excinfo.value.payload["error"] == "voice_sample_missing"
+
+
 # generate — happy path & language wiring
 
 
@@ -352,11 +369,23 @@ def test_list_models_leaves_out_models_generate_cannot_drive(engine, monkeypatch
 
 
 def test_get_tts_keeps_at_most_the_cache_size_models(engine, monkeypatch):
-    """With TTS_MODEL_CACHE_SIZE=1 loading another model drops the loaded one first."""
+    """With TTS_MODEL_CACHE_SIZE=1 loading another model drops the loaded one once the new one has loaded."""
     monkeypatch.setenv("TTS_MODEL_CACHE_SIZE", "1")
     engine.get_tts("tts_models/multilingual/multi-dataset/xtts_v2", "cpu")
     engine.get_tts("tts_models/de/thorsten/vits", "cpu")
     assert list(engine.TTS_CACHE) == [("tts_models/de/thorsten/vits", "cpu")]
+
+
+def test_list_models_declares_no_language_for_a_three_letter_model(engine, monkeypatch, tmp_path):
+    """A cached `ewe` model is listed with languages None, so a request naming it passes the strict check."""
+    from libs.tools import validate_engine_language
+
+    cache = tmp_path / "cache" / "coquitts" / "tts"
+    (cache / "tts_models--ewe--openbible--vits").mkdir(parents=True)
+    monkeypatch.delenv("COQUITTS_MODEL", raising=False)
+    models = {model["id"]: model for model in engine.list_models()}
+    assert models["tts_models/ewe/openbible/vits"]["languages"] is None
+    validate_engine_language("coquitts", "en", "tts_models/ewe/openbible/vits")
 
 
 def test_list_models_marks_an_installed_default(engine, monkeypatch, tmp_path):

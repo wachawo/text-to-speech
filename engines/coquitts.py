@@ -225,37 +225,13 @@ def get_tts(model_name: str, device: str):
     return load_cached(TTS_CACHE, TTS_CACHE_LOCK, (model_name, device), load_tts, get_model_cache_size())
 
 
-def generate(text: str, config: dict) -> bytes:
-    """Synthesize text by cloning the configured voice sample.
-
-    The model is loaded once per (model, device) pair and kept in TTS_CACHE;
-    the first call downloads the checkpoint if needed and takes ~15s.
-
-    Args:
-        text: Text to synthesize.
-        config: Configuration dict with 'language', optional 'voice' (a bare
-            sample name under the samples directory, see
-            libs.sample_resolver.sample_path_for_voice) and optional 'model'
-            (a Coqui model name from list_models()). Without 'voice' the
-            COQUITTS_SAMPLE recording is cloned; without 'model' COQUITTS_MODEL
-            is used.
-
-    Returns:
-        Audio bytes in WAV format (22050 Hz by default).
+def resolve_voice_sample(voice: str | None) -> str:
+    """Return the WAV a multilingual model clones: the `voice` sample, else COQUITTS_SAMPLE.
 
     Raises:
-        EngineNotAvailableError: Coqui TTS is not installed.
-        ValidationError: Text exceeds MAX_TEXT_LENGTH or the voice name is invalid.
-        CustomError: The reference voice sample WAV is missing.
-        TTSException: Model lookup or synthesis failed.
+        ValidationError: The voice name is invalid.
+        CustomError: The sample WAV is missing (voice_sample_missing, 422).
     """
-    if not is_available():
-        raise EngineNotAvailableError(
-            "Coqui TTS not available. Install with: pip install TTS\nSee docs/COQUITTS.md for setup instructions."
-        )
-    if len(text) > MAX_TEXT_LENGTH:
-        raise ValidationError(f"Text too long for coquitts: {len(text)} > {MAX_TEXT_LENGTH}")
-    voice = config.get("voice")
     if voice:
         sample_wav = sample_path_for_voice(voice)
         if not os.path.exists(sample_wav):
@@ -286,8 +262,44 @@ def generate(text: str, config: dict) -> bytes:
                     "path": sample_wav,
                 }
             )
+    return sample_wav
+
+
+def generate(text: str, config: dict) -> bytes:
+    """Synthesize text by cloning the configured voice sample.
+
+    The model is loaded once per (model, device) pair and kept in TTS_CACHE;
+    the first call downloads the checkpoint if needed and takes ~15s.
+
+    Args:
+        text: Text to synthesize.
+        config: Configuration dict with 'language', optional 'voice' (a bare
+            sample name under the samples directory, see
+            libs.sample_resolver.sample_path_for_voice) and optional 'model'
+            (a Coqui model name from list_models()). Without 'voice' the
+            COQUITTS_SAMPLE recording is cloned; without 'model' COQUITTS_MODEL
+            is used. Only a multilingual (xtts) model clones a sample: a
+            single-language model ignores 'voice' and needs no sample on disk.
+
+    Returns:
+        Audio bytes in WAV format (22050 Hz by default).
+
+    Raises:
+        EngineNotAvailableError: Coqui TTS is not installed.
+        ValidationError: Text exceeds MAX_TEXT_LENGTH or the voice name is invalid.
+        CustomError: The reference voice sample WAV of a multilingual model is missing.
+        TTSException: Model lookup or synthesis failed.
+    """
+    if not is_available():
+        raise EngineNotAvailableError(
+            "Coqui TTS not available. Install with: pip install TTS\nSee docs/COQUITTS.md for setup instructions."
+        )
+    if len(text) > MAX_TEXT_LENGTH:
+        raise ValidationError(f"Text too long for coquitts: {len(text)} > {MAX_TEXT_LENGTH}")
+    model_name = config.get("model") or default_model()
+    # Only a multilingual (xtts) model clones a voice; the others never read the sample.
+    sample_wav = resolve_voice_sample(config.get("voice")) if "multilingual" in model_name else None
     try:
-        model_name = config.get("model") or default_model()
         language = config.get("language", "en")
         if "xtts" in model_name:
             language = xtts_language(language)

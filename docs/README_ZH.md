@@ -215,7 +215,7 @@ audio.write_to_file("hola.mp3")
 | GET | `/v1/models` | 兼容 OpenAI 的模型列表。 |
 | GET | `/v1/audio/voices?model=` | 某个引擎的声音。 |
 
-`language` 是两位字母的代码（`en`、`ru`），或带地区或书写系统的标签（`zh-cn`、`pt_BR`、`en-gb`、`es-419`），标签会转为小写并用 `-` 连接。每个引擎会把标签映射到自己支持的语言：gtts 使用它自己的写法（`zh-CN`；它没有加拿大法语和欧洲葡萄牙语，所以 `fr-ca` 和 `pt-pt` 即 `fr` 和 `pt`），kokorotts 用英式音素转换器朗读 `en-gb`，xtts 对中文使用 `zh-cn`，其他引擎使用语言部分（`pt-br` 即 `pt`）。引擎不认识的语言会用该引擎的默认语言朗读，通常是英语（gtts 则会直接失败）；设置 `TTS_LANGUAGE_STRICT=true` 后，这类请求返回 400，并列出该引擎支持的语言。严格检查适用于不带 `stream` 的 `/api/tts`、`/api/history` 和 `/v1/audio/speech`，以及所有列出自身语言的引擎，即除 pyttsx3 和使用 xtts 以外多语言模型或三字母语言代码（`ewe`）模型的 coquitts 之外的所有引擎。
+`language` 是两位字母的代码（`en`、`ru`），或带地区或书写系统的标签（`zh-cn`、`pt_BR`、`en-gb`、`es-419`），标签会转为小写并用 `-` 连接。每个引擎会把标签映射到自己支持的语言：gtts 使用它自己的写法（`zh-CN`；它没有加拿大法语和欧洲葡萄牙语，所以 `fr-ca` 和 `pt-pt` 即 `fr` 和 `pt`），kokorotts 用英式音素转换器朗读 `en-gb`，xtts 对中文使用 `zh-cn`，其他引擎使用语言部分（`pt-br` 即 `pt`）。引擎不认识的语言会用该引擎的默认语言朗读，通常是英语（gtts 则会直接失败）；设置 `TTS_LANGUAGE_STRICT=true` 后，这类请求返回 400，并列出该引擎支持的语言。严格检查适用于不带 `stream` 的 `/api/tts`、`/api/history` 和 `/v1/audio/speech`，以及所有列出自身语言的引擎，即除 pyttsx3、未安装任何语音的 pipertts 和使用 xtts 以外多语言模型或三字母语言代码（`ewe`）模型的 coquitts 之外的所有引擎。
 
 `model` 在 `/api/tts` 和 `/api/history` 中选择引擎内的模型：Piper 声音（`en_GB-alan-low`）、Kokoro 模型文件（`kokoro-v1.0.int8.onnx`）、Silero 模型（`v3_1_ru`）或 Coqui 模型名称（`tts_models/de/thorsten/vits`）。`GET /api/engines/<engine>` 在 `models` 中列出它们，每个模型带有 `languages`、`installed` 和 `default_for`（请求未指定模型时使用该模型的语言），同时给出引擎的 `languages`、`output_format`、`max_text_length` 以及引擎是否有声音列表；该接口不加载任何模型，未知引擎返回 404。不带 `model` 时，引擎按原来的方式选择；引擎未列出的 id 返回 400，并列出可用的 id；`model` 与 `stream=true` 同时使用也返回 400，因为流式输出始终使用引擎的默认模型。gtts、pyttsx3 和 barktts 没有模型。未指定模型时，pipertts 从已安装的声音中选择：带地区的标签（`en-gb`）使用该地区的声音，内置表之外的语言使用该语言已安装的声音而不是英语声音；pipertts 的语言列表就是已安装声音的语言。
 
@@ -248,7 +248,7 @@ xdg-open https://localhost:8443     # TTS_WWW_TLS_PORT；自签名证书，接�
 | `TTS_ENGINE` | `gtts` | 请求未指定引擎时使用的引擎。 |
 | `TTS_LANGUAGE` | `en` | 请求未指定语言时使用的语言。 |
 | `TTS_LANGUAGE_STRICT` | `false` | 为 `true` 时，对引擎未列出的语言返回 400，而不是让引擎回退到默认语言。 |
-| `TTS_MODEL_CACHE_SIZE` | `2` | coquitts 和 kokorotts 同时保持加载的模型数；请求再多一个模型时会先释放最早加载的模型。 |
+| `TTS_MODEL_CACHE_SIZE` | `2` | coquitts 和 kokorotts 同时保持加载的模型数；请求再多一个模型时会释放最早加载的模型。 |
 | `TTS_POOL_SIZE` | `1` | 所有引擎合计允许同时进行的合成调用数；`0` 取消上限和预热。 |
 | `TTS_QUEUE_SIZE` | `8` | 允许等待空闲槽位的合成请求数；超出的请求会立即收到 503。 |
 | `TTS_HISTORY_MAX` | `200` | 历史记录中保留的条目数；保存新条目时会删除最旧的。 |

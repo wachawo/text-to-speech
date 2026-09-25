@@ -224,6 +224,29 @@ def test_validate_model_unknown_engine(engine):
         validate_model(engine, "x")
 
 
+@pytest.mark.parametrize(
+    "engine,message",
+    [
+        ("no_such_engine", "Engine 'no_such_engine' not found"),
+        ("x\nforged log line", "Engine not found"),
+        ("a" * 5000, "Engine not found"),
+    ],
+)
+def test_validate_model_echoes_only_a_well_formed_engine_name(engine, message):
+    """A name that could forge a log line or blow up the error body is not repeated in the message."""
+    with pytest.raises(ValidationError) as exc:
+        validate_model(engine, "x")
+    assert str(exc.value) == message
+
+
+def test_validate_model_uses_the_ids_hook_without_listing_models(monkeypatch):
+    """silerotts answers the ids from its catalogue, so the check never walks the models directory."""
+    monkeypatch.setattr(tools_mod, "list_engine_models", lambda engine: pytest.fail("no full listing expected"))
+    assert validate_model("silerotts", "v3_en") == "v3_en"
+    with pytest.raises(ValidationError, match="Unknown model 'v9_xx' for engine 'silerotts'"):
+        validate_model("silerotts", "v9_xx")
+
+
 # validate_engine — exercises real engines/__init__ logic against tests/stubs/gtts
 
 

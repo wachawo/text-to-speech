@@ -55,6 +55,11 @@ except ImportError:
 # dwarfs the synthesis itself (issue #11). Safe to share across requests.
 VOICE_CACHE: dict = {}
 VOICE_CACHE_LOCK = threading.Lock()
+# Voices kept loaded at once. A request may name any installed voice, so the
+# cache is bounded; 8 is what the 8-language table could load before voices
+# were selectable (about 60 MB each for a medium voice). The voice loaded
+# earliest is dropped when one more loads.
+VOICE_CACHE_SIZE = 8
 
 
 def get_voice(voice_path: str):
@@ -64,9 +69,10 @@ def get_voice(voice_path: str):
     (e.g. `./voices/en.onnx`) and an absolute path that resolve to the
     same file don't load the same ONNX twice. Double-checked locking
     so two concurrent first-time requests don't both pay the load cost.
+    At most VOICE_CACHE_SIZE voices stay loaded.
     """
     key = os.path.abspath(os.path.expanduser(voice_path))
-    return load_cached(VOICE_CACHE, VOICE_CACHE_LOCK, key, lambda: PiperVoice.load(key))
+    return load_cached(VOICE_CACHE, VOICE_CACHE_LOCK, key, lambda: PiperVoice.load(key), VOICE_CACHE_SIZE)
 
 
 def is_available() -> bool:
@@ -277,9 +283,10 @@ def list_models() -> list[dict]:
 def list_languages(model: str | None = None) -> list[str] | None:
     """Return the languages of the installed voices (their families), or of one voice when `model` is given.
 
-    A language without an installed voice is spoken with the English voice, as
-    before; None for a `model` that is not installed or whose language is not
-    known. None as well when no installed voice has a known language (none is
+    A language without an installed voice behaves as before: one outside the
+    LEGACY_VOICES table is spoken with the English voice, and a table language
+    whose voice is missing gets its download instructions. None for a `model`
+    that is not installed or whose language is not known. None as well when no installed voice has a known language (none is
     installed yet): the engine then declares nothing, so TTS_LANGUAGE_STRICT
     lets the request through to generate(), which answers with the download
     instructions of the missing voice.

@@ -151,7 +151,7 @@ and paired with the voices file next to it.
 
 Every model a request loads stays in memory, up to `TTS_MODEL_CACHE_SIZE`
 models (default `2`, about 300 MB each for the full model); loading one more
-first drops the model loaded earliest.
+drops the model loaded earliest once the new one has loaded.
 
 ## Supported languages and default voices
 

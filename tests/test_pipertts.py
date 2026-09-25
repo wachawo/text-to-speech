@@ -590,6 +590,17 @@ def test_generate_uses_the_model_from_config(engine, voices_dir):
     assert list(engine.VOICE_CACHE) == [str(voices_dir / "en_GB-alan-low.onnx")]
 
 
+def test_voice_cache_is_bounded(engine, voices_dir, monkeypatch):
+    """Walking every installed voice keeps at most VOICE_CACHE_SIZE of them loaded, the latest ones."""
+    stems = ["en_US-lessac-medium", "en_GB-alan-low", "de_DE-thorsten-medium"]
+    install_voices(voices_dir, *stems)
+    monkeypatch.setattr(engine, "VOICE_CACHE_SIZE", 2)
+    engine.VOICE_CACHE.clear()
+    for stem in stems:
+        engine.generate("hi", {"language": "en", "model": stem})
+    assert list(engine.VOICE_CACHE) == [str(voices_dir / f"{stem}.onnx") for stem in stems[1:]]
+
+
 def test_generate_unknown_model_is_a_validation_error(engine, voices_dir):
     """An unknown model stays a ValidationError (a 400), not a wrapped TTSException."""
     with pytest.raises(ValidationError, match="Unknown pipertts model 'en_GB-alan-low'"):

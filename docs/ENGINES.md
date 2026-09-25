@@ -161,7 +161,10 @@ the engine is available. The server uses it for `TTS_LANGUAGE_STRICT`: a
 language that is not listed, neither as a whole nor by its primary subtag
 (`en` covers `en-gb`), is refused with a 400. An engine without the hook, or
 one that returns None (pyttsx3 has no hook; coquitts returns None for a
-multilingual model other than xtts), accepts every code, and a hook that
+multilingual model other than xtts or a model whose language code has three
+letters, pipertts with no voice installed), accepts every code. List only
+codes a request can carry (`libs.languages.is_language_code`): a 3-letter
+code such as `yue` would refuse every request in strict mode, and a hook that
 raises is logged and treated as None.
 
 ### 4. Optional discovery hooks
@@ -177,18 +180,28 @@ def list_models() -> list[dict]:
 def default_model(language: str | None = None) -> str | None:
     """Return the model a request without `model` uses for `language` (None: depends on the language / no models)."""
 
+def list_model_ids() -> list[str]:
+    """Return the ids list_models() lists, without the work `installed` needs (optional)."""
+
 OUTPUT_FORMAT = "mp3"  # module constant; missing means "wav" (only gtts sets it)
 ```
 
 - The same rule as `list_languages()`: file names, a small JSON config and
   constants only. A hook never calls the engine's loader (`get_tts`,
   `get_kokoro`, `get_voice`, `load_model`, `torch.hub.load`,
-  `pyttsx3.init`), and a hook that raises is logged as a warning and gives
-  `[]` or None.
+  `pyttsx3.init`). For discovery (`GET /api/engines/<engine>`) a hook that
+  raises is logged as a warning and gives `[]` or None; for a request that
+  names a model, a `list_models()` that raises is a 500 (`TTSException`),
+  since the server, not the client, is at fault.
 - `id` is what a request sends as `model`. `libs.tools.validate_model` accepts
   only an id `list_models()` returns, so an id never reaches the filesystem
   unless the engine itself looks it up; list only models the engine can use
-  without downloading an arbitrary one.
+  without downloading an arbitrary one. An id the request schema refuses
+  (`libs.model_ids.MODEL_ID_REGEX`: a space, a leading `_`) is dropped from
+  the listing with a line in the log.
+- `list_model_ids()` is for an engine whose `list_models()` does real work
+  for `installed` (silerotts walks the torch hub directory): the request
+  check then compares against the ids alone.
 - `generate()` reads `config.get("model")`; None means the behaviour the
   engine had before models were selectable (environment or language).
 - An engine with both `list_models()` and `list_voices()` takes

@@ -6,17 +6,12 @@ from marshmallow import EXCLUDE, Schema, ValidationError, fields, validate, vali
 
 # Local imports
 from libs.languages import LANGUAGE_CODE_ERROR, is_language_code
+from libs.model_ids import MODEL_ID_REGEX
 from ttssrv.openai_compat import RESPONSE_FORMATS
 
 # Upper bound of the `message` built from schema errors, so a payload with many
 # bad fields cannot produce an unbounded error body.
 MAX_VALIDATION_MESSAGE_LENGTH = 1000
-
-# What a model id may look like before it is looked up among the engine's
-# models: a Coqui name (tts_models/de/thorsten/vits), a Piper voice stem
-# (en_GB-alan-low), a Kokoro file name (kokoro-v1.0.int8.onnx) or a Silero id
-# (v3_1_ru). An empty string is allowed and means the engine default.
-MODEL_ID_REGEX = r"^(?:[A-Za-z0-9][A-Za-z0-9._/+-]{0,127})?\Z"
 
 
 def validate_language_field(value: str) -> None:

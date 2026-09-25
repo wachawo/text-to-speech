@@ -100,6 +100,7 @@ def test_two_keys_load_independently():
         """Build a loader that records which key it served."""
 
         def loader():
+            """Record the key as loaded and return a value for it."""
             loads.append(key)
             return f"value-{key}"
 
@@ -132,8 +133,8 @@ def test_hit_does_not_take_the_lock():
     assert len(loads) == 1
 
 
-def test_max_entries_drops_the_oldest_before_loading():
-    """A miss on a full cache drops the oldest entry before the load, so two models are never held over the bound."""
+def test_max_entries_drops_the_oldest_after_loading():
+    """A miss on a full cache drops the oldest entry once the new one has loaded, so the bound holds afterwards."""
     cache: dict = {}
     lock = threading.Lock()
     sizes_at_load = []
@@ -142,6 +143,7 @@ def test_max_entries_drops_the_oldest_before_loading():
         """Build a loader that records the cache size it saw."""
 
         def loader():
+            """Record the cache size seen by the load and return a value for the key."""
             sizes_at_load.append(len(cache))
             return f"value-{key}"
 
@@ -150,9 +152,24 @@ def test_max_entries_drops_the_oldest_before_loading():
     for key in ("a", "b", "c"):
         load_cached(cache, lock, key, loader_for(key), max_entries=2)
     assert list(cache) == ["b", "c"]
-    assert sizes_at_load == [0, 1, 1]
+    assert sizes_at_load == [0, 1, 2]
     assert load_cached(cache, lock, "c", loader_for("c"), max_entries=2) == "value-c"
     assert list(cache) == ["b", "c"]
+
+
+def test_failed_load_keeps_the_existing_entries():
+    """A loader that raises on a full cache evicts nothing, so the working model stays loaded."""
+    cache: dict = {}
+    lock = threading.Lock()
+
+    def broken_loader():
+        """Fail the way a corrupt model file does."""
+        raise RuntimeError("corrupt model")
+
+    load_cached(cache, lock, "a", lambda: "value-a", max_entries=1)
+    with pytest.raises(RuntimeError, match="corrupt model"):
+        load_cached(cache, lock, "b", broken_loader, max_entries=1)
+    assert cache == {"a": "value-a"}
 
 
 def test_max_entries_none_keeps_every_entry():

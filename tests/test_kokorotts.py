@@ -441,6 +441,15 @@ def test_list_models_lists_onnx_files_and_the_default(engine, kokoro_dir, monkey
     assert engine.KOKORO_CACHE == {}
 
 
+def test_list_models_finds_a_default_with_a_directory_part(engine, kokoro_dir, monkeypatch):
+    """KOKOROTTS_MODEL=v1/kokoro-v1.0.onnx is installed when that file exists below the models directory."""
+    (kokoro_dir / "v1").mkdir()
+    (kokoro_dir / "v1" / "kokoro-v1.0.onnx").write_bytes(b"x")
+    monkeypatch.setenv("KOKOROTTS_MODEL", "v1/kokoro-v1.0.onnx")
+    models = {model["id"]: model for model in engine.list_models()}
+    assert models["v1/kokoro-v1.0.onnx"]["installed"] is True
+
+
 def test_default_model_is_the_configured_model(engine, kokoro_dir, monkeypatch):
     """default_model() is KOKOROTTS_MODEL for any language, the v1.0 file without it."""
     assert engine.default_model() == "kokoro-v1.0.onnx"

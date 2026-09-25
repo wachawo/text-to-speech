@@ -62,10 +62,12 @@ def load_cached(cache: dict, lock: threading.Lock, key: Hashable, loader: Callab
     receive the same object. A loader that raises leaves the key absent, so
     the next call retries, and its exception propagates unchanged.
 
-    With `max_entries`, a miss on a full cache first drops the oldest loaded
-    entries, before the load, so the old and the new model are not held
-    together. A caller still using an evicted object keeps it until it is
-    done; it is only no longer shared.
+    With `max_entries`, a miss on a full cache drops the oldest loaded
+    entries once the new object has loaded, so a model that fails to load
+    (a broken download, a corrupt file) drops nothing, and hits keep being
+    served from the cache while the load runs. The old and the new model are
+    held together for the length of the load. A caller still using an
+    evicted object keeps it until it is done; it is only no longer shared.
 
     Args:
         cache: Module-level dict shared by every call for one engine.
@@ -84,9 +86,9 @@ def load_cached(cache: dict, lock: threading.Lock, key: Hashable, loader: Callab
     with lock:
         if key in cache:
             return cache[key]
+        value = loader()
         if max_entries is not None:
             evict_oldest_entries(cache, max_entries - 1)
-        value = loader()
         cache[key] = value
         return value
 

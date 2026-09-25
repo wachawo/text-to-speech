@@ -13,11 +13,13 @@ from typing import Any, cast
 
 # Local imports
 from engines import (
+    ENGINE_NAME_REGEX,
     get_engine_function,
     get_engine_languages,
     get_engine_module_path,
     get_supported_engines,
     is_engine_available,
+    list_engine_model_ids,
     list_engine_models,
 )
 
@@ -151,9 +153,10 @@ def validate_engine_language(engine: str, language: str, model: str | None = Non
 def validate_model(engine: str, model: str | None) -> str | None:
     """Return a model the engine lists, or None for the engine default.
 
-    The id is only compared with the ids the engine's `list_models()` hook
-    returns; it is never used as a path, so a crafted value cannot reach the
-    filesystem, and the messages name no path.
+    The id is only compared with the ids the engine lists (its optional
+    `list_model_ids()` hook, else `list_models()`); it is never used as a
+    path, so a crafted value cannot reach the filesystem, and the messages
+    name no path.
 
     Args:
         engine: Engine name.
@@ -169,14 +172,19 @@ def validate_model(engine: str, model: str | None) -> str | None:
     if model is None or model == "":
         return None
     if not get_engine_module_path(engine):
-        raise ValidationError(f"Engine '{engine}' not found")
+        # The name comes from a query string on /api/voices; echo it only when
+        # it is a well-formed engine name, never a forged log line or a long URL.
+        if isinstance(engine, str) and ENGINE_NAME_REGEX.fullmatch(engine):
+            raise ValidationError(f"Engine '{engine}' not found")
+        raise ValidationError("Engine not found")
     try:
-        models = list_engine_models(engine)
+        model_ids = list_engine_model_ids(engine)
+        if model_ids is None:
+            model_ids = [str(item.get("id")) for item in list_engine_models(engine)]
     except Exception as exc:
         raise TTSException(f"Engine '{engine}' could not list its models: {type(exc).__name__}: {str(exc)}") from exc
-    if not models:
+    if not model_ids:
         raise ValidationError(f"Engine '{engine}' has no selectable models")
-    model_ids = [str(item.get("id")) for item in models]
     if model in model_ids:
         return model
     listed = ", ".join(model_ids[:MAX_LISTED_MODELS])

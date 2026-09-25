@@ -188,15 +188,19 @@ def list_models() -> list[dict]:
     """Describe the Kokoro model files a request may name: the `*.onnx` files in the models directory.
 
     KOKOROTTS_MODEL is listed even when its file is missing (`installed:
-    false`), so a client sees which file the installer would fetch. Only a
-    directory listing, no ONNX session.
+    false`), so a client sees which file the installer would fetch; with a
+    directory part (`v1/kokoro-v1.0.onnx`) it is looked up at that path. Only
+    a directory listing, no ONNX session.
     """
     models_dir = get_models_directory()
     installed = set()
     if os.path.isdir(models_dir):
         installed = {name for name in os.listdir(models_dir) if name.endswith(".onnx")}
+    default_name = default_model()
+    if os.path.isfile(os.path.join(models_dir, default_name)):
+        installed.add(default_name)
     languages = list_languages()
-    names = sorted(installed | {default_model()})
+    names = sorted(installed | {default_name})
     return [{"id": name, "languages": languages, "installed": name in installed} for name in names]
 
 

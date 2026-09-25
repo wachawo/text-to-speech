@@ -16,6 +16,9 @@ from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 
+# Local imports
+from libs.model_ids import is_model_id
+
 logger = logging.getLogger(__name__)
 
 # Signature every engine module's `generate` must satisfy.
@@ -254,7 +257,39 @@ def list_engine_models(engine_name: str) -> list[dict]:
     module = get_engine_module(engine_name)
     if module is None or not hasattr(module, "list_models"):
         return []
-    return [dict(item) for item in module.list_models()]
+    return filter_requestable_models(engine_name, [dict(item) for item in module.list_models()])
+
+
+def filter_requestable_models(engine_name: str, models: list[dict]) -> list[dict]:
+    """Keep the models whose id a request may send (libs.model_ids.MODEL_ID_REGEX), logging each one left out.
+
+    A file such as `my model.onnx` or `_x.onnx` is on disk, but the request
+    schema refuses its id, so listing it would advertise a model no request can
+    name.
+    """
+    requestable = []
+    for item in models:
+        if is_model_id(item.get("id")):
+            requestable.append(item)
+        else:
+            logger.info(f"Engine {engine_name} model {str(item.get('id'))[:128]!r} left out: not a valid model id")
+    return requestable
+
+
+def list_engine_model_ids(engine_name: str) -> list[str] | None:
+    """Return the ids from the engine's optional `list_model_ids()` hook, or None when it has none.
+
+    The hook answers the ids alone, without the `installed` state that
+    `list_models()` may need a directory walk for (silerotts), so checking a
+    requested model stays cheap. Ids a request cannot send are left out.
+
+    Raises:
+        Exception: Whatever the engine import or the hook raised.
+    """
+    module = get_engine_module(engine_name)
+    if module is None or not hasattr(module, "list_model_ids"):
+        return None
+    return [str(model_id) for model_id in module.list_model_ids() if is_model_id(model_id)]
 
 
 def get_engine_models(engine_name: str) -> list[dict]:

@@ -435,6 +435,13 @@ def test_list_models_describes_the_catalog_without_hub(engine, monkeypatch, tmp_
     assert models["v3_en"] == {"id": "v3_en", "languages": ["en"], "installed": False}
 
 
+def test_list_model_ids_matches_list_models_without_a_walk(engine, monkeypatch):
+    """The ids hook answers the catalogue ids that list_models() lists, without walking the models directory."""
+    listed = [model["id"] for model in engine.list_models()]
+    monkeypatch.setattr(engine.os, "walk", lambda *args, **kwargs: pytest.fail("no walk expected"))
+    assert engine.list_model_ids() == listed
+
+
 def test_list_languages_of_a_model(engine):
     """list_languages(model) gives that model's languages, None for a model outside the catalog."""
     assert engine.list_languages("v3_1_ru") == ["ru"]

@@ -27,8 +27,9 @@
   500 rather than a 404. `GET /api/engines` keeps its response as it was.
 - `GET /api/voices?model=`: lists the voices of that model (a 400 for a model
   the engine does not list, and for an id that breaks the `/api/tts` id rule,
-  which is then neither echoed nor logged); the response gains `model` (null
-  without one).
+  which is then neither echoed nor logged). With `model`, an `engine` that is
+  not an engine module name is a 400 `Engine not found` that does not repeat
+  the value; the response gains `model` (null without one).
 - Language tags: `language` takes a tag with a region or script subtag
   (`zh-cn`, `pt_BR`, `en-gb`, `es-419`) as well as a 2-character code, in
   `/api/tts`, `/api/history`, `/v1/audio/speech`, `ttsgen` and `libs.api`.
@@ -69,16 +70,25 @@
   by its file stem (`en_GB-alan-low`). gtts sets `OUTPUT_FORMAT = "mp3"`.
   coquitts leaves out cached models its `generate()` cannot drive: a
   multilingual model other than xtts (your_tts) and a multi-speaker model
-  (vctk, told by its `config.json`); `COQUITTS_MODEL` is always listed.
+  (vctk, told by its `config.json`); `COQUITTS_MODEL` is always listed. A
+  single-language coquitts model needs no voice sample: only xtts clones one,
+  so the others ignore `voice` and work with no `COQUITTS_SAMPLE` on disk.
   kokorotts serves a `KOKOROTTS_MODEL` with a directory part when a client
-  names it back.
+  names it back, and lists it as installed when that file exists. A model
+  whose id the request schema refuses (a file named `my model.onnx` or
+  `_x.onnx`) is left out of every listing, with a line in the log, so no
+  model is advertised that a request cannot name. An optional
+  `list_model_ids()` hook answers the ids alone for the request check;
+  silerotts uses it, so a request with `model` no longer walks the torch hub
+  directory.
 - `TTS_MODEL_CACHE_SIZE` (default `2`): the models coquitts and kokorotts
   keep loaded at once. Since a request can name any installed model, loading
-  one more than that first drops the model loaded earliest, so a client
-  cycling through the model ids cannot pin every checkpoint (about 2 GB for
-  xtts) in memory. pipertts voices and silerotts models stay cached as
-  before: they are small and limited to the installed voices and the
-  catalogue.
+  one more than that drops the model loaded earliest once the new one has
+  loaded, so a client cycling through the model ids cannot pin every
+  checkpoint (about 2 GB for xtts) in memory, and a model that fails to load
+  drops nothing. pipertts keeps at most 8 voices loaded (about 60 MB each for
+  a medium voice), what its 8-language table could load before. silerotts
+  models stay cached as before: they are limited to the catalogue.
 - `libs.api.text_to_speech_bytes(..., model=None)` takes a model id; it is
   checked against the engine's `list_models()` (an unknown id, or a model
   for an engine without models, is a `ValidationError` that lists the ids
@@ -97,9 +107,11 @@
   tag with a region (`en-gb`) takes an installed voice of that region, then
   the language's voice from the table in docs/PIPERTTS.md is used when it is
   installed (the 8 languages there keep the voice they had), then any
-  installed voice of the language (`medium` first). Only a language with no
-  installed voice falls back to English, as before, so a Polish voice dropped
-  into `PIPERTTS_MODELS` now speaks `pl` instead of the English voice. This
+  installed voice of the language (`medium` first), so a Polish voice dropped
+  into `PIPERTTS_MODELS` now speaks `pl` instead of the English voice. A
+  language with no installed voice behaves as before: a language outside the
+  table uses the English voice, and a table language whose voice is missing
+  gets the download instructions for it. This
   applies to streaming too. `list_languages()` lists the languages of the
   installed voices instead of the fixed table, which is what
   `TTS_LANGUAGE_STRICT` checks, and the download instructions name the right
