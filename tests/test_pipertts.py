@@ -482,6 +482,35 @@ def test_first_search_directory_wins(engine, monkeypatch, tmp_path):
     }
 
 
+def test_unreadable_search_directory_is_skipped(engine, monkeypatch, tmp_path, caplog):
+    """A search directory that exists but cannot be listed is logged and skipped; the voices elsewhere are found."""
+    unreadable, models = tmp_path / "unreadable", tmp_path / "models"
+    unreadable.mkdir()
+    models.mkdir()
+    install_voices(models, "en_US-lessac-medium")
+    monkeypatch.setattr(engine, "voice_search_dirs", lambda: [str(unreadable), str(models)])
+    real_listdir = os.listdir
+
+    def listdir(path):
+        """Refuse the unreadable directory like a chmod 000 ./voices would."""
+        if str(path) == str(unreadable):
+            raise PermissionError(13, "Permission denied", str(path))
+        return real_listdir(path)
+
+    monkeypatch.setattr(engine.os, "listdir", listdir)
+    with caplog.at_level("WARNING", logger="engines.pipertts"):
+        assert engine.get_voice_path("en") == str(models / "en_US-lessac-medium.onnx")
+    assert engine.list_models()[0]["id"] == "en_US-lessac-medium"
+    assert engine.list_languages() == ["en"]
+    assert f"Skipping unreadable Piper voice directory {unreadable}: PermissionError" in caplog.text
+
+
+def test_list_languages_none_when_no_voice_is_installed(engine, voices_dir):
+    """With no voice installed the engine declares no languages, so the strict check lets the request reach generate()."""
+    assert engine.list_models() == []
+    assert engine.list_languages() is None
+
+
 def test_list_models_describes_installed_voices(engine, voices_dir):
     """Every installed voice is a model with its family and family-region languages."""
     install_voices(voices_dir, "ru_RU-ruslan-medium", "en_GB-alan-low")

@@ -92,7 +92,11 @@
   installed voices instead of the fixed table, which is what
   `TTS_LANGUAGE_STRICT` checks, and the download instructions name the right
   file for every voice (Italian, Ukrainian and Chinese used to show the
-  English one).
+  English one). With no voice installed at all, `list_languages()` declares
+  nothing (`languages: null`), so `TTS_LANGUAGE_STRICT` lets the request
+  through to the error with the download instructions. A voice directory
+  that exists but cannot be read is logged and skipped instead of failing
+  every Piper request.
 - `validate_engine` (and so every request) reports `__init__`, the engines
   package file, as an engine that does not exist (400) instead of one with
   missing dependencies (503).

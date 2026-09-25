@@ -126,13 +126,20 @@ def list_installed_voices() -> dict[str, str]:
 
     A voice found in several directories keeps the path of the first one in
     voice_search_dirs(), the file get_voice_path() would load. Only directory
-    listings; no model is opened.
+    listings; no model is opened. A directory that exists but cannot be read
+    (a fallback such as ./voices without permissions) is logged and skipped,
+    so it does not hide the voices of the others.
     """
     voices: dict[str, str] = {}
     for voice_dir in voice_search_dirs():
         if not os.path.isdir(voice_dir):
             continue
-        for file_name in sorted(os.listdir(voice_dir)):
+        try:
+            file_names = os.listdir(voice_dir)
+        except OSError as exc:
+            logger.warning(f"Skipping unreadable Piper voice directory {voice_dir}: {type(exc).__name__}: {str(exc)}")
+            continue
+        for file_name in sorted(file_names):
             if file_name.endswith(".onnx"):
                 voices.setdefault(file_name[: -len(".onnx")], os.path.join(voice_dir, file_name))
     return voices
@@ -272,7 +279,10 @@ def list_languages(model: str | None = None) -> list[str] | None:
 
     A language without an installed voice is spoken with the English voice, as
     before; None for a `model` that is not installed or whose language is not
-    known.
+    known. None as well when no installed voice has a known language (none is
+    installed yet): the engine then declares nothing, so TTS_LANGUAGE_STRICT
+    lets the request through to generate(), which answers with the download
+    instructions of the missing voice.
     """
     installed = list_installed_voices()
     if model is not None:
@@ -280,7 +290,8 @@ def list_languages(model: str | None = None) -> list[str] | None:
             return None
         return voice_languages(model, installed[model])
     families = {voice_family(stem, path) for stem, path in installed.items()}
-    return sorted(family for family in families if family)
+    languages = sorted(family for family in families if family)
+    return languages or None
 
 
 def default_model(language: str | None = None) -> str | None:

@@ -136,7 +136,11 @@ A voice's language comes from its file name
 (`<language>_<REGION>-<name>-<quality>`); a file named otherwise is described
 by `language.family` in its `.onnx.json`. The languages the engine lists
 (`GET /api/engines/pipertts`, and the check under `TTS_LANGUAGE_STRICT`) are the
-languages of the installed voices.
+languages of the installed voices. With no voice installed the engine lists no
+languages (`languages: null`), so a request, strict or not, gets the download
+instructions of the voice it needs. A search directory that exists but cannot
+be read (a `./voices` without permissions) is skipped with a warning in the
+log.
 
 ### Selecting a model per request
 
