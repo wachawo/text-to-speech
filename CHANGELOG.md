@@ -9,9 +9,9 @@
   comes from the model (`MODEL_CATALOG`), so `uk` and `ua` both load `v3_ua`
   under `ua`; the other languages load as before.
 - `coquitts` with xtts_v2 failed with a server error for Chinese: the UI and
-  the API send `zh`, while xtts accepts only `zh-cn`. For xtts models `zh` (and
-  a `zh-*` tag xtts does not list) is now sent as `zh-cn`; other models and
-  languages get the code unchanged.
+  the API send `zh`, while xtts accepts only `zh-cn`. For xtts models the
+  request code `zh` is now sent as `zh-cn`; every other code is passed as
+  before.
 
 ### [1.0.7] - 2026-09-23
 

@@ -118,7 +118,7 @@ Languages: en, es, fr, de, it, pt, pl, tr, ru, nl, cs, ar, zh, ja, hu, ko, hi
 ```
 
 xtts names Chinese `zh-cn`; the engine sends `zh` (what `--language zh`, the
-API and the web UI use) to xtts as `zh-cn`, so both codes work.
+API and the web UI use) to xtts as `zh-cn`.
 
 ### English Models
 

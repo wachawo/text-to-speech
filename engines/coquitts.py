@@ -71,7 +71,8 @@ def xtts_language(language: str) -> str:
 
     A code xtts lists is kept as is; Chinese (`zh`, or a `zh-*` tag xtts does
     not list) becomes `zh-cn`, since xtts rejects a bare `zh`; any other tag is
-    reduced to its primary subtag.
+    reduced to its primary subtag. The API and the CLI accept only 2-character
+    codes, so tags reach this function only through a direct engine call.
     """
     code = language.lower().replace("_", "-")
     if code in XTTS_LANGUAGES:
