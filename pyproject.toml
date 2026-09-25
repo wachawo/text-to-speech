@@ -68,7 +68,7 @@ dev = [
     "flask-cors>=6.0,<7",
     "marshmallow>=4.3.1,<5",
     "uvicorn>=0.53,<1",
-    "pytz>=2026.3",
+    "pytz>=2026.3.post1",
 ]
 
 [project.urls]
