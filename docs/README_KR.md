@@ -248,6 +248,7 @@ xdg-open https://localhost:8443     # TTS_WWW_TLS_PORT; 자체 서명 인증서,
 | `TTS_ENGINE` | `gtts` | 요청에 엔진이 지정되지 않았을 때 사용하는 엔진. |
 | `TTS_LANGUAGE` | `en` | 요청에 언어가 지정되지 않았을 때 사용하는 언어. |
 | `TTS_LANGUAGE_STRICT` | `false` | `true`이면 엔진 목록에 없는 언어에 대해 엔진의 기본 언어로 대체하는 대신 400을 반환. |
+| `TTS_MODEL_CACHE_SIZE` | `2` | coquitts와 kokorotts가 동시에 로드해 두는 모델 수; 모델을 하나 더 요청하면 가장 먼저 로드된 모델이 해제됩니다. |
 | `TTS_POOL_SIZE` | `1` | 모든 엔진을 통틀어 동시에 허용되는 합성 호출 수; `0`은 제한과 워밍업을 없앱니다. |
 | `TTS_QUEUE_SIZE` | `8` | 빈 슬롯을 기다릴 수 있는 합성 요청 수; 초과분은 즉시 503을 받습니다. |
 | `TTS_HISTORY_MAX` | `200` | 히스토리에 보관되는 항목 수; 새 항목이 저장되면 가장 오래된 것이 삭제됩니다. |

@@ -145,7 +145,13 @@ its name (`v1.0` in `kokoro-v1.0.int8.onnx`) names `voices-v1.0.bin`, used when
 that file is in the same directory; otherwise `KOKOROTTS_VOICES` is used. Without a model `KOKOROTTS_MODEL` and
 `KOKOROTTS_VOICES` are used as before. `GET /api/voices?engine=kokorotts&model=`
 lists the voices of the paired file. An id that is not listed is a 400; a name
-with a path separator is refused by the engine as well.
+with a path separator is refused by the engine as well, except
+`KOKOROTTS_MODEL` itself, which is listed as it is set (`v1/kokoro-v1.0.onnx`)
+and paired with the voices file next to it.
+
+Every model a request loads stays in memory, up to `TTS_MODEL_CACHE_SIZE`
+models (default `2`, about 300 MB each for the full model); loading one more
+first drops the model loaded earliest.
 
 ## Supported languages and default voices
 

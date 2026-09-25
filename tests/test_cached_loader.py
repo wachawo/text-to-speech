@@ -13,7 +13,7 @@ import time
 import pytest
 
 # Local imports
-from libs.cached_loader import load_cached
+from libs.cached_loader import DEFAULT_MODEL_CACHE_SIZE, get_model_cache_size, load_cached
 
 
 class CountingLock:
@@ -130,3 +130,55 @@ def test_hit_does_not_take_the_lock():
     assert lock.acquisitions == 1
     assert second is first
     assert len(loads) == 1
+
+
+def test_max_entries_drops_the_oldest_before_loading():
+    """A miss on a full cache drops the oldest entry before the load, so two models are never held over the bound."""
+    cache: dict = {}
+    lock = threading.Lock()
+    sizes_at_load = []
+
+    def loader_for(key):
+        """Build a loader that records the cache size it saw."""
+
+        def loader():
+            sizes_at_load.append(len(cache))
+            return f"value-{key}"
+
+        return loader
+
+    for key in ("a", "b", "c"):
+        load_cached(cache, lock, key, loader_for(key), max_entries=2)
+    assert list(cache) == ["b", "c"]
+    assert sizes_at_load == [0, 1, 1]
+    assert load_cached(cache, lock, "c", loader_for("c"), max_entries=2) == "value-c"
+    assert list(cache) == ["b", "c"]
+
+
+def test_max_entries_none_keeps_every_entry():
+    """Without max_entries nothing is evicted, as before."""
+    cache: dict = {}
+    lock = threading.Lock()
+    for key in range(5):
+        load_cached(cache, lock, key, lambda: object())
+    assert len(cache) == 5
+
+
+@pytest.mark.parametrize(
+    "raw_value, expected",
+    [
+        (None, DEFAULT_MODEL_CACHE_SIZE),
+        ("", DEFAULT_MODEL_CACHE_SIZE),
+        ("3", 3),
+        ("0", 1),
+        ("-2", 1),
+        ("many", DEFAULT_MODEL_CACHE_SIZE),
+    ],
+)
+def test_model_cache_size_reads_the_env(monkeypatch, raw_value, expected):
+    """TTS_MODEL_CACHE_SIZE is a whole number of at least 1; anything else falls back to the default."""
+    if raw_value is None:
+        monkeypatch.delenv("TTS_MODEL_CACHE_SIZE", raising=False)
+    else:
+        monkeypatch.setenv("TTS_MODEL_CACHE_SIZE", raw_value)
+    assert get_model_cache_size() == expected

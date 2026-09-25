@@ -142,6 +142,20 @@ starts the download of an arbitrary model: pre-download one (see
 lists its languages as above (xtts its codes plus `zh`, a single-language
 model its language, other multilingual models none).
 
+Only cached models the engine can drive are listed: xtts, which gets the
+language and the voice sample, and single-speaker models of one language,
+which get neither. A multilingual model other than xtts (`your_tts` wants
+codes such as `fr-fr`) and a multi-speaker model (`tts_models/en/vctk/vits`,
+told by `use_speaker_embedding`, `use_d_vector_file` or `num_speakers` above 1
+in its `config.json`) would fail on every request, so they are left out.
+`COQUITTS_MODEL` is listed whatever it is, as the operator's choice.
+
+Every model a request loads stays in memory for the next request, up to
+`TTS_MODEL_CACHE_SIZE` models (default `2`); loading one more first drops the
+model loaded earliest, which the next request for it loads again (about 15 s
+for xtts). An xtts checkpoint takes about 2 GB of RAM, or of VRAM on a GPU, so
+size this setting to the memory the server has.
+
 ```bash
 curl -X POST localhost:5000/api/tts \
   -H "Authorization: Bearer $TTS_TOKEN" \

@@ -248,6 +248,7 @@ Jede Einstellung ist eine Umgebungsvariable; `env.example` dokumentiert sie alle
 | `TTS_ENGINE` | `gtts` | Engine, die verwendet wird, wenn eine Anfrage keine nennt. |
 | `TTS_LANGUAGE` | `en` | Sprache, die verwendet wird, wenn eine Anfrage keine nennt. |
 | `TTS_LANGUAGE_STRICT` | `false` | `true` beantwortet eine Sprache, die die Engine nicht auflistet, mit 400 statt mit dem Rückfall der Engine auf ihre Standardsprache. |
+| `TTS_MODEL_CACHE_SIZE` | `2` | Modelle, die coquitts und kokorotts gleichzeitig geladen halten; eine Anfrage nach einem weiteren entfernt das zuerst geladene. |
 | `TTS_POOL_SIZE` | `1` | Gleichzeitig erlaubte Synthese-Aufrufe über alle Engines hinweg; `0` entfernt das Limit und das Vorwärmen. |
 | `TTS_QUEUE_SIZE` | `8` | Synthese-Anfragen, die auf einen freien Platz warten dürfen; weitere erhalten sofort 503. |
 | `TTS_HISTORY_MAX` | `200` | Im Verlauf behaltene Einträge; die ältesten werden entfernt, wenn ein neuer gespeichert wird. |

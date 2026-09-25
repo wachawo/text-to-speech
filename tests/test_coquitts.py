@@ -9,6 +9,7 @@ manager (it's already in the dev venv).
 """
 
 import importlib
+import json
 import sys
 import types
 
@@ -329,6 +330,33 @@ def test_list_models_reads_the_cache_directory(engine, monkeypatch, tmp_path):
     assert models[engine.DEFAULT_COQUITTS_MODEL]["installed"] is False
     assert "zh-cn" in models[engine.DEFAULT_COQUITTS_MODEL]["languages"]
     assert FakeTTS.instances == []
+
+
+def test_list_models_leaves_out_models_generate_cannot_drive(engine, monkeypatch, tmp_path):
+    """A multilingual model other than xtts and a multi-speaker model are not listed; COQUITTS_MODEL always is."""
+    cache = tmp_path / "cache" / "coquitts" / "tts"
+    (cache / "tts_models--multilingual--multi-dataset--your_tts").mkdir(parents=True)
+    vctk = cache / "tts_models--en--vctk--vits"
+    vctk.mkdir()
+    (vctk / "config.json").write_text(json.dumps({"model_args": {"num_speakers": 109, "use_speaker_embedding": True}}))
+    thorsten = cache / "tts_models--de--thorsten--vits"
+    thorsten.mkdir()
+    (thorsten / "config.json").write_text(json.dumps({"model_args": {"num_speakers": 0}}))
+    monkeypatch.delenv("COQUITTS_MODEL", raising=False)
+    assert [model["id"] for model in engine.list_models()] == [
+        "tts_models/de/thorsten/vits",
+        engine.DEFAULT_COQUITTS_MODEL,
+    ]
+    monkeypatch.setenv("COQUITTS_MODEL", "tts_models/en/vctk/vits")
+    assert "tts_models/en/vctk/vits" in [model["id"] for model in engine.list_models()]
+
+
+def test_get_tts_keeps_at_most_the_cache_size_models(engine, monkeypatch):
+    """With TTS_MODEL_CACHE_SIZE=1 loading another model drops the loaded one first."""
+    monkeypatch.setenv("TTS_MODEL_CACHE_SIZE", "1")
+    engine.get_tts("tts_models/multilingual/multi-dataset/xtts_v2", "cpu")
+    engine.get_tts("tts_models/de/thorsten/vits", "cpu")
+    assert list(engine.TTS_CACHE) == [("tts_models/de/thorsten/vits", "cpu")]
 
 
 def test_list_models_marks_an_installed_default(engine, monkeypatch, tmp_path):

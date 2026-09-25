@@ -248,6 +248,7 @@ xdg-open https://localhost:8443     # TTS_WWW_TLS_PORT；自签名证书，接�
 | `TTS_ENGINE` | `gtts` | 请求未指定引擎时使用的引擎。 |
 | `TTS_LANGUAGE` | `en` | 请求未指定语言时使用的语言。 |
 | `TTS_LANGUAGE_STRICT` | `false` | 为 `true` 时，对引擎未列出的语言返回 400，而不是让引擎回退到默认语言。 |
+| `TTS_MODEL_CACHE_SIZE` | `2` | coquitts 和 kokorotts 同时保持加载的模型数；请求再多一个模型时会先释放最早加载的模型。 |
 | `TTS_POOL_SIZE` | `1` | 所有引擎合计允许同时进行的合成调用数；`0` 取消上限和预热。 |
 | `TTS_QUEUE_SIZE` | `8` | 允许等待空闲槽位的合成请求数；超出的请求会立即收到 503。 |
 | `TTS_HISTORY_MAX` | `200` | 历史记录中保留的条目数；保存新条目时会删除最旧的。 |

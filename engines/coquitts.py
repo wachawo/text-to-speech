@@ -7,12 +7,13 @@ Python 3.11+ with `coqui-tts` and `transformers>=4.46,<5.0`. Works best with a
 GPU; CPU mode is very slow.
 """
 
+import json
 import logging
 import os
 import tempfile
 import threading
 
-from libs.cached_loader import load_cached
+from libs.cached_loader import get_model_cache_size, load_cached
 from libs.exceptions import CustomError, EngineNotAvailableError, TTSException, ValidationError
 from libs.languages import is_language_code, normalize_language, primary_language
 from libs.sample_resolver import list_sample_files, resolve_sample_path, sample_path_for_voice
@@ -35,7 +36,8 @@ DEFAULT_COQUITTS_SAMPLE = str(os.path.expanduser("~/.config/ttsgen.wav"))
 XTTS_LANGUAGES = ("ar", "cs", "de", "en", "es", "fr", "hi", "hu", "it", "ja", "ko", "nl", "pl", "pt", "ru", "tr", "zh-cn")
 
 # Cache TTS instances by (model_name, device) to avoid 15s reload of xtts_v2
-# checkpoint on every synthesis call. Keyed by tuple → instance.
+# checkpoint on every synthesis call. Keyed by tuple → instance; bounded by
+# TTS_MODEL_CACHE_SIZE, the oldest loaded model is dropped first.
 TTS_CACHE: dict = {}
 # TTS_CACHE_LOCK guards the first load (and the one-time TTS_HOME setup) so
 # concurrent first requests do not load the checkpoint twice. INFERENCE_LOCK
@@ -115,23 +117,67 @@ def list_languages(model: str | None = None) -> list[str] | None:
     return model_languages(model or default_model())
 
 
+def is_multi_speaker(model_dir: str) -> bool:
+    """Tell from a model's `config.json` whether it needs a speaker id (vctk-style); False when there is no readable config."""
+    try:
+        with open(os.path.join(model_dir, "config.json"), encoding="utf-8") as config_file:
+            config = json.load(config_file)
+    except (OSError, ValueError):
+        return False
+    if not isinstance(config, dict):
+        return False
+    model_args = config.get("model_args")
+    sections = [config, model_args] if isinstance(model_args, dict) else [config]
+    for section in sections:
+        if section.get("use_speaker_embedding") or section.get("use_d_vector_file"):
+            return True
+        num_speakers = section.get("num_speakers")
+        if isinstance(num_speakers, int) and num_speakers > 1:
+            return True
+    return False
+
+
+def is_model_supported(model_name: str, model_dir: str) -> bool:
+    """Tell whether generate() can drive a cached model: an xtts model, or a single-speaker model of one language.
+
+    generate() passes a language and the voice sample only to multilingual
+    models, in xtts's language codes, and neither to the others. A multilingual
+    model other than xtts (your_tts) wants other codes, and a multi-speaker
+    model (vctk) wants a speaker id, so both would fail on every request.
+    """
+    if "multilingual" in model_name:
+        return "xtts" in model_name
+    parts = model_name.split("/")
+    if len(parts) < 3 or parts[0] != "tts_models":
+        return False
+    return not is_multi_speaker(model_dir)
+
+
 def list_models() -> list[dict]:
-    """Describe the Coqui models a request may name: the ones on disk plus COQUITTS_MODEL.
+    """Describe the Coqui models a request may name: the ones on disk that generate() can drive, plus COQUITTS_MODEL.
 
     Coqui caches a model as `<models dir>/tts/tts_models--<lang>--<dataset>--<name>/`;
     the id is that directory name with `--` read as `/`, the spelling
-    COQUITTS_MODEL uses. COQUITTS_MODEL is listed even before its first
-    download (`installed: false`), as it is fetched on the first request today;
-    no other model that is not on disk is listed, so a request never starts
-    the download of an arbitrary model. Only a directory listing, no torch.
+    COQUITTS_MODEL uses. A cached model that generate() cannot drive (see
+    is_model_supported) is left out. COQUITTS_MODEL is listed even before its
+    first download (`installed: false`), as it is fetched on the first request
+    today; no other model that is not on disk is listed, so a request never
+    starts the download of an arbitrary model. Only a directory listing and
+    small config files, no torch.
     """
     cache_dir = os.path.join(get_models_directory(), "tts")
+    default_name = default_model()
     installed = set()
     if os.path.isdir(cache_dir):
         for entry in os.listdir(cache_dir):
-            if entry.startswith("tts_models--") and os.path.isdir(os.path.join(cache_dir, entry)):
-                installed.add(entry.replace("--", "/"))
-    names = sorted(installed | {default_model()})
+            model_dir = os.path.join(cache_dir, entry)
+            model_name = entry.replace("--", "/")
+            if not entry.startswith("tts_models--") or not os.path.isdir(model_dir):
+                continue
+            # The operator's own COQUITTS_MODEL is served as before, whatever it is.
+            if model_name == default_name or is_model_supported(model_name, model_dir):
+                installed.add(model_name)
+    names = sorted(installed | {default_name})
     return [{"id": name, "languages": model_languages(name), "installed": name in installed} for name in names]
 
 
@@ -175,7 +221,8 @@ def get_tts(model_name: str, device: str):
         with safe_globals([XttsConfig, XttsAudioConfig, BaseDatasetConfig, XttsArgs]):
             return TTS(model_name=model_name, progress_bar=False).to(device)
 
-    return load_cached(TTS_CACHE, TTS_CACHE_LOCK, (model_name, device), load_tts)
+    # A request may name any installed model; at most TTS_MODEL_CACHE_SIZE stay loaded.
+    return load_cached(TTS_CACHE, TTS_CACHE_LOCK, (model_name, device), load_tts, get_model_cache_size())
 
 
 def generate(text: str, config: dict) -> bytes:

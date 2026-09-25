@@ -67,6 +67,18 @@
   its models directory, each paired with the `voices-<release>.bin` of its
   release, silerotts its `MODEL_CATALOG`, and pipertts every installed voice
   by its file stem (`en_GB-alan-low`). gtts sets `OUTPUT_FORMAT = "mp3"`.
+  coquitts leaves out cached models its `generate()` cannot drive: a
+  multilingual model other than xtts (your_tts) and a multi-speaker model
+  (vctk, told by its `config.json`); `COQUITTS_MODEL` is always listed.
+  kokorotts serves a `KOKOROTTS_MODEL` with a directory part when a client
+  names it back.
+- `TTS_MODEL_CACHE_SIZE` (default `2`): the models coquitts and kokorotts
+  keep loaded at once. Since a request can name any installed model, loading
+  one more than that first drops the model loaded earliest, so a client
+  cycling through the model ids cannot pin every checkpoint (about 2 GB for
+  xtts) in memory. pipertts voices and silerotts models stay cached as
+  before: they are small and limited to the installed voices and the
+  catalogue.
 - `libs.api.text_to_speech_bytes(..., model=None)` takes a model id; it is
   checked against the engine's `list_models()` (an unknown id, or a model
   for an engine without models, is a `ValidationError` that lists the ids

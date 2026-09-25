@@ -250,6 +250,7 @@ Every setting is an environment variable; `env.example` documents them all and `
 | `TTS_ENGINE` | `gtts` | Engine used when a request does not name one. |
 | `TTS_LANGUAGE` | `en` | Language used when a request does not name one. |
 | `TTS_LANGUAGE_STRICT` | `false` | `true` answers 400 to a language the engine does not list, instead of the engine's fallback to its default language. |
+| `TTS_MODEL_CACHE_SIZE` | `2` | Models coquitts and kokorotts keep loaded at once; a request for one more drops the model loaded earliest. |
 | `TTS_POOL_SIZE` | `1` | Synthesis calls allowed at the same time across all engines; `0` removes the cap and the warmup. |
 | `TTS_QUEUE_SIZE` | `8` | Synthesis requests allowed to wait for a free slot; any more get 503 at once. |
 | `TTS_HISTORY_MAX` | `200` | Items kept in the history; the oldest are removed when a new one is saved. |

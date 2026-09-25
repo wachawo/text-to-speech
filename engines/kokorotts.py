@@ -28,7 +28,7 @@ from typing import Any
 import numpy as np
 
 # Local imports
-from libs.cached_loader import load_cached
+from libs.cached_loader import get_model_cache_size, load_cached
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
 from libs.languages import normalize_language, primary_language
 
@@ -156,8 +156,8 @@ def get_model_paths(model: str | None = None) -> tuple[str, str]:
         model: A model file name from list_models(), or None for KOKOROTTS_MODEL
             with KOKOROTTS_VOICES, as before models were selectable. A named
             model is paired with the voices file of its release
-            ('kokoro-v1.0.int8.onnx' -> 'voices-v1.0.bin') when that file is in
-            the models directory, else with KOKOROTTS_VOICES.
+            ('kokoro-v1.0.int8.onnx' -> 'voices-v1.0.bin') when that file is
+            next to the model, else with KOKOROTTS_VOICES.
 
     Raises:
         ValidationError: `model` is not a plain file name in the models directory.
@@ -165,12 +165,15 @@ def get_model_paths(model: str | None = None) -> tuple[str, str]:
     models_dir = get_models_directory()
     if model is None:
         return os.path.join(models_dir, env_model_name()), os.path.join(models_dir, env_voices_name())
-    if os.path.basename(model) != model or model in (".", ".."):
+    # KOKOROTTS_MODEL is listed as a model even with a directory part
+    # ('v1/kokoro-v1.0.onnx'), so a client naming it back is served; any other
+    # id must be a plain file name in the models directory.
+    if model != env_model_name() and (os.path.basename(model) != model or model in (".", "..")):
         raise ValidationError(f"Unknown kokorotts model '{model}'")
     voices_path = os.path.join(models_dir, env_voices_name())
-    match = MODEL_RELEASE_RE.match(model)
+    match = MODEL_RELEASE_RE.match(os.path.basename(model))
     if match:
-        release_voices = os.path.join(models_dir, f"voices-{match.group('version')}.bin")
+        release_voices = os.path.join(models_dir, os.path.dirname(model), f"voices-{match.group('version')}.bin")
         if os.path.exists(release_voices):
             voices_path = release_voices
     return os.path.join(models_dir, model), voices_path
@@ -238,7 +241,8 @@ def get_kokoro(model_path: str, voices_path: str):
         logger.info(f"Loading Kokoro model: {model_path}")
         return Kokoro(model_path, voices_path)
 
-    return load_cached(KOKORO_CACHE, KOKORO_CACHE_LOCK, (model_path, voices_path), load_kokoro)
+    # A request may name any model file in the directory; at most TTS_MODEL_CACHE_SIZE stay loaded.
+    return load_cached(KOKORO_CACHE, KOKORO_CACHE_LOCK, (model_path, voices_path), load_kokoro, get_model_cache_size())
 
 
 def voice_names(voices_path: str) -> tuple[str, ...]:

@@ -406,6 +406,30 @@ def test_get_model_paths_rejects_a_path(engine, kokoro_dir, model):
         engine.get_model_paths(model)
 
 
+def test_get_model_paths_serves_a_default_with_a_directory(engine, kokoro_dir, monkeypatch):
+    """KOKOROTTS_MODEL with a directory part is listed, so naming it back resolves to the file it names."""
+    (kokoro_dir / "v1").mkdir()
+    (kokoro_dir / "v1" / "kokoro-v1.0.onnx").write_bytes(b"x")
+    write_fake_voices(kokoro_dir / "v1")
+    monkeypatch.setenv("KOKOROTTS_MODEL", "v1/kokoro-v1.0.onnx")
+    assert "v1/kokoro-v1.0.onnx" in [model["id"] for model in engine.list_models()]
+    assert engine.get_model_paths("v1/kokoro-v1.0.onnx") == (
+        str(kokoro_dir / "v1" / "kokoro-v1.0.onnx"),
+        str(kokoro_dir / "v1" / "voices-v1.0.bin"),
+    )
+    with pytest.raises(ValidationError, match="Unknown kokorotts model"):
+        engine.get_model_paths("v1/kokoro-v1.0.int8.onnx")
+
+
+def test_generate_keeps_at_most_the_cache_size_models(engine, kokoro_dir, monkeypatch):
+    """With TTS_MODEL_CACHE_SIZE=1 a request for another model drops the loaded one first."""
+    (kokoro_dir / "kokoro-v1.0.int8.onnx").write_bytes(b"x")
+    monkeypatch.setenv("TTS_MODEL_CACHE_SIZE", "1")
+    engine.generate("hi", {"language": "en"})
+    engine.generate("hi", {"language": "en", "model": "kokoro-v1.0.int8.onnx"})
+    assert set(engine.KOKORO_CACHE) == {(str(kokoro_dir / "kokoro-v1.0.int8.onnx"), str(kokoro_dir / "voices-v1.0.bin"))}
+
+
 def test_list_models_lists_onnx_files_and_the_default(engine, kokoro_dir, monkeypatch):
     """Every *.onnx in the directory is a model; KOKOROTTS_MODEL is listed even when its file is missing."""
     (kokoro_dir / "kokoro-v1.0.int8.onnx").write_bytes(b"x")

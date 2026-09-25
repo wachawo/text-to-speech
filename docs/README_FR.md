@@ -248,6 +248,7 @@ Chaque réglage est une variable d'environnement ; `env.example` les documente t
 | `TTS_ENGINE` | `gtts` | Moteur utilisé quand une requête n'en indique aucun. |
 | `TTS_LANGUAGE` | `en` | Langue utilisée quand une requête n'en indique aucune. |
 | `TTS_LANGUAGE_STRICT` | `false` | `true` répond 400 à une langue que le moteur ne liste pas, au lieu du repli du moteur sur sa langue par défaut. |
+| `TTS_MODEL_CACHE_SIZE` | `2` | Modèles que coquitts et kokorotts gardent chargés en même temps ; une requête pour un modèle de plus retire le premier chargé. |
 | `TTS_POOL_SIZE` | `1` | Appels de synthèse autorisés simultanément tous moteurs confondus ; `0` supprime la limite et le préchauffage. |
 | `TTS_QUEUE_SIZE` | `8` | Requêtes de synthèse autorisées à attendre une place libre ; au-delà, 503 immédiat. |
 | `TTS_HISTORY_MAX` | `200` | Éléments conservés dans l'historique ; les plus anciens sont supprimés à l'enregistrement d'un nouveau. |
