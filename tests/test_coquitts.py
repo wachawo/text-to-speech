@@ -295,6 +295,73 @@ def test_list_languages_does_not_load_a_model(engine, monkeypatch):
     assert FakeTTS.instances == []
 
 
+# Model selection hooks
+
+
+def test_list_languages_of_a_named_model(engine, monkeypatch):
+    """list_languages(model) describes that model, not COQUITTS_MODEL."""
+    monkeypatch.setenv("COQUITTS_MODEL", "tts_models/multilingual/multi-dataset/xtts_v2")
+    assert engine.list_languages("tts_models/de/thorsten/vits") == ["de"]
+
+
+def test_default_model_is_the_configured_model(engine, monkeypatch):
+    """default_model() is COQUITTS_MODEL for every language, and the xtts default without it."""
+    monkeypatch.delenv("COQUITTS_MODEL", raising=False)
+    assert engine.default_model() == engine.DEFAULT_COQUITTS_MODEL
+    monkeypatch.setenv("COQUITTS_MODEL", "tts_models/de/thorsten/vits")
+    assert engine.default_model("ru") == "tts_models/de/thorsten/vits"
+
+
+def test_list_models_reads_the_cache_directory(engine, monkeypatch, tmp_path):
+    """Models on disk are listed by their COQUITTS_MODEL spelling; the default is listed even before its download."""
+    cache = tmp_path / "cache" / "coquitts" / "tts"
+    (cache / "tts_models--de--thorsten--vits").mkdir(parents=True)
+    (cache / "vocoder_models--en--ljspeech--hifigan_v2").mkdir()
+    (cache / "tts_models--stray-file").write_text("x")
+    monkeypatch.delenv("COQUITTS_MODEL", raising=False)
+    models = {model["id"]: model for model in engine.list_models()}
+    assert set(models) == {"tts_models/de/thorsten/vits", engine.DEFAULT_COQUITTS_MODEL}
+    assert models["tts_models/de/thorsten/vits"] == {
+        "id": "tts_models/de/thorsten/vits",
+        "languages": ["de"],
+        "installed": True,
+    }
+    assert models[engine.DEFAULT_COQUITTS_MODEL]["installed"] is False
+    assert "zh-cn" in models[engine.DEFAULT_COQUITTS_MODEL]["languages"]
+    assert FakeTTS.instances == []
+
+
+def test_list_models_marks_an_installed_default(engine, monkeypatch, tmp_path):
+    """A default model already in the cache is listed once, as installed."""
+    cache = tmp_path / "cache" / "coquitts" / "tts"
+    (cache / "tts_models--multilingual--multi-dataset--xtts_v2").mkdir(parents=True)
+    monkeypatch.delenv("COQUITTS_MODEL", raising=False)
+    assert engine.list_models() == [
+        {"id": engine.DEFAULT_COQUITTS_MODEL, "languages": engine.list_languages(), "installed": True}
+    ]
+
+
+def test_generate_uses_the_model_from_config(engine, monkeypatch):
+    """config['model'] picks the checkpoint get_tts loads instead of COQUITTS_MODEL."""
+    monkeypatch.setenv("COQUITTS_MODEL", "tts_models/multilingual/multi-dataset/xtts_v2")
+    engine.generate("hi", {"language": "de", "model": "tts_models/de/thorsten/vits"})
+    assert FakeTTS.instances[-1].model_name == "tts_models/de/thorsten/vits"
+    # A single-language model gets neither language nor speaker_wav.
+    assert FakeTTS.instances[-1].calls[-1]["language"] is None
+
+
+def test_generate_maps_zh_for_an_xtts_model_named_in_config(engine, monkeypatch):
+    """The xtts language mapping follows the requested model, not COQUITTS_MODEL."""
+    monkeypatch.setenv("COQUITTS_MODEL", "tts_models/de/thorsten/vits")
+    engine.generate("ni hao", {"language": "zh", "model": "tts_models/multilingual/multi-dataset/xtts_v2"})
+    assert FakeTTS.instances[-1].calls[-1]["language"] == "zh-cn"
+
+
+def test_list_voices_ignores_the_model(engine):
+    """Every Coqui model clones from the same samples, so `model` does not change the listing."""
+    assert engine.list_voices("en", "tts_models/de/thorsten/vits") == engine.list_voices("en")
+
+
 def test_generate_caches_TTS_instance_between_calls(engine, monkeypatch):
     """xtts_v2 takes ~15s to load on first call — repeated invocations
     MUST NOT instantiate a new TTS each time."""

@@ -83,8 +83,8 @@ def xtts_language(language: str) -> str:
     return primary
 
 
-def list_languages() -> list[str] | None:
-    """Return the languages the configured model (COQUITTS_MODEL) accepts, or None when that is not known.
+def model_languages(model_name: str) -> list[str] | None:
+    """Return the languages a Coqui model accepts, or None when that is not known from its name.
 
     xtts lists its own codes plus `zh`, which xtts_language() sends as `zh-cn`;
     a single-language model such as `tts_models/de/thorsten/vits` accepts its
@@ -93,7 +93,6 @@ def list_languages() -> list[str] | None:
     3-letter `ewe` of `tts_models/ewe/openbible/vits`), does not declare its
     languages here, so the strict check does not refuse every request.
     """
-    model_name = os.getenv("COQUITTS_MODEL", DEFAULT_COQUITTS_MODEL)
     if "xtts" in model_name and "multilingual" in model_name:
         return sorted([*XTTS_LANGUAGES, "zh"])
     parts = model_name.split("/")
@@ -104,6 +103,36 @@ def list_languages() -> list[str] | None:
         code = normalize_language(parts[1])
         return sorted({code, primary_language(code)})
     return None
+
+
+def default_model(language: str | None = None) -> str:
+    """Return the model a request without `model` uses: COQUITTS_MODEL, whatever the language."""
+    return os.getenv("COQUITTS_MODEL", DEFAULT_COQUITTS_MODEL)
+
+
+def list_languages(model: str | None = None) -> list[str] | None:
+    """Return the languages `model` (the configured COQUITTS_MODEL when None) accepts, or None when not known."""
+    return model_languages(model or default_model())
+
+
+def list_models() -> list[dict]:
+    """Describe the Coqui models a request may name: the ones on disk plus COQUITTS_MODEL.
+
+    Coqui caches a model as `<models dir>/tts/tts_models--<lang>--<dataset>--<name>/`;
+    the id is that directory name with `--` read as `/`, the spelling
+    COQUITTS_MODEL uses. COQUITTS_MODEL is listed even before its first
+    download (`installed: false`), as it is fetched on the first request today;
+    no other model that is not on disk is listed, so a request never starts
+    the download of an arbitrary model. Only a directory listing, no torch.
+    """
+    cache_dir = os.path.join(get_models_directory(), "tts")
+    installed = set()
+    if os.path.isdir(cache_dir):
+        for entry in os.listdir(cache_dir):
+            if entry.startswith("tts_models--") and os.path.isdir(os.path.join(cache_dir, entry)):
+                installed.add(entry.replace("--", "/"))
+    names = sorted(installed | {default_model()})
+    return [{"id": name, "languages": model_languages(name), "installed": name in installed} for name in names]
 
 
 def get_models_directory() -> str:
@@ -157,10 +186,12 @@ def generate(text: str, config: dict) -> bytes:
 
     Args:
         text: Text to synthesize.
-        config: Configuration dict with 'language' and optional 'voice' (a bare
+        config: Configuration dict with 'language', optional 'voice' (a bare
             sample name under the samples directory, see
-            libs.sample_resolver.sample_path_for_voice). Without 'voice' the
-            COQUITTS_SAMPLE recording is cloned.
+            libs.sample_resolver.sample_path_for_voice) and optional 'model'
+            (a Coqui model name from list_models()). Without 'voice' the
+            COQUITTS_SAMPLE recording is cloned; without 'model' COQUITTS_MODEL
+            is used.
 
     Returns:
         Audio bytes in WAV format (22050 Hz by default).
@@ -209,7 +240,7 @@ def generate(text: str, config: dict) -> bytes:
                 }
             )
     try:
-        model_name = os.getenv("COQUITTS_MODEL", DEFAULT_COQUITTS_MODEL)
+        model_name = config.get("model") or default_model()
         language = config.get("language", "en")
         if "xtts" in model_name:
             language = xtts_language(language)
@@ -241,13 +272,14 @@ def generate(text: str, config: dict) -> bytes:
         raise TTSException(f"Coqui TTS generation failed: {exc}") from exc
 
 
-def list_voices(language: str = "en") -> dict:
+def list_voices(language: str = "en", model: str | None = None) -> dict:
     """List the sample WAV names selectable as `voice`, plus the default sample.
 
     Cheap on purpose: only a directory listing, no torch and no model load.
 
     Args:
         language: Ignored; cloned samples are not language-specific.
+        model: Ignored; every model clones from the same samples.
 
     Returns:
         Dict with 'voices' (sorted `*.wav` stems from the samples directory)

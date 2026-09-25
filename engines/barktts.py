@@ -115,8 +115,11 @@ def get_speaker_for_language(language: str) -> str:
     return SPEAKER_PRESETS.get(primary_language(language), SPEAKER_PRESETS["en"])
 
 
-def list_languages() -> list[str]:
-    """Return the languages that have a Bark speaker preset; any other code gets the English speaker."""
+def list_languages(model: str | None = None) -> list[str]:
+    """Return the languages that have a Bark speaker preset; any other code gets the English speaker.
+
+    Bark has no selectable models, so `model` is ignored.
+    """
     return sorted(SPEAKER_PRESETS)
 
 

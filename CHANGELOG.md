@@ -30,6 +30,17 @@
   every code; gtts leaves out `yue`, which no request can carry. With
   the default `false` nothing changes and an unknown language falls back as
   before.
+- Engine model hooks: coquitts, kokorotts and silerotts describe the models
+  a request can pick through optional `list_models()` (`id`, `languages`,
+  `installed`), `default_model(language)` and `list_languages(model)` hooks
+  that read only file names, small JSON configs and constants, never a model.
+  `generate()` reads `config["model"]`, and `list_voices(language, model)`
+  lists the voices of that model; without a model every engine behaves as
+  before. coquitts lists the models in its cache plus `COQUITTS_MODEL` (never
+  one it would have to download on its own), kokorotts the `*.onnx` files in
+  its models directory, each paired with the `voices-<release>.bin` of its
+  release, and silerotts its `MODEL_CATALOG`. gtts sets
+  `OUTPUT_FORMAT = "mp3"`.
 
 #### Changed
 - A 400 for a request that fails schema validation now carries `message`

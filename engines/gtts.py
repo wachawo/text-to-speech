@@ -12,6 +12,10 @@ from libs.languages import is_language_code, primary_language
 # Above ~5k chars a single ttsgen run starts triggering bans.
 MAX_TEXT_LENGTH = 5_000
 
+# The container generate() returns; the other engines return WAV. Read by the
+# engine discovery data (engines.get_engine_capabilities).
+OUTPUT_FORMAT = "mp3"
+
 # Tags gTTS lists but folds into their language part with a deprecation warning
 # on every call (gtts.lang._fallback_deprecated_lang): there is no Canadian
 # French or European Portuguese voice, so they are left out and served as
@@ -51,12 +55,13 @@ def get_gtts_languages() -> dict[str, str]:
         return {}
 
 
-def list_languages() -> list[str] | None:
+def list_languages(model: str | None = None) -> list[str] | None:
     """Return the lowercased language tags gTTS serves, or None when its language table cannot be read.
 
-    A tag no request can carry (the 3-letter `yue`) is left out: the request
-    schema refuses it anyway, so listing it would only advertise a language
-    that can never be asked for.
+    gTTS has no selectable models, so `model` is ignored. A tag no request can
+    carry (the 3-letter `yue`) is left out: the request schema refuses it
+    anyway, so listing it would only advertise a language that can never be
+    asked for.
     """
     languages = get_gtts_languages()
     if not languages:
