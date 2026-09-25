@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Marshmallow validation schemas for TTS API."""
 
-from marshmallow import EXCLUDE, Schema, ValidationError, fields, validate
+from marshmallow import EXCLUDE, Schema, ValidationError, fields, validate, validates_schema
 
 # Local imports
 from libs.languages import LANGUAGE_CODE_ERROR, is_language_code
@@ -11,6 +11,12 @@ from ttssrv.openai_compat import RESPONSE_FORMATS
 # Upper bound of the `message` built from schema errors, so a payload with many
 # bad fields cannot produce an unbounded error body.
 MAX_VALIDATION_MESSAGE_LENGTH = 1000
+
+# What a model id may look like before it is looked up among the engine's
+# models: a Coqui name (tts_models/de/thorsten/vits), a Piper voice stem
+# (en_GB-alan-low), a Kokoro file name (kokoro-v1.0.int8.onnx) or a Silero id
+# (v3_1_ru). An empty string is allowed and means the engine default.
+MODEL_ID_REGEX = r"^(?:[A-Za-z0-9][A-Za-z0-9._/+-]{0,127})?\Z"
 
 
 def validate_language_field(value: str) -> None:
@@ -52,6 +58,15 @@ class TtsRequestSchema(Schema):
     voice = fields.Str(load_default=None, validate=validate.Length(max=128))
     # When true, stream audio chunk-by-chunk (chunked transfer) for low latency.
     stream = fields.Bool(load_default=False)
+    # A model id from GET /api/engines/<engine>; null or "" keeps the engine
+    # default. Checked against the engine's models before synthesis.
+    model = fields.Str(load_default=None, validate=validate.Regexp(MODEL_ID_REGEX))
+
+    @validates_schema
+    def reject_model_with_stream(self, data: dict, **kwargs) -> None:
+        """Refuse `model` with stream=true: streaming keeps the engine default model."""
+        if data.get("model") and data.get("stream"):
+            raise ValidationError("model is supported only for file generation (stream=false)", field_name="model")
 
 
 class HistoryCreateSchema(TtsRequestSchema):

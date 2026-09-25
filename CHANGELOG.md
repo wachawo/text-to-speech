@@ -3,6 +3,29 @@
 ### [Unreleased]
 
 #### Added
+- `model` on `/api/tts` (JSON, form or query) and `POST /api/history`: an
+  optional model id from `GET /api/engines/<engine>` (a Piper voice stem, a
+  Kokoro `.onnx` file name, a Silero id or a Coqui model name) that the file
+  is synthesized with. Null, `""` or no field keeps the engine default, so
+  existing clients see no change. An unknown model is a 400 (`Unknown model
+  '<id>' for engine '<engine>'. Available: ...`), as is a model for gtts,
+  pyttsx3 or barktts (`has no selectable models`), both before a pool slot
+  is taken; `model` with `stream=true` is a 400 as well, since streaming keeps
+  the engine default model. The history item records `model` (null without
+  one), the `Synthesis` log line names it when set, and with
+  `TTS_LANGUAGE_STRICT` the language is checked against the model's own
+  languages. `/v1/audio/speech` is unchanged: its `model` still names the
+  engine, which uses its default model.
+- `GET /api/engines/<engine>`: what one engine offers, read from file names
+  and constants without loading a model: `models` (`id`, `languages`,
+  `installed`, `default_for`), `default_model`, `model_selectable`,
+  `languages`, `default_language`, `language_strict`, `voice_selectable`,
+  `voices_endpoint`, `output_format`, `max_text_length` and `stream`, plus
+  `installed`, `preloaded` and `default` for this server. An unknown engine
+  is a 404 with `message: "Unknown engine '<name>'"`. `GET /api/engines`
+  keeps its response as it was.
+- `GET /api/voices?model=`: lists the voices of that model (a 400 for a model
+  the engine does not list); the response gains `model` (null without one).
 - Language tags: `language` takes a tag with a region or script subtag
   (`zh-cn`, `pt_BR`, `en-gb`, `es-419`) as well as a 2-character code, in
   `/api/tts`, `/api/history`, `/v1/audio/speech`, `ttsgen` and `libs.api`.
