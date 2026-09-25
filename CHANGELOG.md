@@ -24,8 +24,9 @@
   only constants or metadata: gtts, kokorotts, pipertts, silerotts, barktts,
   and coquitts for its configured model (xtts, or a single-language model,
   whose region tag such as `zh-CN` also lists `zh`). pyttsx3 and a coquitts
-  multilingual model other than xtts list none and accept every code. With the default `false` nothing changes and an unknown language falls
-  back as before.
+  multilingual model other than xtts list none and accept every code. With
+  the default `false` nothing changes and an unknown language falls back as
+  before.
 
 #### Changed
 - A 400 for a request that fails schema validation now carries `message`
