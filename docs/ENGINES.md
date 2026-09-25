@@ -158,8 +158,9 @@ read only constants or metadata (never load a model, never touch the network),
 and it works whether or not the engine is available. The server uses it for
 `TTS_LANGUAGE_STRICT`: a language that is not listed, neither as a whole nor by
 its primary subtag (`en` covers `en-gb`), is refused with a 400. An engine
-without the hook, or one that returns None (pyttsx3 has no hook), accepts every
-code, and a hook that raises is logged and treated as None.
+without the hook, or one that returns None (pyttsx3 has no hook; coquitts
+returns None for a multilingual model other than xtts), accepts every code, and
+a hook that raises is logged and treated as None.
 
 ### 4. Config Parameters
 

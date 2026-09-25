@@ -121,6 +121,12 @@ xtts names Chinese `zh-cn`; the engine sends `zh` (what `--language zh`, the
 API and the web UI use) to xtts as `zh-cn`. Any other tag is sent as its
 language part (`pt-br` is `pt`).
 
+With `TTS_LANGUAGE_STRICT=true` the server checks the languages of
+`COQUITTS_MODEL`: xtts lists its codes plus `zh`, and a single-language model
+lists its language (a region model such as `tts_models/zh-CN/baker/...` lists
+both `zh-cn` and `zh`). Any other multilingual model, such as `your_tts`, lists
+none, so every code passes the check.
+
 ### English Models
 
 **LJSpeech Tacotron2** - Fast, good quality

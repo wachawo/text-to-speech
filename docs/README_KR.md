@@ -203,7 +203,7 @@ audio.write_to_file("hola.mp3")
 | GET | `/v1/models` | OpenAI 호환 모델 목록. |
 | GET | `/v1/audio/voices?model=` | 엔진 하나의 음성. |
 
-`language`는 두 글자 코드(`en`, `ru`) 또는 지역이나 문자 체계가 붙은 태그(`zh-cn`, `pt_BR`, `en-gb`, `es-419`)이며, 태그는 소문자로 바뀌고 `-`로 연결됩니다. 각 엔진은 태그를 자신이 가진 언어에 맞춥니다: gtts는 자체 표기(`zh-CN`)를 받고, kokorotts는 `en-gb`를 영국식 음소 변환기로 읽으며, xtts는 중국어에 `zh-cn`을 받고, 나머지 엔진은 언어 부분을 사용합니다(`pt-br`은 `pt`). `stream=true`는 이전과 같이 두 글자 코드만 받습니다. 엔진이 모르는 언어는 엔진의 기본 언어(보통 영어)로 읽힙니다(gtts는 대신 실패합니다). `TTS_LANGUAGE_STRICT=true`이면 이런 요청은 엔진의 언어 목록을 알려 주는 400이 됩니다. 엄격한 검사는 `stream`이 없는 `/api/tts`, `/api/history`, `/v1/audio/speech`에 적용되며, 언어 목록을 제공하지 않는 pyttsx3를 제외한 모든 엔진이 대상입니다.
+`language`는 두 글자 코드(`en`, `ru`) 또는 지역이나 문자 체계가 붙은 태그(`zh-cn`, `pt_BR`, `en-gb`, `es-419`)이며, 태그는 소문자로 바뀌고 `-`로 연결됩니다. 각 엔진은 태그를 자신이 가진 언어에 맞춥니다: gtts는 자체 표기(`zh-CN`; 캐나다 프랑스어와 유럽 포르투갈어가 없어 `fr-ca`와 `pt-pt`는 `fr`과 `pt`)를 받고, kokorotts는 `en-gb`를 영국식 음소 변환기로 읽으며, xtts는 중국어에 `zh-cn`을 받고, 나머지 엔진은 언어 부분을 사용합니다(`pt-br`은 `pt`). `stream=true`일 때 요청의 `language`는 이전과 같이 두 글자 코드만 받습니다. `language`가 없는 요청은 태그라도 `TTS_LANGUAGE`를 설정된 그대로 사용합니다. 엔진이 모르는 언어는 엔진의 기본 언어(보통 영어)로 읽힙니다(gtts는 대신 실패합니다). `TTS_LANGUAGE_STRICT=true`이면 이런 요청은 엔진의 언어 목록을 알려 주는 400이 됩니다. 엄격한 검사는 `stream`이 없는 `/api/tts`, `/api/history`, `/v1/audio/speech`에 적용되며, 언어 목록을 제공하는 모든 엔진, 즉 pyttsx3와 xtts가 아닌 다국어 모델을 쓰는 coquitts를 제외한 모든 엔진이 대상입니다.
 
 #### 웹 UI
 

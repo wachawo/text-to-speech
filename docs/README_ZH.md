@@ -203,7 +203,7 @@ audio.write_to_file("hola.mp3")
 | GET | `/v1/models` | 兼容 OpenAI 的模型列表。 |
 | GET | `/v1/audio/voices?model=` | 某个引擎的声音。 |
 
-`language` 是两位字母的代码（`en`、`ru`），或带地区或书写系统的标签（`zh-cn`、`pt_BR`、`en-gb`、`es-419`），标签会转为小写并用 `-` 连接。每个引擎会把标签映射到自己支持的语言：gtts 使用它自己的写法（`zh-CN`），kokorotts 用英式音素转换器朗读 `en-gb`，xtts 对中文使用 `zh-cn`，其他引擎使用语言部分（`pt-br` 即 `pt`）。`stream=true` 与以前一样只接受两位字母的代码。引擎不认识的语言会用该引擎的默认语言朗读，通常是英语（gtts 则会直接失败）；设置 `TTS_LANGUAGE_STRICT=true` 后，这类请求返回 400，并列出该引擎支持的语言。严格检查适用于不带 `stream` 的 `/api/tts`、`/api/history` 和 `/v1/audio/speech`，以及除 pyttsx3 之外的所有引擎，因为 pyttsx3 不列出自己的语言。
+`language` 是两位字母的代码（`en`、`ru`），或带地区或书写系统的标签（`zh-cn`、`pt_BR`、`en-gb`、`es-419`），标签会转为小写并用 `-` 连接。每个引擎会把标签映射到自己支持的语言：gtts 使用它自己的写法（`zh-CN`；它没有加拿大法语和欧洲葡萄牙语，所以 `fr-ca` 和 `pt-pt` 即 `fr` 和 `pt`），kokorotts 用英式音素转换器朗读 `en-gb`，xtts 对中文使用 `zh-cn`，其他引擎使用语言部分（`pt-br` 即 `pt`）。`stream=true` 时，请求中的 `language` 与以前一样只接受两位字母的代码；不带 `language` 的请求按设置原样使用 `TTS_LANGUAGE`，即使它是标签。引擎不认识的语言会用该引擎的默认语言朗读，通常是英语（gtts 则会直接失败）；设置 `TTS_LANGUAGE_STRICT=true` 后，这类请求返回 400，并列出该引擎支持的语言。严格检查适用于不带 `stream` 的 `/api/tts`、`/api/history` 和 `/v1/audio/speech`，以及所有列出自身语言的引擎，即除 pyttsx3 和使用 xtts 以外多语言模型的 coquitts 之外的所有引擎。
 
 #### Web UI
 
