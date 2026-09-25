@@ -81,6 +81,29 @@ ttsgen "Hello" --engine silerotts
 | French | fr | fr_0 | 4/5 | Good quality |
 | Ukrainian | uk/ua | mykyta | 4/5 | Good quality |
 
+### Selecting a model per request
+
+The model id is the Silero model name from the table below. Without a model
+the language picks it, as above (an unknown language gets `v3_en`).
+
+| Model | Languages | Default speaker |
+|---|---|---|
+| `v3_1_ru` | `ru` | `aidar` |
+| `v3_en` | `en` | `en_0` |
+| `v3_de` | `de` | `bernd_ungerer` |
+| `v3_es` | `es` | `es_0` |
+| `v3_fr` | `fr` | `fr_0` |
+| `v3_ua` | `ua`, `uk` | `mykyta` |
+
+`GET /api/engines/silerotts` lists these under `models`; `installed` is true
+when `<model>.pt` is already under `SILEROTTS_MODELS`, and a model that is not
+downloaded yet is fetched from torch.hub on its first request, as the language
+defaults are. The listing does not call torch.hub. A request sends the id as
+`model` (`/api/tts`, `/api/history`); the model then gives the speaker default
+too, so `{"language": "ru", "model": "v3_en"}` speaks with `en_0`.
+`GET /api/voices?engine=silerotts&model=v3_en` lists that model's speakers,
+which loads the model. An id outside the table is a 400.
+
 ### Model Details
 
 All models use:

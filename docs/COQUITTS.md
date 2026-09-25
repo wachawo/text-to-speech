@@ -130,6 +130,30 @@ language code has three letters (`tts_models/ewe/openbible/vits`): a request
 can only carry a 2-character code or a tag, so listing `ewe` would refuse
 every request.
 
+### Selecting a model per request
+
+The model id is the Coqui model name, the same spelling as `COQUITTS_MODEL`
+(`tts_models/de/thorsten/vits`). `GET /api/engines/coquitts` lists the models
+already in the cache (`<COQUITTS_MODELS>/tts/tts_models--*`, shown with `/`)
+plus `COQUITTS_MODEL`, which is listed with `installed: false` until its first
+download. No other model that is not on disk is listed, so a request never
+starts the download of an arbitrary model: pre-download one (see
+[Pre-download Models](#pre-download-models)) to make it selectable. Each model
+lists its languages as above (xtts its codes plus `zh`, a single-language
+model its language, other multilingual models none).
+
+```bash
+curl -X POST localhost:5000/api/tts \
+  -H "Authorization: Bearer $TTS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Hallo Welt","engine":"coquitts","language":"de","model":"tts_models/de/thorsten/vits"}' -o out.wav
+```
+
+The `zh` to `zh-cn` mapping follows the model the request loads, so it applies
+whenever that model is xtts. Without a model `COQUITTS_MODEL` is used as
+before. The voice samples are shared by every model. An id that is not listed
+is a 400.
+
 ### English Models
 
 **LJSpeech Tacotron2** - Fast, good quality

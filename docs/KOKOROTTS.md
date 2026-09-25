@@ -125,6 +125,28 @@ Config precedence, strongest first: CLI flags > shell environment > `./ttsgen.co
 `~/.config/ttsgen.conf` > `./.env.local` > `./.env`. Files never override the
 shell; `.env` is read only from the current directory.
 
+## Selecting a model per request
+
+The model id is the name of a `.onnx` file in `KOKOROTTS_MODELS`, such as
+`kokoro-v1.0.int8.onnx`. `GET /api/engines/kokorotts` lists every `*.onnx`
+there under `models`, plus `KOKOROTTS_MODEL` (with `installed: false` when its
+file is missing); the listing reads the directory only and builds no ONNX
+session. A request sends the id as `model` (`/api/tts`, `/api/history`):
+
+```bash
+curl -X POST localhost:5000/api/tts \
+  -H "Authorization: Bearer $TTS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Hello","engine":"kokorotts","model":"kokoro-v1.0.int8.onnx"}' -o out.wav
+```
+
+A named model is paired with the voices file of its release: the release in
+its name (`v1.0` in `kokoro-v1.0.int8.onnx`) names `voices-v1.0.bin`, used when
+that file is in the same directory; otherwise `KOKOROTTS_VOICES` is used. Without a model `KOKOROTTS_MODEL` and
+`KOKOROTTS_VOICES` are used as before. `GET /api/voices?engine=kokorotts&model=`
+lists the voices of the paired file. An id that is not listed is a 400; a name
+with a path separator is refused by the engine as well.
+
 ## Supported languages and default voices
 
 | `--language` | Kokoro lang | Default voice | Notes |
