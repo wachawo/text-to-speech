@@ -39,8 +39,8 @@
   before. coquitts lists the models in its cache plus `COQUITTS_MODEL` (never
   one it would have to download on its own), kokorotts the `*.onnx` files in
   its models directory, each paired with the `voices-<release>.bin` of its
-  release, and silerotts its `MODEL_CATALOG`. gtts sets
-  `OUTPUT_FORMAT = "mp3"`.
+  release, silerotts its `MODEL_CATALOG`, and pipertts every installed voice
+  by its file stem (`en_GB-alan-low`). gtts sets `OUTPUT_FORMAT = "mp3"`.
 
 #### Changed
 - A 400 for a request that fails schema validation now carries `message`
@@ -49,6 +49,18 @@
   `POST /api/history`, `GET /api/history`, `POST /api/voices`,
   `DELETE /api/voices/<name>` and `GET /api/voices/<name>/audio`. The other
   400s already had it, and the web UI shows it next to the control.
+- `pipertts` picks the voice for a language among the installed voices: a
+  tag with a region (`en-gb`) takes an installed voice of that region, then
+  the language's voice from the table in docs/PIPERTTS.md is used when it is
+  installed (the 8 languages there keep the voice they had), then any
+  installed voice of the language (`medium` first). Only a language with no
+  installed voice falls back to English, as before, so a Polish voice dropped
+  into `PIPERTTS_MODELS` now speaks `pl` instead of the English voice. This
+  applies to streaming too. `list_languages()` lists the languages of the
+  installed voices instead of the fixed table, which is what
+  `TTS_LANGUAGE_STRICT` checks, and the download instructions name the right
+  file for every voice (Italian, Ukrainian and Chinese used to show the
+  English one).
 
 #### Fixed
 - `silerotts` failed to load for `uk` in a fresh process: the Ukrainian alias

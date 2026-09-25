@@ -208,8 +208,18 @@ def test_get_engine_languages_failing_hook_is_logged_and_declares_nothing(monkey
     assert "RuntimeError: catalogue unreadable" in caplog.text
 
 
-@pytest.mark.parametrize("name", ["barktts", "kokorotts", "pipertts", "silerotts"])
+@pytest.mark.parametrize("name", ["barktts", "kokorotts", "silerotts"])
 def test_get_engine_languages_of_shipped_engines(name):
     """The engines with a fixed language table declare it without their dependencies installed."""
     languages = get_engine_languages(name)
     assert languages and "en" in languages
+
+
+def test_get_engine_languages_of_pipertts_follow_installed_voices(monkeypatch, tmp_path):
+    """pipertts declares the languages of the voices on disk, without piper installed."""
+    (tmp_path / "en_US-lessac-medium.onnx").write_bytes(b"x")
+    (tmp_path / "pl_PL-gosia-medium.onnx").write_bytes(b"x")
+    monkeypatch.setenv("PIPERTTS_MODELS", str(tmp_path))
+    languages = get_engine_languages("pipertts")
+    assert languages is not None
+    assert {"en", "pl"} <= set(languages)
