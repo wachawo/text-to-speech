@@ -162,7 +162,7 @@ def get_engine_module(engine_name: str) -> ModuleType | None:
     return importlib.import_module(f".{engine_name}", package="engines")
 
 
-def get_engine_voices(engine_name: str, language: str = "en") -> dict[str, object]:
+def get_engine_voices(engine_name: str, language: str = "en", model: str | None = None) -> dict[str, object]:
     """Fetch the selectable voices of an engine for a given language.
 
     Engines that support multiple voices implement `list_voices(language) -> dict`
@@ -174,6 +174,8 @@ def get_engine_voices(engine_name: str, language: str = "en") -> dict[str, objec
     Args:
         engine_name: Name of the engine.
         language: Language code.
+        model: A model id from the engine's list_models(), passed on as
+            `list_voices(language, model)`; None keeps the one-argument call.
 
     Returns:
         Dict {'voices': [...], 'default': str|None}, plus 'mix' when the
@@ -184,13 +186,21 @@ def get_engine_voices(engine_name: str, language: str = "en") -> dict[str, objec
     module = get_engine_module(engine_name)
 
     if module is not None and hasattr(module, "list_voices"):
-        voices: dict[str, object] = module.list_voices(language)
+        if model is None:
+            voices: dict[str, object] = module.list_voices(language)
+        else:
+            voices = module.list_voices(language, model)
         return voices
 
     return {"voices": [], "default": None}
 
 
-def get_engine_languages(engine_name: str) -> list[str] | None:
+def log_hook_failure(engine_name: str, hook: str, exc: Exception) -> None:
+    """Log a discovery hook that raised, as a warning with the exception type, message and traceback."""
+    logger.warning(f"Engine {engine_name} {hook} failed: {type(exc).__name__}: {str(exc)}\n{traceback.format_exc()}")
+
+
+def get_engine_languages(engine_name: str, model: str | None = None) -> list[str] | None:
     """Fetch the language codes an engine declares through its optional `list_languages()` hook.
 
     The hook reads only constants or metadata and never loads a model. None
@@ -200,6 +210,8 @@ def get_engine_languages(engine_name: str) -> list[str] | None:
 
     Args:
         engine_name: Name of the engine.
+        model: A model id; the hook then describes that model. None keeps the
+            no-argument call and describes the engine's default.
 
     Returns:
         The lowercased codes the engine serves, or None when not declared.
@@ -208,15 +220,102 @@ def get_engine_languages(engine_name: str) -> list[str] | None:
         module = get_engine_module(engine_name)
         if module is None or not hasattr(module, "list_languages"):
             return None
-        languages = module.list_languages()
+        languages = module.list_languages() if model is None else module.list_languages(model)
         if languages is None:
             return None
         return [str(code).lower() for code in languages]
     except Exception as exc:
-        logger.warning(
-            f"Engine {engine_name} list_languages failed: {type(exc).__name__}: {str(exc)}\n{traceback.format_exc()}"
-        )
+        log_hook_failure(engine_name, "list_languages", exc)
         return None
+
+
+def get_engine_models(engine_name: str) -> list[dict]:
+    """Fetch the models a request may name for an engine, from its optional `list_models()` hook.
+
+    Each item is {'id': str, 'languages': list[str]|None, 'installed': bool}.
+    The hook reads only file names and metadata and never loads a model.
+
+    Args:
+        engine_name: Name of the engine.
+
+    Returns:
+        The models, or [] when the engine has no hook, the module is missing
+        or the hook failed (logged as a warning).
+    """
+    try:
+        module = get_engine_module(engine_name)
+        if module is None or not hasattr(module, "list_models"):
+            return []
+        return [dict(item) for item in module.list_models()]
+    except Exception as exc:
+        log_hook_failure(engine_name, "list_models", exc)
+        return []
+
+
+def get_engine_default_model(engine_name: str, language: str | None = None) -> str | None:
+    """Return the model a request without `model` uses, from the optional `default_model(language)` hook.
+
+    Args:
+        engine_name: Name of the engine.
+        language: Language code, for engines whose model depends on it.
+
+    Returns:
+        The model id, or None when it depends on the language and none was
+        given, the engine has no models, or the hook failed (logged).
+    """
+    try:
+        module = get_engine_module(engine_name)
+        if module is None or not hasattr(module, "default_model"):
+            return None
+        model = module.default_model(language)
+        return str(model) if model is not None else None
+    except Exception as exc:
+        log_hook_failure(engine_name, "default_model", exc)
+        return None
+
+
+def get_engine_capabilities(engine_name: str) -> dict | None:
+    """Describe what an engine offers, from its module alone: models, languages, voices and output.
+
+    Only the discovery hooks run (file names, small configs, constants): no
+    model is loaded, so the answer is cheap and works without the engine's
+    dependencies. `default_for` of a model lists the declared languages whose
+    requests use it when they name no model.
+
+    Args:
+        engine_name: Name of the engine.
+
+    Returns:
+        Dict with 'models', 'default_model', 'model_selectable', 'languages',
+        'voice_selectable', 'output_format' and 'max_text_length', or None when
+        no engines/<name>.py matches the name.
+    """
+    try:
+        module = get_engine_module(engine_name)
+    except Exception as exc:
+        log_hook_failure(engine_name, "import", exc)
+        return None
+    if module is None:
+        return None
+    models = get_engine_models(engine_name)
+    languages = get_engine_languages(engine_name)
+    for item in models:
+        item["default_for"] = []
+    if models and languages:
+        by_id = {item.get("id"): item for item in models}
+        for language in languages:
+            model_id = get_engine_default_model(engine_name, language)
+            if model_id in by_id:
+                by_id[model_id]["default_for"].append(language)
+    return {
+        "models": models,
+        "default_model": get_engine_default_model(engine_name),
+        "model_selectable": bool(models),
+        "languages": languages,
+        "voice_selectable": hasattr(module, "list_voices"),
+        "output_format": getattr(module, "OUTPUT_FORMAT", "wav"),
+        "max_text_length": getattr(module, "MAX_TEXT_LENGTH", None),
+    }
 
 
 def main():
