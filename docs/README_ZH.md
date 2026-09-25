@@ -122,6 +122,17 @@ curl -X POST localhost:5000/api/tts \
 模型、声音和历史记录：
 
 ```bash
+# 某个引擎提供的内容：模型、语言和声音，不加载任何模型
+curl localhost:5000/api/engines/pipertts \
+  -H "Authorization: Bearer $TTS_TOKEN"
+
+# 用其中列出的某个模型合成
+curl -X POST localhost:5000/api/tts \
+  -H "Authorization: Bearer $TTS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Hello world","engine":"pipertts","language":"en-gb","model":"en_GB-alan-low"}' \
+  -o out.wav
+
 # 已安装和缺失的模型，与 `ttsgen --list` 打印的表格相同
 curl localhost:5000/api/models \
   -H "Authorization: Bearer $TTS_TOKEN"
@@ -174,7 +185,7 @@ audio = client.audio.speech.create(model="coquitts", voice="maria", input="Hola 
 audio.write_to_file("hola.mp3")
 ```
 
-- `model` 是引擎名称，或者用 `tts-1` / `tts-1-hd` / `gpt-4o-mini-tts` 表示默认引擎。
+- `model` 是引擎名称，或者用 `tts-1` / `tts-1-hd` / `gpt-4o-mini-tts` 表示默认引擎。`/v1` 无法在引擎内部选择模型：引擎使用其默认模型。
 - `voice` 是引擎的声音；OpenAI 的声音名称（`alloy`、`nova` 等）会选择引擎的默认声音。
 - `response_format`：`mp3`（默认）、`wav`、`pcm`、`opus`、`flac`、`aac`。引擎生成 WAV 或 MP3；其他格式通过 `ffmpeg` 转码，Docker 镜像中已包含它。`speed`（0.25 到 4.0）以同样的方式应用。
 - `language` 是一个扩展参数：两位字母的语言代码或 `zh-cn` 这样的标签，默认为 `TTS_LANGUAGE`。
@@ -188,12 +199,13 @@ audio.write_to_file("hola.mp3")
 | --- | --- | --- |
 | GET | `/api/health` | 存活状态、`auth` 标志、引擎、池和队列大小。无需令牌。 |
 | GET | `/api/engines` | 支持的引擎、已安装的引擎以及默认引擎。 |
+| GET | `/api/engines/<engine>` | 某个引擎的模型、语言、声音列表和输出格式，读取时不加载任何模型。 |
 | GET | `/api/models` | 每个引擎已安装和缺失的模型，即 `ttsgen --list` 打印的表格。 |
-| GET | `/api/voices?engine=&language=` | 某个引擎的声音；对于 `coquitts` 则是带大小、采样率和时长的样本。 |
+| GET | `/api/voices?engine=&language=&model=` | 某个引擎的声音；对于 `coquitts` 则是带大小、采样率和时长的样本。指定 `model` 时为该模型的声音。 |
 | POST | `/api/voices` | 上传 WAV 样本（`file`、`name`、`engine=coquitts`）。 |
 | GET | `/api/voices/<name>/audio?engine=&download=1` | 播放或下载样本。 |
 | DELETE | `/api/voices/<name>?engine=` | 删除样本。 |
-| POST, GET | `/api/tts` | 用 `engine`、`language`、`voice` 合成 `text`；`stream=true` 会在分块就绪时流式返回。 |
+| POST, GET | `/api/tts` | 用 `engine`、`language`、`voice`、`model` 合成 `text`；`stream=true` 会在分块就绪时流式返回。 |
 | POST | `/api/history` | 合成到服务器端的历史记录中，而不是返回到响应体。 |
 | GET | `/api/history?limit=&offset=` | 列出历史条目，最新的在前。 |
 | GET | `/api/history/<id>` | 单个条目的元数据。 |
@@ -204,6 +216,8 @@ audio.write_to_file("hola.mp3")
 | GET | `/v1/audio/voices?model=` | 某个引擎的声音。 |
 
 `language` 是两位字母的代码（`en`、`ru`），或带地区或书写系统的标签（`zh-cn`、`pt_BR`、`en-gb`、`es-419`），标签会转为小写并用 `-` 连接。每个引擎会把标签映射到自己支持的语言：gtts 使用它自己的写法（`zh-CN`；它没有加拿大法语和欧洲葡萄牙语，所以 `fr-ca` 和 `pt-pt` 即 `fr` 和 `pt`），kokorotts 用英式音素转换器朗读 `en-gb`，xtts 对中文使用 `zh-cn`，其他引擎使用语言部分（`pt-br` 即 `pt`）。引擎不认识的语言会用该引擎的默认语言朗读，通常是英语（gtts 则会直接失败）；设置 `TTS_LANGUAGE_STRICT=true` 后，这类请求返回 400，并列出该引擎支持的语言。严格检查适用于不带 `stream` 的 `/api/tts`、`/api/history` 和 `/v1/audio/speech`，以及所有列出自身语言的引擎，即除 pyttsx3 和使用 xtts 以外多语言模型或三字母语言代码（`ewe`）模型的 coquitts 之外的所有引擎。
+
+`model` 在 `/api/tts` 和 `/api/history` 中选择引擎内的模型：Piper 声音（`en_GB-alan-low`）、Kokoro 模型文件（`kokoro-v1.0.int8.onnx`）、Silero 模型（`v3_1_ru`）或 Coqui 模型名称（`tts_models/de/thorsten/vits`）。`GET /api/engines/<engine>` 在 `models` 中列出它们，每个模型带有 `languages`、`installed` 和 `default_for`（请求未指定模型时使用该模型的语言），同时给出引擎的 `languages`、`output_format`、`max_text_length` 以及引擎是否有声音列表；该接口不加载任何模型，未知引擎返回 404。不带 `model` 时，引擎按原来的方式选择；引擎未列出的 id 返回 400，并列出可用的 id；`model` 与 `stream=true` 同时使用也返回 400，因为流式输出始终使用引擎的默认模型。gtts、pyttsx3 和 barktts 没有模型。未指定模型时，pipertts 从已安装的声音中选择：带地区的标签（`en-gb`）使用该地区的声音，内置表之外的语言使用该语言已安装的声音而不是英语声音；pipertts 的语言列表就是已安装声音的语言。
 
 #### Web UI
 

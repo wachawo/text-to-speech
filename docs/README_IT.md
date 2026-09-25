@@ -122,6 +122,17 @@ curl -X POST localhost:5000/api/tts \
 Modelli, voci e cronologia:
 
 ```bash
+# Cosa offre un motore: modelli, lingue e voci, letti senza caricare alcun modello
+curl localhost:5000/api/engines/pipertts \
+  -H "Authorization: Bearer $TTS_TOKEN"
+
+# Sintetizzare con uno dei modelli elencati lì
+curl -X POST localhost:5000/api/tts \
+  -H "Authorization: Bearer $TTS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Hello world","engine":"pipertts","language":"en-gb","model":"en_GB-alan-low"}' \
+  -o out.wav
+
 # Modelli installati e mancanti, la stessa tabella stampata da `ttsgen --list`
 curl localhost:5000/api/models \
   -H "Authorization: Bearer $TTS_TOKEN"
@@ -174,7 +185,7 @@ audio = client.audio.speech.create(model="coquitts", voice="maria", input="Hola 
 audio.write_to_file("hola.mp3")
 ```
 
-- `model` è il nome di un motore, oppure `tts-1` / `tts-1-hd` / `gpt-4o-mini-tts` per il motore predefinito.
+- `model` è il nome di un motore, oppure `tts-1` / `tts-1-hd` / `gpt-4o-mini-tts` per il motore predefinito. Su `/v1` non si può scegliere un modello all'interno del motore: il motore usa il suo modello predefinito.
 - `voice` è una voce del motore; i nomi delle voci OpenAI (`alloy`, `nova`, ...) selezionano quella predefinita del motore.
 - `response_format`: `mp3` (predefinito), `wav`, `pcm`, `opus`, `flac`, `aac`. I motori producono WAV o MP3; tutto il resto viene transcodificato con `ffmpeg`, incluso nelle immagini Docker. `speed` (da 0.25 a 4.0) viene applicato allo stesso modo.
 - `language` è un'estensione: un codice di due lettere o un tag come `zh-cn`, predefinito `TTS_LANGUAGE`.
@@ -188,12 +199,13 @@ Ogni rotta tranne `/api/health` richiede `Authorization: Bearer <token>` quando 
 | --- | --- | --- |
 | GET | `/api/health` | Liveness, flag `auth`, motori, dimensioni del pool e della coda. Nessun token necessario. |
 | GET | `/api/engines` | Motori supportati, quelli installati e quello predefinito. |
+| GET | `/api/engines/<engine>` | Modelli, lingue, elenco delle voci e formato di uscita di un motore, letti senza caricare alcun modello. |
 | GET | `/api/models` | Modelli installati e mancanti per motore, la tabella stampata da `ttsgen --list`. |
-| GET | `/api/voices?engine=&language=` | Voci di un motore; per `coquitts` i campioni con dimensione, frequenza e durata. |
+| GET | `/api/voices?engine=&language=&model=` | Voci di un motore; per `coquitts` i campioni con dimensione, frequenza e durata. Con `model`, le voci di quel modello. |
 | POST | `/api/voices` | Carica un campione WAV (`file`, `name`, `engine=coquitts`). |
 | GET | `/api/voices/<name>/audio?engine=&download=1` | Riproduci o scarica un campione. |
 | DELETE | `/api/voices/<name>?engine=` | Elimina un campione. |
-| POST, GET | `/api/tts` | Sintetizza `text` con `engine`, `language`, `voice`; `stream=true` trasmette i blocchi man mano che sono pronti. |
+| POST, GET | `/api/tts` | Sintetizza `text` con `engine`, `language`, `voice`, `model`; `stream=true` trasmette i blocchi man mano che sono pronti. |
 | POST | `/api/history` | Sintetizza nella cronologia lato server invece che nel corpo della risposta. |
 | GET | `/api/history?limit=&offset=` | Elenca gli elementi della cronologia, dal più recente. |
 | GET | `/api/history/<id>` | Metadati di un elemento. |
@@ -204,6 +216,8 @@ Ogni rotta tranne `/api/health` richiede `Authorization: Bearer <token>` quando 
 | GET | `/v1/audio/voices?model=` | Voci di un motore. |
 
 `language` è un codice di due lettere (`en`, `ru`) o un tag con regione o sistema di scrittura (`zh-cn`, `pt_BR`, `en-gb`, `es-419`), convertito in minuscolo e scritto con `-`. Ogni motore riconduce il tag a ciò che ha: gtts riceve la propria grafia (`zh-CN`; non ha francese canadese né portoghese europeo, quindi `fr-ca` e `pt-pt` diventano `fr` e `pt`), kokorotts pronuncia `en-gb` con il fonemizzatore britannico, xtts riceve `zh-cn` per il cinese e gli altri motori usano la parte della lingua (`pt-br` diventa `pt`). Una lingua che il motore non conosce viene pronunciata nella sua lingua predefinita, di solito l'inglese (gtts invece fallisce); con `TTS_LANGUAGE_STRICT=true` è un 400 che elenca le lingue del motore. Il controllo rigoroso vale per `/api/tts` senza `stream`, `/api/history` e `/v1/audio/speech`, e per tutti i motori che elencano le proprie lingue: tutti tranne pyttsx3 e coquitts con un modello multilingue diverso da xtts o con un modello il cui codice lingua ha tre lettere (`ewe`).
+
+`model` sceglie un modello all'interno del motore su `/api/tts` e `/api/history`: una voce Piper (`en_GB-alan-low`), un file di modello Kokoro (`kokoro-v1.0.int8.onnx`), un modello Silero (`v3_1_ru`) o il nome di un modello Coqui (`tts_models/de/thorsten/vits`). `GET /api/engines/<engine>` li elenca in `models`, ciascuno con `languages`, `installed` e `default_for` (le lingue che lo usano quando la richiesta non indica un modello), insieme ai `languages` del motore, a `output_format`, a `max_text_length` e all'indicazione se ha un elenco di voci; non carica alcun modello, e un motore sconosciuto dà 404. Senza `model` il motore sceglie come prima; un id che il motore non elenca è un 400 che nomina quelli disponibili, e lo è anche `model` con `stream=true`, perché uno stream usa sempre il modello predefinito del motore. gtts, pyttsx3 e barktts non hanno modelli. Senza modello pipertts sceglie tra le voci installate: un tag con regione (`en-gb`) prende una voce di quella regione, e una lingua fuori dalla sua tabella integrata prende una voce installata di quella lingua invece di quella inglese; il suo elenco di lingue è quello delle voci installate.
 
 #### Interfaccia web
 

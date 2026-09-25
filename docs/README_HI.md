@@ -122,6 +122,17 @@ curl -X POST localhost:5000/api/tts \
 मॉडल, आवाज़ें और इतिहास:
 
 ```bash
+# एक इंजन क्या देता है: मॉडल, भाषाएँ और आवाज़ें, कोई मॉडल लोड किए बिना
+curl localhost:5000/api/engines/pipertts \
+  -H "Authorization: Bearer $TTS_TOKEN"
+
+# वहाँ सूचीबद्ध किसी मॉडल से सिंथेसाइज़ करें
+curl -X POST localhost:5000/api/tts \
+  -H "Authorization: Bearer $TTS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Hello world","engine":"pipertts","language":"en-gb","model":"en_GB-alan-low"}' \
+  -o out.wav
+
 # इंस्टॉल किए गए और अनुपस्थित मॉडल, वही तालिका जो `ttsgen --list` प्रिंट करता है
 curl localhost:5000/api/models \
   -H "Authorization: Bearer $TTS_TOKEN"
@@ -174,7 +185,7 @@ audio = client.audio.speech.create(model="coquitts", voice="maria", input="Hola 
 audio.write_to_file("hola.mp3")
 ```
 
-- `model` एक इंजन का नाम है, या डिफ़ॉल्ट इंजन के लिए `tts-1` / `tts-1-hd` / `gpt-4o-mini-tts`।
+- `model` एक इंजन का नाम है, या डिफ़ॉल्ट इंजन के लिए `tts-1` / `tts-1-hd` / `gpt-4o-mini-tts`। `/v1` पर इंजन के भीतर मॉडल नहीं चुना जा सकता: इंजन अपना डिफ़ॉल्ट मॉडल इस्तेमाल करता है।
 - `voice` इंजन की एक आवाज़ है; OpenAI आवाज़ नाम (`alloy`, `nova`, ...) इंजन का डिफ़ॉल्ट चुनते हैं।
 - `response_format`: `mp3` (डिफ़ॉल्ट), `wav`, `pcm`, `opus`, `flac`, `aac`। इंजन WAV या MP3 बनाते हैं; बाकी सब कुछ `ffmpeg` से ट्रांसकोड किया जाता है, जो Docker इमेज में शामिल है। `speed` (0.25 से 4.0) उसी तरह लागू होता है।
 - `language` एक एक्सटेंशन है: दो-अक्षर का कोड या `zh-cn` जैसा टैग, डिफ़ॉल्ट `TTS_LANGUAGE`।
@@ -188,12 +199,13 @@ audio.write_to_file("hola.mp3")
 | --- | --- | --- |
 | GET | `/api/health` | लाइवनेस, `auth` फ़्लैग, इंजन, पूल और कतार के आकार। टोकन की ज़रूरत नहीं। |
 | GET | `/api/engines` | समर्थित इंजन, इंस्टॉल किए गए इंजन और डिफ़ॉल्ट। |
+| GET | `/api/engines/<engine>` | एक इंजन के मॉडल, भाषाएँ, आवाज़ों की सूची और आउटपुट फ़ॉर्मैट, कोई मॉडल लोड किए बिना पढ़े गए। |
 | GET | `/api/models` | प्रति इंजन इंस्टॉल किए गए और अनुपस्थित मॉडल, वही तालिका जो `ttsgen --list` प्रिंट करता है। |
-| GET | `/api/voices?engine=&language=` | एक इंजन की आवाज़ें; `coquitts` के लिए आकार, रेट और अवधि सहित सैंपल। |
+| GET | `/api/voices?engine=&language=&model=` | एक इंजन की आवाज़ें; `coquitts` के लिए आकार, रेट और अवधि सहित सैंपल। `model` देने पर उस मॉडल की आवाज़ें। |
 | POST | `/api/voices` | एक WAV सैंपल अपलोड करें (`file`, `name`, `engine=coquitts`)। |
 | GET | `/api/voices/<name>/audio?engine=&download=1` | एक सैंपल चलाएँ या डाउनलोड करें। |
 | DELETE | `/api/voices/<name>?engine=` | एक सैंपल हटाएँ। |
-| POST, GET | `/api/tts` | `engine`, `language`, `voice` के साथ `text` सिंथेसाइज़ करें; `stream=true` तैयार होते ही चंक स्ट्रीम करता है। |
+| POST, GET | `/api/tts` | `engine`, `language`, `voice`, `model` के साथ `text` सिंथेसाइज़ करें; `stream=true` तैयार होते ही चंक स्ट्रीम करता है। |
 | POST | `/api/history` | प्रतिक्रिया बॉडी के बजाय सर्वर-साइड इतिहास में सिंथेसाइज़ करें। |
 | GET | `/api/history?limit=&offset=` | इतिहास आइटम सूचीबद्ध करें, सबसे नए पहले। |
 | GET | `/api/history/<id>` | एक आइटम का मेटाडेटा। |
@@ -204,6 +216,8 @@ audio.write_to_file("hola.mp3")
 | GET | `/v1/audio/voices?model=` | एक इंजन की आवाज़ें। |
 
 `language` दो-अक्षर का कोड (`en`, `ru`) या क्षेत्र या लिपि वाला टैग (`zh-cn`, `pt_BR`, `en-gb`, `es-419`) होता है; टैग को छोटे अक्षरों में बदला जाता है और `-` से जोड़ा जाता है। हर इंजन टैग को अपनी उपलब्ध भाषा से मिलाता है: gtts को उसकी अपनी वर्तनी (`zh-CN`; इसमें कनाडाई फ़्रेंच और यूरोपीय पुर्तगाली नहीं हैं, इसलिए `fr-ca` और `pt-pt` का अर्थ `fr` और `pt`) मिलती है, kokorotts `en-gb` को ब्रिटिश फ़ोनेमाइज़र से बोलता है, xtts को चीनी के लिए `zh-cn` मिलता है, और बाकी इंजन भाषा वाला हिस्सा लेते हैं (`pt-br` का अर्थ `pt`)। जो भाषा इंजन नहीं जानता, वह इंजन की डिफ़ॉल्ट भाषा में बोली जाती है, आम तौर पर अंग्रेज़ी (gtts इसके बजाय विफल होता है); `TTS_LANGUAGE_STRICT=true` होने पर ऐसा अनुरोध 400 पाता है, जिसमें इंजन की भाषाओं की सूची होती है। सख़्त जाँच `stream` के बिना `/api/tts`, `/api/history` और `/v1/audio/speech` पर, और उन सभी इंजनों पर लागू होती है जो अपनी भाषाओं की सूची देते हैं: pyttsx3, और xtts के अलावा किसी बहुभाषी मॉडल या तीन अक्षरों वाले भाषा कोड (`ewe`) के मॉडल वाले coquitts को छोड़कर सभी।
+
+`/api/tts` और `/api/history` पर `model` इंजन के भीतर एक मॉडल चुनता है: Piper की कोई आवाज़ (`en_GB-alan-low`), Kokoro की मॉडल फ़ाइल (`kokoro-v1.0.int8.onnx`), Silero का मॉडल (`v3_1_ru`) या Coqui मॉडल का नाम (`tts_models/de/thorsten/vits`)। `GET /api/engines/<engine>` इन्हें `models` में सूचीबद्ध करता है, हर एक के साथ `languages`, `installed` और `default_for` (वे भाषाएँ जिनके लिए यह तब इस्तेमाल होता है जब अनुरोध कोई मॉडल नहीं बताता), और साथ में इंजन की `languages`, `output_format`, `max_text_length` और यह कि इंजन के पास आवाज़ों की सूची है या नहीं; इसमें कोई मॉडल लोड नहीं होता, और अज्ञात इंजन पर 404 मिलता है। `model` के बिना इंजन पहले की तरह चुनता है; जो id इंजन की सूची में नहीं है उस पर 400 मिलता है, जिसमें उपलब्ध id बताए जाते हैं, और `stream=true` के साथ `model` पर भी 400 मिलता है, क्योंकि स्ट्रीम हमेशा इंजन का डिफ़ॉल्ट मॉडल इस्तेमाल करती है। gtts, pyttsx3 और barktts में मॉडल नहीं होते। मॉडल के बिना pipertts इंस्टॉल की गई आवाज़ों में से चुनता है: क्षेत्र वाला टैग (`en-gb`) उसी क्षेत्र की आवाज़ लेता है, और अपनी अंतर्निहित तालिका से बाहर की भाषा अंग्रेज़ी आवाज़ के बजाय उस भाषा की इंस्टॉल की गई आवाज़ लेती है; इसकी भाषा-सूची इंस्टॉल की गई आवाज़ों की भाषाएँ हैं।
 
 #### वेब UI
 
