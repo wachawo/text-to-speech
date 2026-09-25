@@ -12,7 +12,14 @@ from pathlib import Path
 from typing import Any, cast
 
 # Local imports
-from engines import get_engine_function, get_engine_languages, get_supported_engines, is_engine_available
+from engines import (
+    get_engine_function,
+    get_engine_languages,
+    get_engine_models,
+    get_engine_module_path,
+    get_supported_engines,
+    is_engine_available,
+)
 
 from .exceptions import EngineNotAvailableError, TTSException, ValidationError
 from .languages import LANGUAGE_CODE_ERROR, is_language_code, language_supported, normalize_language
@@ -30,6 +37,9 @@ Config = dict[str, Any]
 # (libs/cli.chunk_text); this limit only stops pathological inputs that would
 # exhaust memory or stall a worker for hours. 1M chars is roughly a book chapter.
 MAX_TEXT_LENGTH = 1_000_000
+
+# How many model ids an "Unknown model" message lists before it says "(+N more)".
+MAX_LISTED_MODELS = 20
 
 
 def get_default_config() -> Config:
@@ -119,8 +129,8 @@ def validate_language(language: str) -> str:
     return normalize_language(language)
 
 
-def validate_engine_language(engine: str, language: str) -> None:
-    """Refuse a language the engine declares it does not serve.
+def validate_engine_language(engine: str, language: str, model: str | None = None) -> None:
+    """Refuse a language the engine (or the model named by `model`) declares it does not serve.
 
     Engines that do not declare their languages (no `list_languages()` hook,
     or a hook that returns None) accept every code, as does an unknown engine,
@@ -130,11 +140,43 @@ def validate_engine_language(engine: str, language: str) -> None:
     Raises:
         ValidationError: The engine lists its languages and `language` is not among them.
     """
-    languages = get_engine_languages(engine)
+    languages = get_engine_languages(engine) if model is None else get_engine_languages(engine, model)
     if language_supported(language, languages):
         return
     supported = ", ".join(languages or [])
-    raise ValidationError(f"Language '{language}' is not supported by engine '{engine}'. Supported: {supported}")
+    subject = f"engine '{engine}'" if model is None else f"engine '{engine}' model '{model}'"
+    raise ValidationError(f"Language '{language}' is not supported by {subject}. Supported: {supported}")
+
+
+def validate_model(engine: str, model: str | None) -> str | None:
+    """Return a model the engine lists, or None for the engine default.
+
+    The id is only compared with the ids the engine's `list_models()` hook
+    returns; it is never used as a path, so a crafted value cannot reach the
+    filesystem, and the messages name no path.
+
+    Args:
+        engine: Engine name.
+        model: A model id from the engine's list_models(), or None / '' for
+            the engine default.
+
+    Raises:
+        ValidationError: The engine does not exist, has no selectable models,
+            or does not list `model`.
+    """
+    if model is None or model == "":
+        return None
+    if not get_engine_module_path(engine):
+        raise ValidationError(f"Engine '{engine}' not found")
+    models = get_engine_models(engine)
+    if not models:
+        raise ValidationError(f"Engine '{engine}' has no selectable models")
+    model_ids = [str(item.get("id")) for item in models]
+    if model in model_ids:
+        return model
+    listed = ", ".join(model_ids[:MAX_LISTED_MODELS])
+    more = f" (+{len(model_ids) - MAX_LISTED_MODELS} more)" if len(model_ids) > MAX_LISTED_MODELS else ""
+    raise ValidationError(f"Unknown model '{model}' for engine '{engine}'. Available: {listed}{more}")
 
 
 def get_engine_generate_function(engine_name: str) -> Callable[..., Any]:

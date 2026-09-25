@@ -41,6 +41,10 @@
   its models directory, each paired with the `voices-<release>.bin` of its
   release, silerotts its `MODEL_CATALOG`, and pipertts every installed voice
   by its file stem (`en_GB-alan-low`). gtts sets `OUTPUT_FORMAT = "mp3"`.
+- `libs.api.text_to_speech_bytes(..., model=None)` takes a model id; it is
+  checked against the engine's `list_models()` (an unknown id, or a model
+  for an engine without models, is a `ValidationError` that lists the ids
+  the engine has, never a path), and None keeps the engine default.
 
 #### Changed
 - A 400 for a request that fails schema validation now carries `message`
