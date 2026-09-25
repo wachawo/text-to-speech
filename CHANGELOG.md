@@ -24,8 +24,10 @@
   list their languages through an optional `list_languages()` hook that reads
   only constants or metadata: gtts, kokorotts, pipertts, silerotts, barktts,
   and coquitts for its configured model (xtts, or a single-language model,
-  whose region tag such as `zh-CN` also lists `zh`). pyttsx3 and a coquitts
-  multilingual model other than xtts list none and accept every code. With
+  whose region tag such as `zh-CN` also lists `zh`). pyttsx3, a coquitts
+  multilingual model other than xtts and a coquitts model whose language code
+  has three letters (`tts_models/ewe/openbible/vits`) list none and accept
+  every code; gtts leaves out `yue`, which no request can carry. With
   the default `false` nothing changes and an unknown language falls back as
   before.
 

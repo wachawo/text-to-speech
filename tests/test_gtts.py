@@ -154,6 +154,14 @@ def test_folded_tags_still_pass_the_strict_check(engine, gtts_langs):
     assert language_supported("pt-pt", languages)
 
 
+def test_list_languages_leaves_out_tags_no_request_can_carry(engine, monkeypatch):
+    """A 3-letter code such as 'yue' is not declared: the request schema refuses it, so it cannot be asked for."""
+    fake_lang = types.ModuleType("gtts.lang")
+    fake_lang.tts_langs = lambda: {"en": "English", "yue": "Cantonese", "zh-TW": "Chinese (Mandarin/Taiwan)"}
+    monkeypatch.setitem(sys.modules, "gtts.lang", fake_lang)
+    assert engine.list_languages() == ["en", "zh-tw"]
+
+
 def test_list_languages_none_without_language_table(engine, monkeypatch):
     """Without a readable gtts.lang the engine declares nothing and passes codes through unchanged."""
     monkeypatch.setitem(sys.modules, "gtts.lang", None)

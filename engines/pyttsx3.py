@@ -7,6 +7,7 @@ import os
 import tempfile
 import threading
 import time
+from typing import Any
 
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
 from libs.languages import primary_language
@@ -94,7 +95,7 @@ def select_voice(voices: list, config: dict):
     return voices[0]
 
 
-def find_voice_for_language(voices: list, language: str):
+def find_voice_for_language(voices: list, language: str) -> Any | None:
     """Return the first voice that serves `language`, else the first that serves its primary subtag.
 
     espeak lists a region voice only for some tags (en-gb, es-419), so a tag

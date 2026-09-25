@@ -256,6 +256,7 @@ def test_generate_keeps_language_for_other_multilingual_models(engine, monkeypat
         ("tts_models/de/thorsten/vits", ["de"]),
         ("tts_models/zh-CN/baker/tacotron2-DDC-GST", ["zh", "zh-cn"]),
         ("tts_models/multilingual/multi-dataset/your_tts", None),
+        ("tts_models/ewe/openbible/vits", None),
     ],
 )
 def test_list_languages_follows_the_configured_model(engine, monkeypatch, model, expected):
@@ -277,6 +278,14 @@ def test_region_model_passes_the_strict_check_for_its_language_part(engine, monk
     assert language_supported("zh", languages)
     assert language_supported("zh_CN", languages)
     assert not language_supported("en", languages)
+
+
+def test_three_letter_model_language_passes_the_strict_check(engine, monkeypatch):
+    """A `tts_models/ewe/...` model declares nothing, since no request can carry `ewe`, so strict mode refuses nothing."""
+    from libs.tools import validate_engine_language
+
+    monkeypatch.setenv("COQUITTS_MODEL", "tts_models/ewe/openbible/vits")
+    validate_engine_language("coquitts", "en")
 
 
 def test_list_languages_does_not_load_a_model(engine, monkeypatch):

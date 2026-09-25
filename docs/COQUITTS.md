@@ -125,7 +125,10 @@ With `TTS_LANGUAGE_STRICT=true` the server checks the languages of
 `COQUITTS_MODEL`: xtts lists its codes plus `zh`, and a single-language model
 lists its language (a region model such as `tts_models/zh-CN/baker/...` lists
 both `zh-cn` and `zh`). Any other multilingual model, such as `your_tts`, lists
-none, so every code passes the check.
+none, so every code passes the check. So does a single-language model whose
+language code has three letters (`tts_models/ewe/openbible/vits`): a request
+can only carry a 2-character code or a tag, so listing `ewe` would refuse
+every request.
 
 ### English Models
 

@@ -6,7 +6,7 @@ import io
 import logging
 
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
-from libs.languages import primary_language
+from libs.languages import is_language_code, primary_language
 
 # Google rate-limits gTTS aggressively (one HTTP request per <=200-char chunk).
 # Above ~5k chars a single ttsgen run starts triggering bans.
@@ -52,11 +52,17 @@ def get_gtts_languages() -> dict[str, str]:
 
 
 def list_languages() -> list[str] | None:
-    """Return the lowercased language tags gTTS serves, or None when its language table cannot be read."""
+    """Return the lowercased language tags gTTS serves, or None when its language table cannot be read.
+
+    A tag no request can carry (the 3-letter `yue`) is left out: the request
+    schema refuses it anyway, so listing it would only advertise a language
+    that can never be asked for.
+    """
     languages = get_gtts_languages()
     if not languages:
         return None
-    return sorted(languages)
+    codes = sorted(code for code in languages if is_language_code(code))
+    return codes or None
 
 
 def gtts_language(language: str) -> str:

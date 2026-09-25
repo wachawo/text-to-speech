@@ -14,7 +14,7 @@ import threading
 
 from libs.cached_loader import load_cached
 from libs.exceptions import CustomError, EngineNotAvailableError, TTSException, ValidationError
-from libs.languages import normalize_language, primary_language
+from libs.languages import is_language_code, normalize_language, primary_language
 from libs.sample_resolver import list_sample_files, resolve_sample_path, sample_path_for_voice
 from libs.tempfiles import safe_unlink
 
@@ -89,13 +89,17 @@ def list_languages() -> list[str] | None:
     xtts lists its own codes plus `zh`, which xtts_language() sends as `zh-cn`;
     a single-language model such as `tts_models/de/thorsten/vits` accepts its
     language (a tag such as `zh-CN` also lists `zh`); any other multilingual
-    model does not declare its languages here.
+    model, or a single-language model whose code no request can carry (the
+    3-letter `ewe` of `tts_models/ewe/openbible/vits`), does not declare its
+    languages here, so the strict check does not refuse every request.
     """
     model_name = os.getenv("COQUITTS_MODEL", DEFAULT_COQUITTS_MODEL)
     if "xtts" in model_name and "multilingual" in model_name:
         return sorted([*XTTS_LANGUAGES, "zh"])
     parts = model_name.split("/")
     if len(parts) >= 2 and parts[0] == "tts_models" and parts[1] != "multilingual":
+        if not is_language_code(parts[1]):
+            return None
         # A region tag such as `zh-CN` also lists its language part, so `zh` passes the strict check.
         code = normalize_language(parts[1])
         return sorted({code, primary_language(code)})
