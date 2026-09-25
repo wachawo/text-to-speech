@@ -1,5 +1,14 @@
 ## Changelog
 
+### [Unreleased]
+
+#### Fixed
+- `silerotts` failed to load for `uk` in a fresh process: the Ukrainian alias
+  picked the `v3_ua` model but passed `en` as the torch.hub language, and
+  `snakers4/silero-models` has no `v3_ua` under `en`. The hub language now
+  comes from the model (`MODEL_CATALOG`), so `uk` and `ua` both load `v3_ua`
+  under `ua`; the other languages load as before.
+
 ### [1.0.7] - 2026-09-23
 
 #### Added

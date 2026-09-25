@@ -107,6 +107,61 @@ def test_get_model_info_unknown_falls_back_to_english(engine):
     assert info == engine.get_model_info("en")
 
 
+def test_model_catalog_covers_every_language_default(engine):
+    """Every language default names a catalogued model, so get_model_info never raises KeyError."""
+    for model_id in engine.LANGUAGE_DEFAULT_MODELS.values():
+        assert model_id in engine.MODEL_CATALOG
+
+
+# load_model - torch.hub language key
+
+
+@pytest.mark.parametrize(
+    "lang,expected_hub_language,expected_model",
+    [
+        ("uk", "ua", "v3_ua"),  # the alias used to reach the hub as 'en'
+        ("ua", "ua", "v3_ua"),
+        ("ru", "ru", "v3_1_ru"),
+        ("de", "de", "v3_de"),
+        ("xx", "en", "v3_en"),  # unknown language keeps the English fallback
+    ],
+)
+def test_load_model_passes_hub_language_of_the_model(engine, monkeypatch, lang, expected_hub_language, expected_model):
+    """torch.hub.load gets the silero-models language key that holds the model, not the request language."""
+    calls = []
+
+    def recording_load(**kw):
+        """Record the hub arguments and return a stub model."""
+        calls.append(kw)
+        return VoiceStubModel(["mykyta"]), "example"
+
+    monkeypatch.setattr(engine, "AVAILABLE", True)
+    monkeypatch.setattr(engine.torch.hub, "load", recording_load)
+    engine.load_model(lang)
+    assert len(calls) == 1
+    assert calls[0]["language"] == expected_hub_language
+    assert calls[0]["speaker"] == expected_model
+
+
+def test_generate_uk_on_fresh_process_uses_ukrainian_model(engine, monkeypatch):
+    """A first request in 'uk' loads v3_ua under the 'ua' key and speaks with its default speaker."""
+    calls = []
+    model = VoiceStubModel(["mykyta"])
+
+    def recording_load(**kw):
+        """Record the hub arguments and hand back the Ukrainian stub model."""
+        calls.append(kw)
+        return model, "example"
+
+    monkeypatch.setattr(engine, "AVAILABLE", True)
+    monkeypatch.setattr(engine.torch.hub, "load", recording_load)
+    engine.TTS_CACHE.clear()
+    audio = engine.generate("pryvit", {"language": "uk"})
+    assert audio[:4] == b"RIFF"
+    assert [(call["language"], call["speaker"]) for call in calls] == [("ua", "v3_ua")]
+    assert model.captured["speaker"] == "mykyta"
+
+
 # get_models_directory
 
 

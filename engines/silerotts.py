@@ -35,6 +35,28 @@ TTS_CACHE: dict = {}
 TTS_CACHE_LOCK = threading.Lock()
 INFERENCE_LOCK = threading.Lock()
 
+# Silero model id -> (language key in snakers4/silero-models, default speaker,
+# sample rate). The language key is what torch.hub.load expects as `language`.
+MODEL_CATALOG: dict[str, tuple[str, str, int]] = {
+    "v3_1_ru": ("ru", "aidar", 48000),  # Russian (excellent quality)
+    "v3_en": ("en", "en_0", 48000),  # English
+    "v3_de": ("de", "bernd_ungerer", 48000),  # German
+    "v3_es": ("es", "es_0", 48000),  # Spanish
+    "v3_fr": ("fr", "fr_0", 48000),  # French
+    "v3_ua": ("ua", "mykyta", 48000),  # Ukrainian
+}
+
+# Request language -> model id. `uk` (ISO 639-1) is an alias for Silero's `ua`.
+LANGUAGE_DEFAULT_MODELS: dict[str, str] = {
+    "ru": "v3_1_ru",
+    "en": "v3_en",
+    "de": "v3_de",
+    "es": "v3_es",
+    "fr": "v3_fr",
+    "ua": "v3_ua",
+    "uk": "v3_ua",
+}
+
 # Try to import Silero dependencies
 try:
     # torchaudio is no longer used for encoding (see generate()), but is kept as
@@ -63,18 +85,21 @@ def get_model_info(language: str = "en") -> tuple:
     Returns:
         Tuple of (model_id, speaker, sample_rate)
     """
-    language_models = {
-        "ru": ("v3_1_ru", "aidar", 48000),  # Russian (excellent quality)
-        "en": ("v3_en", "en_0", 48000),  # English
-        "de": ("v3_de", "bernd_ungerer", 48000),  # German
-        "es": ("v3_es", "es_0", 48000),  # Spanish
-        "fr": ("v3_fr", "fr_0", 48000),  # French
-        "ua": ("v3_ua", "mykyta", 48000),  # Ukrainian
-        "uk": ("v3_ua", "mykyta", 48000),  # Ukrainian (alias)
-    }
-
     # Default to English if language not found
-    return language_models.get(language, language_models["en"])
+    model_id = LANGUAGE_DEFAULT_MODELS.get(language, LANGUAGE_DEFAULT_MODELS["en"])
+    unused_hub_language, speaker, sample_rate = MODEL_CATALOG[model_id]
+    return model_id, speaker, sample_rate
+
+
+def get_hub_language(model_id: str) -> str:
+    """Return the snakers4/silero-models language key that holds `model_id`.
+
+    torch.hub.load looks the speaker up under this key, so it has to match the
+    model rather than the request language: the `uk` alias loads `v3_ua`,
+    which lives under `ua`.
+    """
+    hub_language, unused_speaker, unused_rate = MODEL_CATALOG[model_id]
+    return hub_language
 
 
 def get_models_directory() -> str:
@@ -139,7 +164,7 @@ def load_model(language: str) -> tuple:
         result = torch.hub.load(
             repo_or_dir="snakers4/silero-models",
             model="silero_tts",
-            language=(language if language in ["ru", "en", "de", "es", "fr", "ua"] else "en"),
+            language=get_hub_language(model_id),
             speaker=model_id,
             verbose=False,
             trust_repo=True,

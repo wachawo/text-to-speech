@@ -104,7 +104,7 @@ this engine. Russian (`v3_1_ru`) includes both male and female voices:
 | `de` | `bernd_ungerer` | model speakers |
 | `es` | `es_0` | `es_0`, ... |
 | `fr` | `fr_0` | `fr_0`, ... |
-| `ua` | `mykyta` | model speakers |
+| `ua`, `uk` | `mykyta` | model speakers |
 
 The authoritative list comes from the loaded model's `speakers` attribute and is
 exposed at runtime:
