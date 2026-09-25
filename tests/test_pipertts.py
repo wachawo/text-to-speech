@@ -182,6 +182,14 @@ def test_voice_path_unknown_language_defaults_to_english(engine, monkeypatch, tm
     assert engine.get_voice_path("xx") == str(tmp_path / "en_US-lessac-medium.onnx")
 
 
+@pytest.mark.parametrize("lang", ["ru-ru", "ru_RU", "ru-UA"])
+def test_voice_path_tag_uses_primary_subtag(engine, monkeypatch, tmp_path, lang):
+    """A tag resolves to the voice of its primary subtag, not to the English fallback."""
+    monkeypatch.setattr(engine, "get_models_directory", lambda: str(tmp_path))
+    (tmp_path / "ru_RU-ruslan-medium.onnx").write_bytes(b"x")
+    assert engine.get_voice_path(lang) == str(tmp_path / "ru_RU-ruslan-medium.onnx")
+
+
 def test_voice_path_returns_models_dir_path_when_file_missing(engine, monkeypatch, tmp_path):
     """When no directory holds the .onnx, the canonical models_dir candidate is returned for a useful error."""
     monkeypatch.setattr(engine, "get_models_directory", lambda: str(tmp_path))
@@ -205,6 +213,11 @@ def test_download_instructions_unknown_language_falls_back_to_en(engine):
     """Instructions for an unmapped language point at the English voice."""
     out = engine.get_download_instructions("xx")
     assert "en_US-lessac-medium.onnx" in out
+
+
+def test_download_instructions_tag_uses_primary_subtag(engine):
+    """Instructions for a tag point at the voice of its primary subtag."""
+    assert "de_DE-thorsten-medium.onnx" in engine.get_download_instructions("de-at")
 
 
 # generate — error paths

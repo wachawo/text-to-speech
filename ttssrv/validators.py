@@ -2,14 +2,21 @@
 # -*- coding: utf-8 -*-
 """Marshmallow validation schemas for TTS API."""
 
-from marshmallow import EXCLUDE, Schema, fields, validate
+from marshmallow import EXCLUDE, Schema, ValidationError, fields, validate, validates_schema
 
 # Local imports
+from libs.languages import is_language_code
 from ttssrv.openai_compat import RESPONSE_FORMATS
 
 # Upper bound of the `message` built from schema errors, so a payload with many
 # bad fields cannot produce an unbounded error body.
 MAX_VALIDATION_MESSAGE_LENGTH = 1000
+
+
+def validate_language_field(value: str) -> None:
+    """Reject a language that is neither 2 characters nor a tag such as 'zh-cn', 'pt_BR' or 'es-419'."""
+    if not is_language_code(value):
+        raise ValidationError("Language must be a 2-character code or a tag such as 'zh-cn'.")
 
 
 def flatten_validation_messages(messages: object) -> str:
@@ -36,7 +43,8 @@ class TtsRequestSchema(Schema):
     # here only guards against pathological inputs (memory / multi-hour stalls).
     text = fields.Str(required=True, validate=validate.Length(min=1, max=1_000_000))
     engine = fields.Str(load_default=None)
-    language = fields.Str(load_default=None, validate=validate.Length(equal=2))
+    # A 2-character code, or a tag such as 'zh-cn' / 'pt_BR' (file generation only, see below).
+    language = fields.Str(load_default=None, validate=validate_language_field)
     # Engine-specific voice/speaker id (e.g. Silero 'baya'). Validated against the
     # engine's available voices downstream; None keeps the engine default.
     # 128, not 64: a four-voice kokorotts mix such as
@@ -44,6 +52,20 @@ class TtsRequestSchema(Schema):
     voice = fields.Str(load_default=None, validate=validate.Length(max=128))
     # When true, stream audio chunk-by-chunk (chunked transfer) for low latency.
     stream = fields.Bool(load_default=False)
+
+    @validates_schema
+    def reject_language_tag_with_stream(self, data: dict, **kwargs) -> None:
+        """Keep streaming on 2-character codes, the rule it had before tags were accepted.
+
+        Raises:
+            ValidationError: `stream` is true and `language` is a tag such as 'zh-cn'.
+        """
+        language = data.get("language")
+        if data.get("stream") and language and len(language) != 2:
+            raise ValidationError(
+                "Language tags such as 'zh-cn' are supported only for file generation (stream=false).",
+                field_name="language",
+            )
 
 
 class HistoryCreateSchema(TtsRequestSchema):
@@ -89,4 +111,4 @@ class SpeechRequestSchema(Schema):
     voice = fields.Str(load_default=None, validate=validate.Length(max=128))
     response_format = fields.Str(load_default="mp3", validate=validate.OneOf(sorted(RESPONSE_FORMATS)))
     speed = fields.Float(load_default=1.0, validate=validate.Range(min=0.25, max=4.0))
-    language = fields.Str(load_default=None, validate=validate.Length(equal=2))
+    language = fields.Str(load_default=None, validate=validate_language_field)

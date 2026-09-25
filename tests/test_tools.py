@@ -92,6 +92,19 @@ def test_validate_language_rejects_wrong_shape(bad):
         validate_language(bad)
 
 
+@pytest.mark.parametrize("ok,expected", [("zh-CN", "zh-cn"), ("pt_BR", "pt-br"), ("es-419", "es-419")])
+def test_validate_language_normalizes_tags(ok, expected):
+    """A tag is accepted, lowercased and written with '-'."""
+    assert validate_language(ok) == expected
+
+
+@pytest.mark.parametrize("bad", ["zh-", "zh-toolong", "zh cn"])
+def test_validate_language_rejects_malformed_tags(bad):
+    """A dangling, too long or space-separated subtag is refused with the same message."""
+    with pytest.raises(ValidationError, match="tag such as 'zh-cn'"):
+        validate_language(bad)
+
+
 # validate_engine — exercises real engines/__init__ logic against tests/stubs/gtts
 
 

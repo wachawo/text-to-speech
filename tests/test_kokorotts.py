@@ -345,6 +345,26 @@ def test_list_voices_unknown_language_lists_english(engine, kokoro_dir):
     assert engine.list_voices("xx") == engine.list_voices("en")
 
 
+def test_list_voices_tag_uses_primary_subtag(engine, kokoro_dir):
+    """A tag such as 'ja-jp' lists the voices of its primary subtag."""
+    assert engine.list_voices("ja-jp")["voices"] == ["jf_alpha"]
+
+
+@pytest.mark.parametrize(
+    "language,voice,expected",
+    [
+        ("en-gb", "af_bella", "en-gb"),
+        ("en_GB", "af_bella", "en-gb"),
+        ("en-us", "af_bella", "en-us"),
+        ("ja-jp", "jf_alpha", "ja"),
+    ],
+)
+def test_generate_tag_picks_the_kokoro_lang(engine, kokoro_dir, language, voice, expected):
+    """'en-gb' asks for the British phonemizer; other tags use the lang code of their primary subtag."""
+    engine.generate("hi", {"language": language, "voice": voice})
+    assert sys.modules["kokoro_onnx"].Kokoro.created[-1]["lang"] == expected
+
+
 def test_list_voices_default_is_language_map_voice_when_present(engine, kokoro_dir):
     """The LANGUAGE_MAP default is reported when the voices file has it."""
     assert engine.list_voices("ja")["default"] == "jf_alpha"

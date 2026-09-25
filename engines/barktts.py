@@ -13,12 +13,30 @@ import threading
 # Local imports
 from libs.cached_loader import load_cached
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
+from libs.languages import primary_language
 from libs.tempfiles import safe_unlink
 
 logger = logging.getLogger(__name__)
 
 # Bark generates ~14s of audio per minute on CPU; 5k chars is already heavy.
 MAX_TEXT_LENGTH = 5_000
+
+# Language -> Bark speaker preset (v2/{language}_speaker_{number}).
+SPEAKER_PRESETS = {
+    "en": "v2/en_speaker_6",  # English (clear female)
+    "ru": "v2/ru_speaker_0",  # Russian
+    "es": "v2/es_speaker_0",  # Spanish
+    "de": "v2/de_speaker_0",  # German
+    "fr": "v2/fr_speaker_0",  # French
+    "zh": "v2/zh_speaker_0",  # Chinese
+    "ja": "v2/ja_speaker_0",  # Japanese
+    "ko": "v2/ko_speaker_0",  # Korean
+    "hi": "v2/hi_speaker_0",  # Hindi
+    "it": "v2/it_speaker_0",  # Italian
+    "pt": "v2/pt_speaker_0",  # Portuguese
+    "pl": "v2/pl_speaker_0",  # Polish
+    "tr": "v2/tr_speaker_0",  # Turkish
+}
 
 # Try to import Bark. scipy is part of the probe: generate() cannot encode
 # the waveform without it, so `ttsgen --list` must not advertise the engine
@@ -88,28 +106,13 @@ def get_speaker_for_language(language: str) -> str:
     Bark uses speaker presets in format: v2/{language}_speaker_{number}
 
     Args:
-        language: Language code
+        language: Language code; a tag such as 'pt-br' is looked up by its
+            primary subtag, and an unknown code gets the English speaker.
 
     Returns:
         Speaker preset string
     """
-    speaker_map = {
-        "en": "v2/en_speaker_6",  # English (clear female)
-        "ru": "v2/ru_speaker_0",  # Russian
-        "es": "v2/es_speaker_0",  # Spanish
-        "de": "v2/de_speaker_0",  # German
-        "fr": "v2/fr_speaker_0",  # French
-        "zh": "v2/zh_speaker_0",  # Chinese
-        "ja": "v2/ja_speaker_0",  # Japanese
-        "ko": "v2/ko_speaker_0",  # Korean
-        "hi": "v2/hi_speaker_0",  # Hindi
-        "it": "v2/it_speaker_0",  # Italian
-        "pt": "v2/pt_speaker_0",  # Portuguese
-        "pl": "v2/pl_speaker_0",  # Polish
-        "tr": "v2/tr_speaker_0",  # Turkish
-    }
-
-    return speaker_map.get(language, speaker_map["en"])
+    return SPEAKER_PRESETS.get(primary_language(language), SPEAKER_PRESETS["en"])
 
 
 def ensure_models_loaded() -> None:

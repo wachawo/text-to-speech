@@ -107,6 +107,12 @@ def test_get_model_info_unknown_falls_back_to_english(engine):
     assert info == engine.get_model_info("en")
 
 
+@pytest.mark.parametrize("lang,expected", [("ru-ru", "ru"), ("de_AT", "de"), ("uk-ua", "uk")])
+def test_get_model_info_tag_uses_primary_subtag(engine, lang, expected):
+    """A tag such as 'ru-ru' picks the model of its primary subtag instead of falling back to English."""
+    assert engine.get_model_info(lang) == engine.get_model_info(expected)
+
+
 def test_model_catalog_covers_every_language_default(engine):
     """Every language default names a catalogued model, so get_model_info never raises KeyError."""
     for model_id in engine.LANGUAGE_DEFAULT_MODELS.values():

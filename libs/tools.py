@@ -15,6 +15,7 @@ from typing import Any, cast
 from engines import get_engine_function, get_supported_engines, is_engine_available
 
 from .exceptions import EngineNotAvailableError, TTSException, ValidationError
+from .languages import is_language_code, normalize_language
 
 # Makes the repository root importable when libs/ is used straight from a source
 # checkout rather than from an installed wheel.
@@ -106,15 +107,16 @@ def validate_engine(engine: str) -> str:
 
 
 def validate_language(language: str) -> str:
-    """Return a lowercased two-letter language code.
+    """Return a normalized language code: a lowercased 2-character code or a tag such as 'zh-cn'.
 
     Raises:
-        ValidationError: If the value is not a string of exactly two characters.
+        ValidationError: If the value is neither a string of exactly two
+            characters nor a tag such as 'zh-cn', 'pt_BR' or 'es-419'.
     """
-    if not isinstance(language, str) or len(language) != 2:
-        raise ValidationError("Language must be a 2-character code")
+    if not is_language_code(language):
+        raise ValidationError("Language must be a 2-character code or a tag such as 'zh-cn'")
 
-    return language.lower()
+    return normalize_language(language)
 
 
 def get_engine_generate_function(engine_name: str) -> Callable[..., Any]:
@@ -186,7 +188,7 @@ def create_tts_pipeline(engine: str = "gtts", language: str = "en") -> Callable:
 
     Args:
         engine: Engine name used for every call of the returned pipeline.
-        language: Two-letter language code used for every call.
+        language: Language code (two letters or a tag such as 'zh-cn') used for every call.
 
     Returns:
         A callable `(text, output_format="file", filename=None)` returning a
@@ -229,7 +231,7 @@ def batch_tts(
     Args:
         texts: Non-empty list of texts, synthesized sequentially.
         engine: Engine name used for every item.
-        language: Two-letter language code used for every item.
+        language: Language code (two letters or a tag such as 'zh-cn') used for every item.
         output_dir: Destination directory, created if missing.
 
     Returns:

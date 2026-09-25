@@ -2,6 +2,18 @@
 
 ### [Unreleased]
 
+#### Added
+- Language tags: `language` takes a tag with a region or script subtag
+  (`zh-cn`, `pt_BR`, `en-gb`, `es-419`) as well as a 2-character code, in
+  `/api/tts`, `/api/history`, `/v1/audio/speech`, `ttsgen` and `libs.api`.
+  A tag is lowercased and written with `-`; 2-character codes are handled
+  exactly as before. gtts receives its own spelling (`zh-CN`, or the language
+  part when it has no such tag), kokorotts reads `en-gb` with the British
+  phonemizer, xtts gets `zh-cn` for any Chinese tag, and silerotts, pipertts,
+  barktts and kokorotts look a tag up by its language part (`pt-br` is `pt`)
+  instead of falling back to English. `/api/tts` with `stream=true` keeps the
+  2-character rule and answers a tag with a 400.
+
 #### Changed
 - A 400 for a request that fails schema validation now carries `message`
   (`field: reason; field2: reason`, at most 1000 characters) next to `error`

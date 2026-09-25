@@ -283,7 +283,8 @@ def synthesize(text: str, engine: str, language: str, voice: str | None = None, 
     Args:
         text: Text to synthesize.
         engine: Engine name to synthesize with.
-        language: Two-letter language code passed to the engine.
+        language: Language code passed to the engine: two letters, or a tag
+            such as 'zh-cn' outside streaming.
         voice: Engine-specific voice id, or None for the engine default.
         label: Optional qualifier after "Synthesis", such as "chunk 2/5".
 

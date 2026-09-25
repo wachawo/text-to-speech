@@ -17,6 +17,7 @@ import numpy as np
 # Local imports
 from libs.cached_loader import load_cached
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
+from libs.languages import primary_language
 
 logger = logging.getLogger(__name__)
 
@@ -80,13 +81,14 @@ def get_model_info(language: str = "en") -> tuple:
     Get model information for language.
 
     Args:
-        language: Language code
+        language: Language code; a tag such as 'ru-ru' is looked up by its
+            primary subtag.
 
     Returns:
         Tuple of (model_id, speaker, sample_rate)
     """
     # Default to English if language not found
-    model_id = LANGUAGE_DEFAULT_MODELS.get(language, LANGUAGE_DEFAULT_MODELS["en"])
+    model_id = LANGUAGE_DEFAULT_MODELS.get(primary_language(language), LANGUAGE_DEFAULT_MODELS["en"])
     unused_hub_language, speaker, sample_rate = MODEL_CATALOG[model_id]
     return model_id, speaker, sample_rate
 

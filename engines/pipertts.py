@@ -15,11 +15,25 @@ import wave
 # Local imports
 from libs.cached_loader import load_cached
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
+from libs.languages import primary_language
 
 logger = logging.getLogger(__name__)
 
 # Offline ONNX, ~300x realtime — large texts are fine but bound memory.
 MAX_TEXT_LENGTH = 50_000
+
+# Language -> the Piper voice the engine uses for it (the table in
+# docs/PIPERTTS.md). A language missing here is spoken with the English voice.
+LEGACY_VOICES = {
+    "en": "en_US-lessac-medium",
+    "ru": "ru_RU-ruslan-medium",
+    "es": "es_ES-davefx-medium",
+    "de": "de_DE-thorsten-medium",
+    "fr": "fr_FR-siwis-medium",
+    "it": "it_IT-riccardo-medium",
+    "uk": "uk_UA-ukrainian_tts-medium",
+    "zh": "zh_CN-huayan-medium",
+}
 
 # Try to import Piper
 try:
@@ -88,25 +102,15 @@ def get_voice_path(language: str = "en") -> str:
     """Resolve the .onnx voice file to use for a language.
 
     Args:
-        language: Two-character language code; unknown codes fall back to English.
+        language: Language code; a tag such as 'de-at' is looked up by its
+            primary subtag, and unknown codes fall back to English.
 
     Returns:
         Path to the voice model. The path of the configured models directory is
         returned even when no file exists there, so callers can report a precise
         FileNotFoundError with download instructions.
     """
-    voice_models = {
-        "en": "en_US-lessac-medium",
-        "ru": "ru_RU-ruslan-medium",
-        "es": "es_ES-davefx-medium",
-        "de": "de_DE-thorsten-medium",
-        "fr": "fr_FR-siwis-medium",
-        "it": "it_IT-riccardo-medium",
-        "uk": "uk_UA-ukrainian_tts-medium",
-        "zh": "zh_CN-huayan-medium",
-    }
-
-    voice_name = voice_models.get(language, voice_models["en"])
+    voice_name = LEGACY_VOICES.get(primary_language(language), LEGACY_VOICES["en"])
 
     models_dir = get_models_directory()
 
@@ -138,7 +142,8 @@ def get_download_instructions(language: str) -> str:
     """Build the multi-option help text shown when a voice model is missing.
 
     Args:
-        language: Two-character language code; unknown codes describe the English voice.
+        language: Language code, looked up by its primary subtag; unknown codes
+            describe the English voice.
 
     Returns:
         Human-readable instructions covering the installer, wget and curl.
@@ -150,7 +155,7 @@ def get_download_instructions(language: str) -> str:
         "de": ("de_DE-thorsten-medium", "de/de_DE/thorsten/medium"),
         "fr": ("fr_FR-siwis-medium", "fr/fr_FR/siwis/medium"),
     }
-    model_name, model_path = voice_models.get(language, ("en_US-lessac-medium", "en/en_US/lessac/medium"))
+    model_name, model_path = voice_models.get(primary_language(language), ("en_US-lessac-medium", "en/en_US/lessac/medium"))
 
     base_url = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0"
 

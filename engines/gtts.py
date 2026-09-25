@@ -6,6 +6,7 @@ import io
 import logging
 
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
+from libs.languages import primary_language
 
 # Google rate-limits gTTS aggressively (one HTTP request per <=200-char chunk).
 # Above ~5k chars a single ttsgen run starts triggering bans.
@@ -26,6 +27,38 @@ except ImportError:
 def is_available() -> bool:
     """Report whether the gTTS dependency is installed."""
     return AVAILABLE
+
+
+def get_gtts_languages() -> dict[str, str]:
+    """Return gTTS's own language table (lowercased tag -> tag as gTTS spells it), or {} when it cannot be read.
+
+    `gtts.lang.tts_langs()` is a static table shipped with the package, so
+    reading it makes no network call.
+    """
+    try:
+        from gtts.lang import tts_langs  # type: ignore
+
+        return {str(tag).lower(): str(tag) for tag in tts_langs()}
+    except Exception as exc:
+        logger.debug(f"gTTS language table unavailable: {type(exc).__name__}: {exc}")
+        return {}
+
+
+def gtts_language(language: str) -> str:
+    """Map a request language to the tag gTTS expects.
+
+    A tag gTTS lists is matched without regard to case ('zh-cn' -> 'zh-CN');
+    a tag it does not list falls back to its primary subtag when that one is
+    listed ('pt-br' -> 'pt'); anything else is passed on unchanged, as before.
+    """
+    languages = get_gtts_languages()
+    code = language.lower().replace("_", "-")
+    if code in languages:
+        return languages[code]
+    primary = primary_language(code)
+    if primary in languages:
+        return languages[primary]
+    return language
 
 
 def generate(text: str, config: dict) -> bytes:
@@ -50,7 +83,7 @@ def generate(text: str, config: dict) -> bytes:
         raise ValidationError(f"Text too long for gtts: {len(text)} > {MAX_TEXT_LENGTH}")
 
     try:
-        language = config.get("language", "en")
+        language = gtts_language(config.get("language", "en"))
         slow = config.get("slow", False)
 
         tts = gTTS(text=text, lang=language, slow=slow)

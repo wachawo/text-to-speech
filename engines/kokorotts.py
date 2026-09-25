@@ -30,6 +30,7 @@ import numpy as np
 # Local imports
 from libs.cached_loader import load_cached
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
+from libs.languages import normalize_language, primary_language
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,8 @@ DEFAULT_KOKOROTTS_MODEL = "kokoro-v1.0.onnx"
 DEFAULT_KOKOROTTS_VOICES = "voices-v1.0.bin"
 DEFAULT_KOKOROTTS_SPEED = 1.0
 
-# 2-char ISO-ish code → (kokoro lang code, default voice).
+# 2-char ISO-ish code -> (kokoro lang code, default voice). A tag such as
+# 'pt-br' is looked up by its primary subtag.
 # Voice list: https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md
 LANGUAGE_MAP = {
     "en": ("en-us", "af_sarah"),
@@ -203,13 +205,13 @@ def voice_names(voices_path: str) -> tuple[str, ...]:
 
 def language_voices(language: str, names: Collection[str]) -> list[str]:
     """Return the names whose first letter belongs to the language (en for unknown codes)."""
-    prefixes = LANGUAGE_PREFIXES.get(language, LANGUAGE_PREFIXES["en"])
+    prefixes = LANGUAGE_PREFIXES.get(primary_language(language), LANGUAGE_PREFIXES["en"])
     return [name for name in names if name[:1] in prefixes]
 
 
 def default_voice(language: str, voices: Sequence[str]) -> str | None:
     """Return the LANGUAGE_MAP default when it is among the voices, else the first voice."""
-    unused_lang_code, preferred = LANGUAGE_MAP.get(language, LANGUAGE_MAP["en"])
+    unused_lang_code, preferred = LANGUAGE_MAP.get(primary_language(language), LANGUAGE_MAP["en"])
     if preferred in voices:
         return preferred
     return voices[0] if voices else None
@@ -226,7 +228,8 @@ def list_voices(language: str = "en") -> dict:
     Cheap on purpose: reads only the voices file index, never the ONNX model.
 
     Args:
-        language: 2-char language code; unknown codes list the English voices.
+        language: Language code or tag (looked up by its primary subtag);
+            unknown codes list the English voices.
 
     Returns:
         Dict with 'voices' (sorted names), 'default' (the voice used when none
@@ -297,9 +300,9 @@ def resolve_voice(spec: str, known_names: Collection[str]) -> list[tuple[str, fl
 
 
 def lang_code_for(language: str, components: Sequence[tuple[str, float]]) -> str:
-    """Return the kokoro lang code: the language's, but en-gb for English led by a b* voice."""
-    lang_code, unused_voice = LANGUAGE_MAP.get(language, LANGUAGE_MAP["en"])
-    if lang_code == "en-us" and components[0][0].startswith("b"):
+    """Return the kokoro lang code: the language's, but en-gb for English led by a b* voice or asked for as 'en-gb'."""
+    lang_code, unused_voice = LANGUAGE_MAP.get(primary_language(language), LANGUAGE_MAP["en"])
+    if lang_code == "en-us" and (components[0][0].startswith("b") or normalize_language(language) == "en-gb"):
         return "en-gb"
     return lang_code
 
@@ -320,7 +323,7 @@ def requested_voice_spec(config: dict, language: str, names: Collection[str]) ->
     env_voice = env_voice_spec()
     if env_voice:
         return env_voice
-    fallback = LANGUAGE_MAP.get(language, LANGUAGE_MAP["en"])[1]
+    fallback = LANGUAGE_MAP.get(primary_language(language), LANGUAGE_MAP["en"])[1]
     return default_voice(language, language_voices(language, names)) or fallback
 
 
@@ -346,7 +349,7 @@ def generate(text: str, config: dict) -> bytes:
 
     Args:
         text: Text to synthesize.
-        config: Configuration dict with `language` (2-char code) and optional
+        config: Configuration dict with `language` (code or tag) and optional
             `voice`, a voice spec (`af_bella` or `af_bella(2)+af_sky(1)`); without
             it KOKOROTTS_VOICE is used, then the language's default voice.
 

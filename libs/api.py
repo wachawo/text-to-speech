@@ -48,7 +48,7 @@ def text_to_speech_bytes(text: str, engine: str = "gtts", language: str = "en", 
     Args:
         text: Text to synthesize.
         engine: Engine name (gtts, pyttsx3, pipertts, ...).
-        language: Two-letter language code.
+        language: Language code: two letters or a tag such as 'zh-cn'.
         voice: Engine-specific voice/speaker id (None = engine default).
 
     Returns:
@@ -88,7 +88,7 @@ def text_to_speech_file(
         filename: Output path; when None a timestamped name is generated and the
             extension is inferred from the audio header (MP3 vs WAV).
         engine: Engine name.
-        language: Two-letter language code.
+        language: Language code: two letters or a tag such as 'zh-cn'.
 
     Returns:
         Path of the file that was written.

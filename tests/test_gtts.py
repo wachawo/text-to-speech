@@ -92,6 +92,39 @@ def test_generate_defaults_language_to_en_and_slow_to_false(engine):
     assert audio == b"MP3:en:False:hi"
 
 
+# Language tags
+
+
+@pytest.fixture
+def gtts_langs(monkeypatch):
+    """Serve a small gTTS language table as `gtts.lang`, spelled the way gTTS spells its tags."""
+    fake_lang = types.ModuleType("gtts.lang")
+    fake_lang.tts_langs = lambda: {"en": "English", "pt": "Portuguese", "zh-CN": "Chinese", "fr-CA": "French (Canada)"}
+    monkeypatch.setitem(sys.modules, "gtts.lang", fake_lang)
+
+
+@pytest.mark.parametrize(
+    "language,expected",
+    [
+        ("zh-cn", "zh-CN"),
+        ("ZH_cn", "zh-CN"),
+        ("fr-ca", "fr-CA"),
+        ("pt-br", "pt"),
+        ("en", "en"),
+        ("xx", "xx"),
+        ("xx-yy", "xx-yy"),
+    ],
+)
+def test_gtts_language_maps_tags_to_gtts_spelling(engine, gtts_langs, language, expected):
+    """A listed tag gets gTTS's spelling, an unlisted one its primary subtag, anything else passes unchanged."""
+    assert engine.gtts_language(language) == expected
+
+
+def test_generate_sends_the_gtts_spelling(engine, gtts_langs):
+    """generate() hands gTTS the tag as gTTS spells it."""
+    assert engine.generate("ni hao", {"language": "zh-cn"}) == b"MP3:zh-CN:False:ni hao"
+
+
 def test_generate_raises_engine_not_available_when_flag_off(engine, monkeypatch):
     """Synthesis refuses to run while the engine reports itself unavailable."""
     monkeypatch.setattr(engine, "AVAILABLE", False)
