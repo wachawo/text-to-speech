@@ -12,10 +12,10 @@ from pathlib import Path
 from typing import Any, cast
 
 # Local imports
-from engines import get_engine_function, get_supported_engines, is_engine_available
+from engines import get_engine_function, get_engine_languages, get_supported_engines, is_engine_available
 
 from .exceptions import EngineNotAvailableError, TTSException, ValidationError
-from .languages import is_language_code, normalize_language
+from .languages import is_language_code, language_supported, normalize_language
 
 # Makes the repository root importable when libs/ is used straight from a source
 # checkout rather than from an installed wheel.
@@ -117,6 +117,24 @@ def validate_language(language: str) -> str:
         raise ValidationError("Language must be a 2-character code or a tag such as 'zh-cn'")
 
     return normalize_language(language)
+
+
+def validate_engine_language(engine: str, language: str) -> None:
+    """Refuse a language the engine declares it does not serve.
+
+    Engines that do not declare their languages (no `list_languages()` hook,
+    or a hook that returns None) accept every code, as does an unknown engine,
+    which validate_engine reports on its own. A tag passes when the engine
+    lists it or its primary subtag ('en-gb' for an engine that lists 'en').
+
+    Raises:
+        ValidationError: The engine lists its languages and `language` is not among them.
+    """
+    languages = get_engine_languages(engine)
+    if language_supported(language, languages):
+        return
+    supported = ", ".join(languages or [])
+    raise ValidationError(f"Language '{language}' is not supported by engine '{engine}'. Supported: {supported}")
 
 
 def get_engine_generate_function(engine_name: str) -> Callable[..., Any]:

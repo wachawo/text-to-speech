@@ -8,12 +8,18 @@ down its behaviour without depending on torch/coqui/etc.
 """
 
 import importlib
+import logging
 import types
+
+import pytest
 
 import engines as engines_pkg
 from engines import (
     get_engine_function,
+    get_engine_languages,
+    get_engine_module,
     get_engine_module_path,
+    get_engine_voices,
     is_engine_available,
     load_engine,
 )
@@ -128,3 +134,82 @@ def test_get_engine_function_returns_none_when_loader_returns_none(monkeypatch):
     """No module means no callable."""
     monkeypatch.setattr(engines_pkg, "load_engine", lambda name: None)
     assert get_engine_function("any") is None
+
+
+# get_engine_module - import without the is_available() gate
+
+
+def test_get_engine_module_returns_module_for_known_engine():
+    """A shipped engine module is imported whether or not its dependencies are installed."""
+    module = get_engine_module("kokorotts")
+    assert module is not None
+    assert hasattr(module, "generate")
+
+
+@pytest.mark.parametrize("name", ["definitely_not_a_real_engine_xyz", "../libs", "Gtts", ""])
+def test_get_engine_module_none_for_unknown_or_malformed_name(name):
+    """No module file, or a name that is not a module stem, yields None without importing anything."""
+    assert get_engine_module(name) is None
+
+
+def test_get_engine_voices_calls_list_voices_with_the_language_only(monkeypatch):
+    """list_voices keeps its one-argument contract."""
+    calls = []
+
+    def list_voices(language):
+        """Record the language the loader asked for."""
+        calls.append(language)
+        return {"voices": ["a"], "default": "a"}
+
+    fake = types.SimpleNamespace(list_voices=list_voices)
+    monkeypatch.setattr(engines_pkg, "get_engine_module", lambda name: fake)
+    assert get_engine_voices("fake", "ru") == {"voices": ["a"], "default": "a"}
+    assert calls == ["ru"]
+
+
+# get_engine_languages - the optional list_languages() hook
+
+
+def test_get_engine_languages_none_without_hook(monkeypatch):
+    """An engine without list_languages() declares nothing."""
+    monkeypatch.setattr(engines_pkg, "get_engine_module", lambda name: types.SimpleNamespace())
+    assert get_engine_languages("fake") is None
+
+
+def test_get_engine_languages_none_for_unknown_engine():
+    """An unknown engine declares nothing; validate_engine reports it on its own."""
+    assert get_engine_languages("definitely_not_a_real_engine_xyz") is None
+
+
+def test_get_engine_languages_lowercases_the_hook_result(monkeypatch):
+    """The declared codes come back lowercased, in the hook's order."""
+    fake = types.SimpleNamespace(list_languages=lambda: ["en", "zh-CN"])
+    monkeypatch.setattr(engines_pkg, "get_engine_module", lambda name: fake)
+    assert get_engine_languages("fake") == ["en", "zh-cn"]
+
+
+def test_get_engine_languages_keeps_none_from_the_hook(monkeypatch):
+    """A hook may return None to say its languages are not known."""
+    fake = types.SimpleNamespace(list_languages=lambda: None)
+    monkeypatch.setattr(engines_pkg, "get_engine_module", lambda name: fake)
+    assert get_engine_languages("fake") is None
+
+
+def test_get_engine_languages_failing_hook_is_logged_and_declares_nothing(monkeypatch, caplog):
+    """A hook that raises is logged as a warning with the exception type, and the engine declares nothing."""
+
+    def broken():
+        """Fail like a hook reading a corrupt catalogue."""
+        raise RuntimeError("catalogue unreadable")
+
+    monkeypatch.setattr(engines_pkg, "get_engine_module", lambda name: types.SimpleNamespace(list_languages=broken))
+    with caplog.at_level(logging.WARNING, logger="engines"):
+        assert get_engine_languages("fake") is None
+    assert "RuntimeError: catalogue unreadable" in caplog.text
+
+
+@pytest.mark.parametrize("name", ["barktts", "kokorotts", "pipertts", "silerotts"])
+def test_get_engine_languages_of_shipped_engines(name):
+    """The engines with a fixed language table declare it without their dependencies installed."""
+    languages = get_engine_languages(name)
+    assert languages and "en" in languages

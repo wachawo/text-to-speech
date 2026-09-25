@@ -249,6 +249,31 @@ def test_generate_keeps_language_for_other_multilingual_models(engine, monkeypat
     assert FakeTTS.instances[-1].calls[-1]["language"] == "zh"
 
 
+@pytest.mark.parametrize(
+    "model,expected",
+    [
+        ("tts_models/multilingual/multi-dataset/xtts_v2", "xtts"),
+        ("tts_models/de/thorsten/vits", ["de"]),
+        ("tts_models/multilingual/multi-dataset/your_tts", None),
+    ],
+)
+def test_list_languages_follows_the_configured_model(engine, monkeypatch, model, expected):
+    """xtts declares its codes plus 'zh', a single-language model its language, other models nothing."""
+    monkeypatch.setenv("COQUITTS_MODEL", model)
+    languages = engine.list_languages()
+    if expected == "xtts":
+        assert languages == sorted([*engine.XTTS_LANGUAGES, "zh"])
+    else:
+        assert languages == expected
+
+
+def test_list_languages_does_not_load_a_model(engine, monkeypatch):
+    """Declaring languages reads COQUITTS_MODEL only; no TTS instance is built."""
+    monkeypatch.delenv("COQUITTS_MODEL", raising=False)
+    assert "zh-cn" in engine.list_languages()
+    assert FakeTTS.instances == []
+
+
 def test_generate_caches_TTS_instance_between_calls(engine, monkeypatch):
     """xtts_v2 takes ~15s to load on first call — repeated invocations
     MUST NOT instantiate a new TTS each time."""

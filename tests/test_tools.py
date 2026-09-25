@@ -19,6 +19,7 @@ from libs.tools import (
     generate_timestamp_filename,
     get_default_config,
     validate_engine,
+    validate_engine_language,
     validate_language,
     validate_text,
     with_engine,
@@ -103,6 +104,30 @@ def test_validate_language_rejects_malformed_tags(bad):
     """A dangling, too long or space-separated subtag is refused with the same message."""
     with pytest.raises(ValidationError, match="tag such as 'zh-cn'"):
         validate_language(bad)
+
+
+# validate_engine_language
+
+
+def test_validate_engine_language_passes_when_engine_declares_nothing(monkeypatch):
+    """An engine without a list_languages() hook accepts every code."""
+    monkeypatch.setattr(tools_mod, "get_engine_languages", lambda engine: None)
+    validate_engine_language("pyttsx3", "xx")
+
+
+@pytest.mark.parametrize("language", ["en", "en-gb", "EN"])
+def test_validate_engine_language_passes_listed_codes(monkeypatch, language):
+    """A listed code, or a tag of a listed language, passes."""
+    monkeypatch.setattr(tools_mod, "get_engine_languages", lambda engine: ["en", "ru"])
+    validate_engine_language("kokorotts", language)
+
+
+def test_validate_engine_language_rejects_unlisted_code(monkeypatch):
+    """An unlisted code is refused with the engine name and the codes it does serve."""
+    monkeypatch.setattr(tools_mod, "get_engine_languages", lambda engine: ["en", "ru"])
+    with pytest.raises(ValidationError) as exc:
+        validate_engine_language("kokorotts", "de")
+    assert str(exc.value) == "Language 'de' is not supported by engine 'kokorotts'. Supported: en, ru"
 
 
 # validate_engine — exercises real engines/__init__ logic against tests/stubs/gtts

@@ -44,6 +44,14 @@ def get_gtts_languages() -> dict[str, str]:
         return {}
 
 
+def list_languages() -> list[str] | None:
+    """Return the lowercased language tags gTTS serves, or None when its language table cannot be read."""
+    languages = get_gtts_languages()
+    if not languages:
+        return None
+    return sorted(languages)
+
+
 def gtts_language(language: str) -> str:
     """Map a request language to the tag gTTS expects.
 

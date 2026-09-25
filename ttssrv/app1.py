@@ -59,6 +59,7 @@ from libs.sample_resolver import (  # noqa: E402
     list_sample_files,
     sample_path_for_voice,
 )
+from libs.tools import validate_engine_language  # noqa: E402
 from ttssrv import history, metrics  # noqa: E402
 from ttssrv.openai_compat import (  # noqa: E402
     OpenAIRequestError,
@@ -118,6 +119,10 @@ TTS_ENGINE_DEFAULT = os.getenv("TTS_ENGINE") or (TTS_ENGINES[0] if TTS_ENGINES e
 if not TTS_ENGINES:
     TTS_ENGINES = [TTS_ENGINE_DEFAULT]
 TTS_LANGUAGE_DEFAULT = os.getenv("TTS_LANGUAGE", "en")
+# true: a language the engine declares it does not serve is a 400 on file
+# generation (/api/tts without stream, /api/history, /v1/audio/speech);
+# false keeps the engine's own fallback (English for most engines).
+TTS_LANGUAGE_STRICT = os.getenv("TTS_LANGUAGE_STRICT", "False").lower() in TRUE_VALUES
 TTS_STREAM_MAX_CHARS = int(os.getenv("TTS_STREAM_MAX_CHARS", "200"))
 TIMEZONE = pytz.timezone(os.getenv("TZ", "America/New_York"))
 DATETIME_FMT = "%Y-%m-%d %H:%M:%S"
@@ -270,6 +275,19 @@ def release_slot(slot: int | None) -> None:
     """Return a token taken by acquire_slot to the pool (no-op for None)."""
     if slot is not None:
         ENGINE_POOL.put(slot)
+
+
+def validate_selection(engine: str, language: str) -> None:
+    """With TTS_LANGUAGE_STRICT, refuse a language the engine does not serve before a pool slot is taken.
+
+    Called only on file generation; streaming keeps the engine fallback. An
+    engine that does not declare its languages accepts every code.
+
+    Raises:
+        ValidationError: TTS_LANGUAGE_STRICT is on and the engine does not list the language.
+    """
+    if TTS_LANGUAGE_STRICT:
+        validate_engine_language(engine, language)
 
 
 def synthesize(text: str, engine: str, language: str, voice: str | None = None, label: str = "") -> bytes:
@@ -650,6 +668,7 @@ def tts_generate():
     if data["stream"]:
         return stream_tts(text, engine, language, voice)
 
+    validate_selection(engine, language)
     slot = acquire_slot()
     try:
         audio_bytes = synthesize(text=text, engine=engine, language=language, voice=voice)
@@ -677,6 +696,7 @@ def history_create():
     voice = data.get("voice")
     logger.info(f"[{get_req_id()}] History request: engine={engine} language={language} voice={voice} chars={len(text)}")
 
+    validate_selection(engine, language)
     slot = acquire_slot()
     start_time = time.monotonic()
     try:
@@ -780,6 +800,7 @@ def openai_speech():
         f"voice={voice} chars={len(text)} format={response_format} speed={speed}"
     )
 
+    validate_selection(engine, language)
     slot = acquire_slot()
     try:
         audio_bytes = synthesize(text=text, engine=engine, language=language, voice=voice)

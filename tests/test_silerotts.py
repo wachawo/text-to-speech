@@ -113,6 +113,17 @@ def test_get_model_info_tag_uses_primary_subtag(engine, lang, expected):
     assert engine.get_model_info(lang) == engine.get_model_info(expected)
 
 
+def test_list_languages_are_the_mapped_languages(engine, monkeypatch):
+    """list_languages() declares the mapped languages without touching torch.hub."""
+
+    def fail_hub_load(**kwargs):
+        """Fail the test: declaring languages must not load a model."""
+        raise AssertionError("list_languages must not load a model")
+
+    monkeypatch.setattr(engine.torch.hub, "load", fail_hub_load)
+    assert engine.list_languages() == ["de", "en", "es", "fr", "ru", "ua", "uk"]
+
+
 def test_model_catalog_covers_every_language_default(engine):
     """Every language default names a catalogued model, so get_model_info never raises KeyError."""
     for model_id in engine.LANGUAGE_DEFAULT_MODELS.values():

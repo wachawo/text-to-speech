@@ -11,8 +11,10 @@ callers when its optional dependencies are importable.
 import importlib
 import logging
 import re
+import traceback
 from collections.abc import Callable
 from pathlib import Path
+from types import ModuleType
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +143,25 @@ def get_engine_function(engine_name: str) -> EngineFunction | None:
     return None
 
 
+def get_engine_module(engine_name: str) -> ModuleType | None:
+    """Import an engine module without the is_available() gate.
+
+    A catalogue such as the kokorotts language table or the coquitts sample
+    directory is readable whether or not the engine's dependencies are
+    installed, since every engine guards its optional imports.
+
+    Args:
+        engine_name: Name of the engine.
+
+    Returns:
+        The imported module, or None when no engines/<name>.py matches
+        ENGINE_NAME_REGEX.
+    """
+    if not get_engine_module_path(engine_name):
+        return None
+    return importlib.import_module(f".{engine_name}", package="engines")
+
+
 def get_engine_voices(engine_name: str, language: str = "en") -> dict[str, object]:
     """Fetch the selectable voices of an engine for a given language.
 
@@ -158,19 +179,44 @@ def get_engine_voices(engine_name: str, language: str = "en") -> dict[str, objec
         Dict {'voices': [...], 'default': str|None}, plus 'mix' when the
         engine reports it.
     """
-    # Imported without the is_available() gate: a catalogue such as the coquitts
-    # sample directory is readable whether or not torch is installed, and an
-    # engine whose listing really needs its dependencies raises
-    # EngineNotAvailableError itself.
-    if not get_engine_module_path(engine_name):
-        return {"voices": [], "default": None}
-    module = importlib.import_module(f".{engine_name}", package="engines")
+    # Imported without the is_available() gate: an engine whose listing really
+    # needs its dependencies raises EngineNotAvailableError itself.
+    module = get_engine_module(engine_name)
 
-    if hasattr(module, "list_voices"):
+    if module is not None and hasattr(module, "list_voices"):
         voices: dict[str, object] = module.list_voices(language)
         return voices
 
     return {"voices": [], "default": None}
+
+
+def get_engine_languages(engine_name: str) -> list[str] | None:
+    """Fetch the language codes an engine declares through its optional `list_languages()` hook.
+
+    The hook reads only constants or metadata and never loads a model. None
+    means "not declared": the engine has no hook, the module is missing, or
+    the hook failed (logged as a warning), and callers then let every code
+    through to the engine, as before hooks existed.
+
+    Args:
+        engine_name: Name of the engine.
+
+    Returns:
+        The lowercased codes the engine serves, or None when not declared.
+    """
+    try:
+        module = get_engine_module(engine_name)
+        if module is None or not hasattr(module, "list_languages"):
+            return None
+        languages = module.list_languages()
+        if languages is None:
+            return None
+        return [str(code).lower() for code in languages]
+    except Exception as exc:
+        logger.warning(
+            f"Engine {engine_name} list_languages failed: {type(exc).__name__}: {str(exc)}\n{traceback.format_exc()}"
+        )
+        return None
 
 
 def main():

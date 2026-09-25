@@ -13,6 +13,15 @@
   barktts and kokorotts look a tag up by its language part (`pt-br` is `pt`)
   instead of falling back to English. `/api/tts` with `stream=true` keeps the
   2-character rule and answers a tag with a 400.
+- `TTS_LANGUAGE_STRICT` (default `false`): when true, a language the engine
+  does not list is a 400 that names the engine and the languages it has,
+  checked before a pool slot is taken, on `/api/tts` without `stream`,
+  `/api/history` and `/v1/audio/speech` (OpenAI error shape there). Engines
+  list their languages through an optional `list_languages()` hook that reads
+  only constants or metadata: gtts, kokorotts, pipertts, silerotts, barktts,
+  and coquitts for its configured model. pyttsx3 lists none and accepts every
+  code. With the default `false` nothing changes and an unknown language falls
+  back as before.
 
 #### Changed
 - A 400 for a request that fails schema validation now carries `message`

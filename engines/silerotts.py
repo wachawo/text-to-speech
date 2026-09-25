@@ -93,6 +93,11 @@ def get_model_info(language: str = "en") -> tuple:
     return model_id, speaker, sample_rate
 
 
+def list_languages() -> list[str]:
+    """Return the request languages that have a Silero model; any other code falls back to English."""
+    return sorted(LANGUAGE_DEFAULT_MODELS)
+
+
 def get_hub_language(model_id: str) -> str:
     """Return the snakers4/silero-models language key that holds `model_id`.
 

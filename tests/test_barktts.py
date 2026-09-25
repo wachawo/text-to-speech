@@ -118,6 +118,12 @@ def test_speaker_for_language_tag_uses_primary_subtag(engine, lang, expected):
     assert engine.get_speaker_for_language(lang) == expected
 
 
+def test_list_languages_are_the_preset_languages(engine):
+    """list_languages() declares exactly the languages that have a speaker preset."""
+    assert engine.list_languages() == sorted(engine.SPEAKER_PRESETS)
+    assert "en" in engine.list_languages()
+
+
 # get_models_directory
 
 

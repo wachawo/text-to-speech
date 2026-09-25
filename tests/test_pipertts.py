@@ -190,6 +190,11 @@ def test_voice_path_tag_uses_primary_subtag(engine, monkeypatch, tmp_path, lang)
     assert engine.get_voice_path(lang) == str(tmp_path / "ru_RU-ruslan-medium.onnx")
 
 
+def test_list_languages_are_the_languages_with_a_voice(engine):
+    """list_languages() declares the languages that have their own voice."""
+    assert engine.list_languages() == ["de", "en", "es", "fr", "it", "ru", "uk", "zh"]
+
+
 def test_voice_path_returns_models_dir_path_when_file_missing(engine, monkeypatch, tmp_path):
     """When no directory holds the .onnx, the canonical models_dir candidate is returned for a useful error."""
     monkeypatch.setattr(engine, "get_models_directory", lambda: str(tmp_path))

@@ -203,6 +203,11 @@ def voice_names(voices_path: str) -> tuple[str, ...]:
     return load_cached(VOICE_NAMES_CACHE, VOICE_NAMES_LOCK, voices_path, read_names)
 
 
+def list_languages() -> list[str]:
+    """Return the languages Kokoro has voices for; any other code is spoken as English."""
+    return sorted(LANGUAGE_MAP)
+
+
 def language_voices(language: str, names: Collection[str]) -> list[str]:
     """Return the names whose first letter belongs to the language (en for unknown codes)."""
     prefixes = LANGUAGE_PREFIXES.get(primary_language(language), LANGUAGE_PREFIXES["en"])

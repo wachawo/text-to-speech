@@ -82,6 +82,22 @@ def xtts_language(language: str) -> str:
     return primary
 
 
+def list_languages() -> list[str] | None:
+    """Return the languages the configured model (COQUITTS_MODEL) accepts, or None when that is not known.
+
+    xtts lists its own codes plus `zh`, which xtts_language() sends as `zh-cn`;
+    a single-language model such as `tts_models/de/thorsten/vits` accepts its
+    language; any other multilingual model does not declare its languages here.
+    """
+    model_name = os.getenv("COQUITTS_MODEL", DEFAULT_COQUITTS_MODEL)
+    if "xtts" in model_name and "multilingual" in model_name:
+        return sorted([*XTTS_LANGUAGES, "zh"])
+    parts = model_name.split("/")
+    if len(parts) >= 2 and parts[0] == "tts_models" and parts[1] != "multilingual":
+        return [parts[1]]
+    return None
+
+
 def get_models_directory() -> str:
     """Resolve the absolute directory holding the Coqui model checkpoints.
 

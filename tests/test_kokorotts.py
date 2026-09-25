@@ -365,6 +365,12 @@ def test_generate_tag_picks_the_kokoro_lang(engine, kokoro_dir, language, voice,
     assert sys.modules["kokoro_onnx"].Kokoro.created[-1]["lang"] == expected
 
 
+def test_list_languages_are_the_mapped_languages(engine):
+    """list_languages() declares the languages of LANGUAGE_MAP without opening the model."""
+    assert engine.list_languages() == sorted(engine.LANGUAGE_MAP)
+    assert engine.KOKORO_CACHE == {}
+
+
 def test_list_voices_default_is_language_map_voice_when_present(engine, kokoro_dir):
     """The LANGUAGE_MAP default is reported when the voices file has it."""
     assert engine.list_voices("ja")["default"] == "jf_alpha"

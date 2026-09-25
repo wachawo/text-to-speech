@@ -125,6 +125,18 @@ def test_generate_sends_the_gtts_spelling(engine, gtts_langs):
     assert engine.generate("ni hao", {"language": "zh-cn"}) == b"MP3:zh-CN:False:ni hao"
 
 
+def test_list_languages_are_lowercased_gtts_tags(engine, gtts_langs):
+    """list_languages() declares gTTS's own table, lowercased and sorted."""
+    assert engine.list_languages() == ["en", "fr-ca", "pt", "zh-cn"]
+
+
+def test_list_languages_none_without_language_table(engine, monkeypatch):
+    """Without a readable gtts.lang the engine declares nothing and passes codes through unchanged."""
+    monkeypatch.setitem(sys.modules, "gtts.lang", None)
+    assert engine.list_languages() is None
+    assert engine.gtts_language("zh-cn") == "zh-cn"
+
+
 def test_generate_raises_engine_not_available_when_flag_off(engine, monkeypatch):
     """Synthesis refuses to run while the engine reports itself unavailable."""
     monkeypatch.setattr(engine, "AVAILABLE", False)

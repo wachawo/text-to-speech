@@ -115,6 +115,11 @@ def get_speaker_for_language(language: str) -> str:
     return SPEAKER_PRESETS.get(primary_language(language), SPEAKER_PRESETS["en"])
 
 
+def list_languages() -> list[str]:
+    """Return the languages that have a Bark speaker preset; any other code gets the English speaker."""
+    return sorted(SPEAKER_PRESETS)
+
+
 def ensure_models_loaded() -> None:
     """Run Bark's preload_models() once per process, under the preload lock.
 

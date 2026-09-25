@@ -138,6 +138,11 @@ def get_voice_path(language: str = "en") -> str:
     return os.path.join(models_dir, f"{voice_name}.onnx")
 
 
+def list_languages() -> list[str]:
+    """Return the languages that have their own Piper voice; any other code is spoken with the English voice."""
+    return sorted(LEGACY_VOICES)
+
+
 def get_download_instructions(language: str) -> str:
     """Build the multi-option help text shown when a voice model is missing.
 
