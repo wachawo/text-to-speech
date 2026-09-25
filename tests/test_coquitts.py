@@ -211,6 +211,44 @@ def test_generate_omits_lang_and_speaker_for_single_speaker_model(engine, monkey
     assert last["speaker"] is None
 
 
+@pytest.mark.parametrize(
+    "language,expected",
+    [
+        ("zh", "zh-cn"),  # xtts rejects a bare 'zh'
+        ("ZH", "zh-cn"),
+        ("zh-cn", "zh-cn"),
+        ("zh_CN", "zh-cn"),
+        ("zh-tw", "zh-cn"),  # xtts has one Chinese code
+        ("ru", "ru"),
+        ("en", "en"),
+        ("pt-br", "pt"),  # other tags reduce to the primary subtag
+    ],
+)
+def test_xtts_language_maps_request_codes(engine, language, expected):
+    """xtts_language keeps listed codes, turns Chinese into 'zh-cn' and strips other regions."""
+    assert engine.xtts_language(language) == expected
+
+
+def test_xtts_language_results_are_listed_for_known_codes(engine):
+    """Every code the UI and schema send for a supported xtts language maps into XTTS_LANGUAGES."""
+    for language in ("ar", "cs", "de", "en", "es", "fr", "hi", "hu", "it", "ja", "ko", "nl", "pl", "pt", "ru", "tr", "zh"):
+        assert engine.xtts_language(language) in engine.XTTS_LANGUAGES
+
+
+def test_generate_sends_zh_cn_to_xtts_for_chinese(engine, monkeypatch):
+    """A 'zh' request reaches xtts as 'zh-cn', the only Chinese code xtts accepts."""
+    monkeypatch.setenv("COQUITTS_MODEL", "tts_models/multilingual/multi-dataset/xtts_v2")
+    engine.generate("ni hao", {"language": "zh"})
+    assert FakeTTS.instances[-1].calls[-1]["language"] == "zh-cn"
+
+
+def test_generate_keeps_language_for_other_multilingual_models(engine, monkeypatch):
+    """The xtts mapping is not applied to non-xtts multilingual models, which use their own codes."""
+    monkeypatch.setenv("COQUITTS_MODEL", "tts_models/multilingual/multi-dataset/your_tts")
+    engine.generate("hi", {"language": "zh"})
+    assert FakeTTS.instances[-1].calls[-1]["language"] == "zh"
+
+
 def test_generate_caches_TTS_instance_between_calls(engine, monkeypatch):
     """xtts_v2 takes ~15s to load on first call — repeated invocations
     MUST NOT instantiate a new TTS each time."""

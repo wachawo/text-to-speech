@@ -29,6 +29,10 @@ DEFAULT_COQUITTS_MODEL = "tts_models/multilingual/multi-dataset/xtts_v2"
 # `ttsgen --engine coquitts` reads from here. Override via COQUITTS_SAMPLE.
 DEFAULT_COQUITTS_SAMPLE = str(os.path.expanduser("~/.config/ttsgen.wav"))
 
+# Language codes xtts_v2 accepts (its config `languages`). Chinese is `zh-cn`,
+# not the ISO 639-1 `zh` the rest of the project uses; see xtts_language().
+XTTS_LANGUAGES = ("ar", "cs", "de", "en", "es", "fr", "hi", "hu", "it", "ja", "ko", "nl", "pl", "pt", "ru", "tr", "zh-cn")
+
 # Cache TTS instances by (model_name, device) to avoid 15s reload of xtts_v2
 # checkpoint on every synthesis call. Keyed by tuple → instance.
 TTS_CACHE: dict = {}
@@ -60,6 +64,22 @@ except ImportError:
 def is_available() -> bool:
     """Report whether torch and the coqui-tts fork are installed."""
     return AVAILABLE
+
+
+def xtts_language(language: str) -> str:
+    """Map a request language to the code xtts expects.
+
+    A code xtts lists is kept as is; Chinese (`zh`, or a `zh-*` tag xtts does
+    not list) becomes `zh-cn`, since xtts rejects a bare `zh`; any other tag is
+    reduced to its primary subtag.
+    """
+    code = language.lower().replace("_", "-")
+    if code in XTTS_LANGUAGES:
+        return code
+    primary = code.split("-", 1)[0]
+    if primary == "zh":
+        return "zh-cn"
+    return primary
 
 
 def get_models_directory() -> str:
@@ -165,8 +185,10 @@ def generate(text: str, config: dict) -> bytes:
                 }
             )
     try:
-        language = config.get("language", "en")
         model_name = os.getenv("COQUITTS_MODEL", DEFAULT_COQUITTS_MODEL)
+        language = config.get("language", "en")
+        if "xtts" in model_name:
+            language = xtts_language(language)
         device = "cuda" if torch.cuda.is_available() else "cpu"
         tts = get_tts(model_name, device)
         # Coqui TTS can only write to a path, so synthesis goes through a scratch file.
