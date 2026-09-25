@@ -99,7 +99,14 @@ def test_generate_defaults_language_to_en_and_slow_to_false(engine):
 def gtts_langs(monkeypatch):
     """Serve a small gTTS language table as `gtts.lang`, spelled the way gTTS spells its tags."""
     fake_lang = types.ModuleType("gtts.lang")
-    fake_lang.tts_langs = lambda: {"en": "English", "pt": "Portuguese", "zh-CN": "Chinese", "fr-CA": "French (Canada)"}
+    fake_lang.tts_langs = lambda: {
+        "en": "English",
+        "fr": "French",
+        "fr-CA": "French (Canada)",
+        "pt": "Portuguese",
+        "pt-PT": "Portuguese (Portugal)",
+        "zh-CN": "Chinese",
+    }
     monkeypatch.setitem(sys.modules, "gtts.lang", fake_lang)
 
 
@@ -108,7 +115,9 @@ def gtts_langs(monkeypatch):
     [
         ("zh-cn", "zh-CN"),
         ("ZH_cn", "zh-CN"),
-        ("fr-ca", "fr-CA"),
+        ("fr-ca", "fr"),
+        ("FR_ca", "fr"),
+        ("pt-pt", "pt"),
         ("pt-br", "pt"),
         ("en", "en"),
         ("xx", "xx"),
@@ -126,8 +135,23 @@ def test_generate_sends_the_gtts_spelling(engine, gtts_langs):
 
 
 def test_list_languages_are_lowercased_gtts_tags(engine, gtts_langs):
-    """list_languages() declares gTTS's own table, lowercased and sorted."""
-    assert engine.list_languages() == ["en", "fr-ca", "pt", "zh-cn"]
+    """list_languages() declares gTTS's own table, lowercased and sorted, without the tags gTTS folds."""
+    assert engine.list_languages() == ["en", "fr", "pt", "zh-cn"]
+
+
+def test_generate_sends_folded_tags_as_their_language_part(engine, gtts_langs):
+    """fr-ca and pt-pt reach gTTS as 'fr' and 'pt', which gTTS would fold them into with a warning."""
+    assert engine.generate("salut", {"language": "fr-ca"}) == b"MP3:fr:False:salut"
+    assert engine.generate("ola", {"language": "pt-pt"}) == b"MP3:pt:False:ola"
+
+
+def test_folded_tags_still_pass_the_strict_check(engine, gtts_langs):
+    """Leaving fr-ca and pt-pt out of the list does not refuse them: their language part is listed."""
+    from libs.languages import language_supported
+
+    languages = engine.list_languages()
+    assert language_supported("fr-ca", languages)
+    assert language_supported("pt-pt", languages)
 
 
 def test_list_languages_none_without_language_table(engine, monkeypatch):

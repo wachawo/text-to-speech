@@ -8,10 +8,11 @@
   `/api/tts`, `/api/history`, `/v1/audio/speech`, `ttsgen` and `libs.api`.
   A tag is lowercased and written with `-`; 2-character codes are handled
   exactly as before. gtts receives its own spelling (`zh-CN`, or the language
-  part when it has no such tag), kokorotts reads `en-gb` with the British
-  phonemizer, xtts gets `zh-cn` for any Chinese tag, and silerotts, pipertts,
-  barktts and kokorotts look a tag up by its language part (`pt-br` is `pt`)
-  instead of falling back to English.
+  part when it has no such tag; `fr-ca` and `pt-pt`, which gTTS folds into
+  `fr` and `pt` with a warning, are sent as `fr` and `pt`), kokorotts reads
+  `en-gb` with the British phonemizer, xtts gets `zh-cn` for any Chinese tag,
+  and silerotts, pipertts, barktts, kokorotts and pyttsx3 look a tag up by its
+  language part (`pt-br` is `pt`) instead of falling back to English.
   `/api/tts` with `stream=true` keeps the 2-character rule for the request's
   `language` and answers a tag there with a 400; a stream request without
   `language` uses `TTS_LANGUAGE` as set, a tag included.
@@ -21,8 +22,9 @@
   `/api/history` and `/v1/audio/speech` (OpenAI error shape there). Engines
   list their languages through an optional `list_languages()` hook that reads
   only constants or metadata: gtts, kokorotts, pipertts, silerotts, barktts,
-  and coquitts for its configured model. pyttsx3 lists none and accepts every
-  code. With the default `false` nothing changes and an unknown language falls
+  and coquitts for its configured model (xtts, or a single-language model,
+  whose region tag such as `zh-CN` also lists `zh`). pyttsx3 and a coquitts
+  multilingual model other than xtts list none and accept every code. With the default `false` nothing changes and an unknown language falls
   back as before.
 
 #### Changed

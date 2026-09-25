@@ -213,6 +213,32 @@ def test_generate_unmatched_language_falls_back_to_first_voice(monkeypatch):
     assert sys.modules["pyttsx3"].state["voice"] == "default"
 
 
+# espeak lists a region voice for en-gb, but only 'zh' / 'pt' for Chinese and Portuguese.
+ESPEAK_REGION_VOICES = [
+    voice("gmw/en", [b"\x02en-gb", b"\x02en"], "English (Great Britain)"),
+    voice("gmw/en-US", [b"\x02en-us"], "English (America)"),
+    voice("sit/cmn", [b"\x05zh-cmn", b"\x05zh"], "Chinese (Mandarin)"),
+    voice("roa/pt", [b"\x05pt"], "Portuguese (Portugal)"),
+]
+
+
+@pytest.mark.parametrize(
+    "language,expected",
+    [
+        ("zh-cn", "sit/cmn"),
+        ("pt-br", "roa/pt"),
+        ("en-us", "gmw/en-US"),
+        ("zh", "sit/cmn"),
+        ("xx-yy", "gmw/en"),
+    ],
+)
+def test_generate_picks_voice_by_language_part_of_a_tag(monkeypatch, language, expected):
+    """A tag no voice lists uses its language part; a listed tag keeps its own voice; no match keeps voices[0]."""
+    eng = import_engine_with_voices(monkeypatch, ESPEAK_REGION_VOICES)
+    eng.generate("hi", {"language": language})
+    assert sys.modules["pyttsx3"].state["voice"] == expected
+
+
 @pytest.mark.parametrize(
     "voice_obj,language,expected",
     [

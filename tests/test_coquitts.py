@@ -254,17 +254,29 @@ def test_generate_keeps_language_for_other_multilingual_models(engine, monkeypat
     [
         ("tts_models/multilingual/multi-dataset/xtts_v2", "xtts"),
         ("tts_models/de/thorsten/vits", ["de"]),
+        ("tts_models/zh-CN/baker/tacotron2-DDC-GST", ["zh", "zh-cn"]),
         ("tts_models/multilingual/multi-dataset/your_tts", None),
     ],
 )
 def test_list_languages_follows_the_configured_model(engine, monkeypatch, model, expected):
-    """xtts declares its codes plus 'zh', a single-language model its language, other models nothing."""
+    """xtts declares its codes plus 'zh', a single-language model its language (and a tag's language part), others nothing."""
     monkeypatch.setenv("COQUITTS_MODEL", model)
     languages = engine.list_languages()
     if expected == "xtts":
         assert languages == sorted([*engine.XTTS_LANGUAGES, "zh"])
     else:
         assert languages == expected
+
+
+def test_region_model_passes_the_strict_check_for_its_language_part(engine, monkeypatch):
+    """A single-language `zh-CN` model serves `zh` (what the web UI sends) and `zh-cn` in strict mode."""
+    from libs.languages import language_supported
+
+    monkeypatch.setenv("COQUITTS_MODEL", "tts_models/zh-CN/baker/tacotron2-DDC-GST")
+    languages = engine.list_languages()
+    assert language_supported("zh", languages)
+    assert language_supported("zh_CN", languages)
+    assert not language_supported("en", languages)
 
 
 def test_list_languages_does_not_load_a_model(engine, monkeypatch):
