@@ -106,6 +106,9 @@ this engine. Russian (`v3_1_ru`) includes both male and female voices:
 | `fr` | `fr_0` | `fr_0`, ... |
 | `ua`, `uk` | `mykyta` | model speakers |
 
+A tag such as `ru-ru` uses the model of its language part; any other language
+gets the English model.
+
 The authoritative list comes from the loaded model's `speakers` attribute and is
 exposed at runtime:
 

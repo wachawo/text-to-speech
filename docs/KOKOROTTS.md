@@ -71,6 +71,11 @@ English lists the American (`a*`) and the British (`b*`) voices; a `b*` voice
 switches the phonemizer from `en-us` to `en-gb`. The reported `default` is
 `KOKOROTTS_VOICE` when it is set, else the language default.
 
+The language can also be a tag. `en-gb` selects the British phonemizer with any
+English voice; any other tag uses its language part (`pt-br` is `pt`,
+`ja-jp` is `ja`), and a language missing from the table below is spoken as
+English.
+
 A mix blends up to four voices: `name(weight)+name(weight)`, for example
 `af_bella(2)+af_sky(1)`.
 

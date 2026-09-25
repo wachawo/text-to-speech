@@ -78,7 +78,8 @@ maps these `--language` codes to a preset:
 - Korean (ko)
 - Hindi (hi)
 
-Any other code (for example `nl`, `cs`, `ar`) falls back to the English preset.
+A tag such as `pt-br` uses the preset of its language part. Any other code (for
+example `nl`, `cs`, `ar`) falls back to the English preset.
 
 ## Usage
 

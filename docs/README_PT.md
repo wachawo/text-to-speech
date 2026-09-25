@@ -177,12 +177,12 @@ audio.write_to_file("hola.mp3")
 - `model` é o nome de um motor, ou `tts-1` / `tts-1-hd` / `gpt-4o-mini-tts` para o motor padrão.
 - `voice` é uma voz do motor; os nomes de voz da OpenAI (`alloy`, `nova`, ...) selecionam a voz padrão do motor.
 - `response_format`: `mp3` (padrão), `wav`, `pcm`, `opus`, `flac`, `aac`. Os motores produzem WAV ou MP3; qualquer outro formato é transcodificado com `ffmpeg`, que as imagens Docker incluem. `speed` (de 0.25 a 4.0) é aplicado da mesma forma.
-- `language` é uma extensão: um código de duas letras, padrão `TTS_LANGUAGE`.
+- `language` é uma extensão: um código de duas letras ou uma tag como `zh-cn`, padrão `TTS_LANGUAGE`.
 - `GET /v1/models` lista os motores instalados mais `tts-1`; `GET /v1/audio/voices?model=<engine>` lista as vozes de um motor.
 
 #### Referência da API
 
-Toda rota exceto `/api/health` exige `Authorization: Bearer <token>` quando `TTS_TOKENS` está definido. Os erros em `/api/` têm a forma `{"error": "...", "request_id": "..."}`; os erros em `/v1/` usam o formato da OpenAI.
+Toda rota exceto `/api/health` exige `Authorization: Bearer <token>` quando `TTS_TOKENS` está definido. Os erros em `/api/` têm a forma `{"error": "...", "request_id": "..."}`; uma resposta 400 traz também `message` com o motivo, que nomeia os campos com falha quando a solicitação não passa na validação (`language: ...`). Os erros em `/v1/` usam o formato da OpenAI.
 
 | Método | Caminho | Propósito |
 | --- | --- | --- |
@@ -202,6 +202,8 @@ Toda rota exceto `/api/health` exige `Authorization: Bearer <token>` quando `TTS
 | POST | `/v1/audio/speech` | Síntese compatível com OpenAI, veja acima. |
 | GET | `/v1/models` | Lista de modelos compatível com OpenAI. |
 | GET | `/v1/audio/voices?model=` | Vozes de um motor. |
+
+`language` é um código de duas letras (`en`, `ru`) ou uma tag com região ou escrita (`zh-cn`, `pt_BR`, `en-gb`, `es-419`), convertida para minúsculas e escrita com `-`. Cada motor converte a tag no que tem: o gtts recebe a própria grafia (`zh-CN`), o kokorotts fala `en-gb` com o fonemizador britânico, o xtts recebe `zh-cn` para chinês e os demais motores usam a parte do idioma (`pt-br` vira `pt`). `stream=true` aceita apenas códigos de duas letras, como antes. Um idioma que o motor não conhece é falado no idioma padrão dele, normalmente inglês (o gtts falha em vez disso); com `TTS_LANGUAGE_STRICT=true` é um 400 que lista os idiomas do motor. A verificação estrita vale para `/api/tts` sem `stream`, `/api/history` e `/v1/audio/speech`, e para todos os motores exceto o pyttsx3, que não lista seus idiomas.
 
 #### Interface web
 
@@ -231,6 +233,7 @@ Toda configuração é uma variável de ambiente; `env.example` documenta todas 
 | `TTS_ENGINES` | vazio | Motores a instalar e aquecer na inicialização, separados por vírgula (`coquitts,silerotts`). |
 | `TTS_ENGINE` | `gtts` | Motor usado quando a solicitação não indica nenhum. |
 | `TTS_LANGUAGE` | `en` | Idioma usado quando a solicitação não indica nenhum. |
+| `TTS_LANGUAGE_STRICT` | `false` | `true` responde 400 a um idioma que o motor não lista, em vez de o motor recorrer ao idioma padrão. |
 | `TTS_POOL_SIZE` | `1` | Chamadas de síntese permitidas ao mesmo tempo entre todos os motores; `0` remove o limite e o aquecimento. |
 | `TTS_QUEUE_SIZE` | `8` | Solicitações de síntese que podem esperar por uma vaga livre; as demais recebem 503 imediatamente. |
 | `TTS_HISTORY_MAX` | `200` | Itens mantidos no histórico; os mais antigos são removidos quando um novo é salvo. |

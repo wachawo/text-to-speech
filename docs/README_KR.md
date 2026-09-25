@@ -177,12 +177,12 @@ audio.write_to_file("hola.mp3")
 - `model`은 엔진 이름이거나, 기본 엔진을 뜻하는 `tts-1` / `tts-1-hd` / `gpt-4o-mini-tts`입니다.
 - `voice`는 엔진의 음성입니다. OpenAI 음성 이름(`alloy`, `nova`, ...)은 엔진 기본값을 선택합니다.
 - `response_format`: `mp3`(기본값), `wav`, `pcm`, `opus`, `flac`, `aac`. 엔진은 WAV 또는 MP3를 생성하며, 그 외 형식은 Docker 이미지에 포함된 `ffmpeg`로 트랜스코딩됩니다. `speed`(0.25에서 4.0)도 같은 방식으로 적용됩니다.
-- `language`는 확장 항목입니다: 두 글자 코드이며 기본값은 `TTS_LANGUAGE`입니다.
+- `language`는 확장 항목입니다: 두 글자 코드 또는 `zh-cn` 같은 태그이며 기본값은 `TTS_LANGUAGE`입니다.
 - `GET /v1/models`는 설치된 엔진과 `tts-1`을 나열하고, `GET /v1/audio/voices?model=<engine>`는 엔진 하나의 음성을 나열합니다.
 
 #### API 레퍼런스
 
-`TTS_TOKENS`가 설정되어 있으면 `/api/health`를 제외한 모든 경로에 `Authorization: Bearer <token>`이 필요합니다. `/api/` 아래의 오류는 `{"error": "...", "request_id": "..."}` 형태이고, `/v1/` 아래의 오류는 OpenAI 형식을 사용합니다.
+`TTS_TOKENS`가 설정되어 있으면 `/api/health`를 제외한 모든 경로에 `Authorization: Bearer <token>`이 필요합니다. `/api/` 아래의 오류는 `{"error": "...", "request_id": "..."}` 형태이며, 400 응답에는 이유를 담은 `message`가 추가로 들어 있어 요청이 검증을 통과하지 못하면 문제가 된 필드를 알려 줍니다(`language: ...`). `/v1/` 아래의 오류는 OpenAI 형식을 사용합니다.
 
 | 메서드 | 경로 | 용도 |
 | --- | --- | --- |
@@ -202,6 +202,8 @@ audio.write_to_file("hola.mp3")
 | POST | `/v1/audio/speech` | OpenAI 호환 합성, 위 참조. |
 | GET | `/v1/models` | OpenAI 호환 모델 목록. |
 | GET | `/v1/audio/voices?model=` | 엔진 하나의 음성. |
+
+`language`는 두 글자 코드(`en`, `ru`) 또는 지역이나 문자 체계가 붙은 태그(`zh-cn`, `pt_BR`, `en-gb`, `es-419`)이며, 태그는 소문자로 바뀌고 `-`로 연결됩니다. 각 엔진은 태그를 자신이 가진 언어에 맞춥니다: gtts는 자체 표기(`zh-CN`)를 받고, kokorotts는 `en-gb`를 영국식 음소 변환기로 읽으며, xtts는 중국어에 `zh-cn`을 받고, 나머지 엔진은 언어 부분을 사용합니다(`pt-br`은 `pt`). `stream=true`는 이전과 같이 두 글자 코드만 받습니다. 엔진이 모르는 언어는 엔진의 기본 언어(보통 영어)로 읽힙니다(gtts는 대신 실패합니다). `TTS_LANGUAGE_STRICT=true`이면 이런 요청은 엔진의 언어 목록을 알려 주는 400이 됩니다. 엄격한 검사는 `stream`이 없는 `/api/tts`, `/api/history`, `/v1/audio/speech`에 적용되며, 언어 목록을 제공하지 않는 pyttsx3를 제외한 모든 엔진이 대상입니다.
 
 #### 웹 UI
 
@@ -231,6 +233,7 @@ xdg-open https://localhost:8443     # TTS_WWW_TLS_PORT; 자체 서명 인증서,
 | `TTS_ENGINES` | 비어 있음 | 시작 시 설치하고 워밍업할 엔진, 쉼표로 구분(`coquitts,silerotts`). |
 | `TTS_ENGINE` | `gtts` | 요청에 엔진이 지정되지 않았을 때 사용하는 엔진. |
 | `TTS_LANGUAGE` | `en` | 요청에 언어가 지정되지 않았을 때 사용하는 언어. |
+| `TTS_LANGUAGE_STRICT` | `false` | `true`이면 엔진 목록에 없는 언어에 대해 엔진의 기본 언어로 대체하는 대신 400을 반환. |
 | `TTS_POOL_SIZE` | `1` | 모든 엔진을 통틀어 동시에 허용되는 합성 호출 수; `0`은 제한과 워밍업을 없앱니다. |
 | `TTS_QUEUE_SIZE` | `8` | 빈 슬롯을 기다릴 수 있는 합성 요청 수; 초과분은 즉시 503을 받습니다. |
 | `TTS_HISTORY_MAX` | `200` | 히스토리에 보관되는 항목 수; 새 항목이 저장되면 가장 오래된 것이 삭제됩니다. |

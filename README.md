@@ -177,12 +177,12 @@ audio.write_to_file("hola.mp3")
 - `model` is an engine name, or `tts-1` / `tts-1-hd` / `gpt-4o-mini-tts` for the default engine.
 - `voice` is an engine voice; the OpenAI voice names (`alloy`, `nova`, ...) select the engine default.
 - `response_format`: `mp3` (default), `wav`, `pcm`, `opus`, `flac`, `aac`. Engines produce WAV or MP3; anything else is transcoded with `ffmpeg`, which the Docker images include. `speed` (0.25 to 4.0) is applied the same way.
-- `language` is an extension: a two-letter code, default `TTS_LANGUAGE`.
+- `language` is an extension: a two-letter code or a tag such as `zh-cn`, default `TTS_LANGUAGE`.
 - `GET /v1/models` lists the installed engines plus `tts-1`; `GET /v1/audio/voices?model=<engine>` lists the voices of one engine.
 
 #### API reference
 
-Every route except `/api/health` requires `Authorization: Bearer <token>` when `TTS_TOKENS` is set. Errors under `/api/` are `{"error": "...", "request_id": "..."}`; errors under `/v1/` use the OpenAI shape.
+Every route except `/api/health` requires `Authorization: Bearer <token>` when `TTS_TOKENS` is set. Errors under `/api/` are `{"error": "...", "request_id": "..."}`; a 400 also carries `message` with the reason, which names the failing fields when the request does not pass validation (`language: ...`). Errors under `/v1/` use the OpenAI shape.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -204,6 +204,8 @@ Every route except `/api/health` requires `Authorization: Bearer <token>` when `
 | GET | `/v1/audio/voices?model=` | Voices of one engine. |
 | GET | `/api/metrics` | Uptime, pool occupancy and per-engine calls, failures and latency percentiles as JSON. |
 | GET | `/metrics` | The same in the Prometheus text format. |
+
+`language` is a two-letter code (`en`, `ru`) or a tag with a region or script (`zh-cn`, `pt_BR`, `en-gb`, `es-419`), which is lowercased and written with `-`. Each engine maps a tag to what it has: gtts gets its own spelling (`zh-CN`), kokorotts speaks `en-gb` with the British phonemizer, xtts gets `zh-cn` for Chinese, and the other engines use the language part (`pt-br` is `pt`). `stream=true` takes two-letter codes only, as before. A language an engine does not know is spoken in its default language, usually English (gtts fails instead); with `TTS_LANGUAGE_STRICT=true` it is a 400 that lists the languages the engine has. The strict check covers `/api/tts` without `stream`, `/api/history` and `/v1/audio/speech`, and every engine but pyttsx3, which does not list its languages.
 
 #### Web UI
 
@@ -233,6 +235,7 @@ Every setting is an environment variable; `env.example` documents them all and `
 | `TTS_ENGINES` | empty | Engines to install and warm up at start, comma-separated (`coquitts,silerotts`). |
 | `TTS_ENGINE` | `gtts` | Engine used when a request does not name one. |
 | `TTS_LANGUAGE` | `en` | Language used when a request does not name one. |
+| `TTS_LANGUAGE_STRICT` | `false` | `true` answers 400 to a language the engine does not list, instead of the engine's fallback to its default language. |
 | `TTS_POOL_SIZE` | `1` | Synthesis calls allowed at the same time across all engines; `0` removes the cap and the warmup. |
 | `TTS_QUEUE_SIZE` | `8` | Synthesis requests allowed to wait for a free slot; any more get 503 at once. |
 | `TTS_HISTORY_MAX` | `200` | Items kept in the history; the oldest are removed when a new one is saved. |

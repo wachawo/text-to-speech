@@ -113,8 +113,9 @@ echo "PIPERTTS_MODELS=$HOME/my-piper-voices" >> ~/.config/ttsgen.conf
 | `uk` | `uk_UA-ukrainian_tts-medium` | 4/5 | manual download |
 | `zh` | `zh_CN-huayan-medium` | 4/5 | manual download |
 
-These are the voices `engines/pipertts.py` maps to a `--language` code; any
-other code falls back to the English voice. Other voices from the catalogue
+These are the voices `engines/pipertts.py` maps to a `--language` code; a tag
+such as `ru-ru` or `de-at` uses the voice of its language part, and any other
+code falls back to the English voice. Other voices from the catalogue
 (for example `en_GB-alba-medium`) can be downloaded, but the engine does not
 select them by language.
 

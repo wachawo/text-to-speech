@@ -177,12 +177,12 @@ audio.write_to_file("hola.mp3")
 - `model` ist ein Engine-Name oder `tts-1` / `tts-1-hd` / `gpt-4o-mini-tts` für die Standard-Engine.
 - `voice` ist eine Engine-Stimme; die OpenAI-Stimmennamen (`alloy`, `nova`, ...) wählen den Engine-Standard.
 - `response_format`: `mp3` (Standard), `wav`, `pcm`, `opus`, `flac`, `aac`. Die Engines erzeugen WAV oder MP3; alles andere wird mit `ffmpeg` transkodiert, das in den Docker-Images enthalten ist. `speed` (0.25 bis 4.0) wird auf dieselbe Weise angewendet.
-- `language` ist eine Erweiterung: ein zweibuchstabiger Code, Standard `TTS_LANGUAGE`.
+- `language` ist eine Erweiterung: ein zweibuchstabiger Code oder ein Tag wie `zh-cn`, Standard `TTS_LANGUAGE`.
 - `GET /v1/models` listet die installierten Engines plus `tts-1`; `GET /v1/audio/voices?model=<engine>` listet die Stimmen einer Engine.
 
 #### API-Referenz
 
-Jede Route außer `/api/health` erfordert `Authorization: Bearer <token>`, wenn `TTS_TOKENS` gesetzt ist. Fehler unter `/api/` haben die Form `{"error": "...", "request_id": "..."}`; Fehler unter `/v1/` verwenden das OpenAI-Format.
+Jede Route außer `/api/health` erfordert `Authorization: Bearer <token>`, wenn `TTS_TOKENS` gesetzt ist. Fehler unter `/api/` haben die Form `{"error": "...", "request_id": "..."}`; eine 400-Antwort enthält zusätzlich `message` mit dem Grund, der bei einer ungültigen Anfrage die fehlerhaften Felder nennt (`language: ...`). Fehler unter `/v1/` verwenden das OpenAI-Format.
 
 | Methode | Pfad | Zweck |
 | --- | --- | --- |
@@ -202,6 +202,8 @@ Jede Route außer `/api/health` erfordert `Authorization: Bearer <token>`, wenn 
 | POST | `/v1/audio/speech` | OpenAI-kompatible Synthese, siehe oben. |
 | GET | `/v1/models` | OpenAI-kompatible Modellliste. |
 | GET | `/v1/audio/voices?model=` | Stimmen einer Engine. |
+
+`language` ist ein zweibuchstabiger Code (`en`, `ru`) oder ein Tag mit Region oder Schrift (`zh-cn`, `pt_BR`, `en-gb`, `es-419`), der in Kleinbuchstaben und mit `-` geschrieben wird. Jede Engine bildet ein Tag auf das ab, was sie hat: gtts bekommt die eigene Schreibweise (`zh-CN`), kokorotts spricht `en-gb` mit dem britischen Phonemizer, xtts bekommt für Chinesisch `zh-cn`, und die übrigen Engines verwenden den Sprachteil (`pt-br` wird zu `pt`). `stream=true` nimmt wie bisher nur zweibuchstabige Codes an. Eine Sprache, die eine Engine nicht kennt, wird in ihrer Standardsprache gesprochen, meist Englisch (gtts schlägt stattdessen fehl); mit `TTS_LANGUAGE_STRICT=true` ist sie ein 400, der die Sprachen der Engine aufzählt. Die strenge Prüfung gilt für `/api/tts` ohne `stream`, `/api/history` und `/v1/audio/speech` und für jede Engine außer pyttsx3, die ihre Sprachen nicht auflistet.
 
 #### Web-Oberfläche
 
@@ -231,6 +233,7 @@ Jede Einstellung ist eine Umgebungsvariable; `env.example` dokumentiert sie alle
 | `TTS_ENGINES` | leer | Engines, die beim Start installiert und vorgewärmt werden, kommagetrennt (`coquitts,silerotts`). |
 | `TTS_ENGINE` | `gtts` | Engine, die verwendet wird, wenn eine Anfrage keine nennt. |
 | `TTS_LANGUAGE` | `en` | Sprache, die verwendet wird, wenn eine Anfrage keine nennt. |
+| `TTS_LANGUAGE_STRICT` | `false` | `true` beantwortet eine Sprache, die die Engine nicht auflistet, mit 400 statt mit dem Rückfall der Engine auf ihre Standardsprache. |
 | `TTS_POOL_SIZE` | `1` | Gleichzeitig erlaubte Synthese-Aufrufe über alle Engines hinweg; `0` entfernt das Limit und das Vorwärmen. |
 | `TTS_QUEUE_SIZE` | `8` | Synthese-Anfragen, die auf einen freien Platz warten dürfen; weitere erhalten sofort 503. |
 | `TTS_HISTORY_MAX` | `200` | Im Verlauf behaltene Einträge; die ältesten werden entfernt, wenn ein neuer gespeichert wird. |

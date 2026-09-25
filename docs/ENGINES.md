@@ -146,11 +146,29 @@ lives in `libs/playback.py`. Adding `to_file()` / `to_bytes()` inside an
 engine is a layering violation and will not be picked up by the loader
 (`engines/__init__.py` calls `generate()` only).
 
-### 3. Config Parameters
+### 3. Optional language list
+
+```python
+def list_languages() -> list[str] | None:
+    """Return the language codes the engine serves, or None when not declared."""
+```
+
+`engines/__init__.py:get_engine_languages` calls it when it exists. It must
+read only constants or metadata (never load a model, never touch the network),
+and it works whether or not the engine is available. The server uses it for
+`TTS_LANGUAGE_STRICT`: a language that is not listed, neither as a whole nor by
+its primary subtag (`en` covers `en-gb`), is refused with a 400. An engine
+without the hook, or one that returns None (pyttsx3 has no hook), accepts every
+code, and a hook that raises is logged and treated as None.
+
+### 4. Config Parameters
 
 ```python
 config = {
-    'language': 'en',     # Language (required)
+    'language': 'en',     # Language (required): a 2-character code or a tag
+                          # such as 'zh-cn' or 'pt-br', lowercased with '-';
+                          # look a tag up by libs.languages.primary_language()
+                          # when the engine keys its tables by 2-letter codes
     'rate': 150,          # Speech rate (optional)
     'volume': 0.9,        # Volume (optional)
     'slow': False,        # Slow speech (optional)
@@ -299,7 +317,8 @@ python -c "from engines import get_available_engines; print('\n'.join(get_availa
 1. Create `engines/myengine.py` with `is_available()` and `generate()`; keep the
    optional imports inside `try/except ImportError` so the module loads with
    `AVAILABLE = False` when the dependency is missing. Add `list_voices(language)`
-   if the engine has selectable voices (`engines/__init__.py:get_engine_voices`).
+   if the engine has selectable voices (`engines/__init__.py:get_engine_voices`),
+   and `list_languages()` if it serves a known set of languages.
 2. Do not add the engine's packages to `requirements.txt` or to a pip extra.
    Write `install/myengine.py` with an `install(non_interactive)` function that
    pip-installs the dependency (torch through `install_torch_choice()`), resolves

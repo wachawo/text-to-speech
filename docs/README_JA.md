@@ -177,12 +177,12 @@ audio.write_to_file("hola.mp3")
 - `model` はエンジン名、またはデフォルトエンジンを指す `tts-1` / `tts-1-hd` / `gpt-4o-mini-tts` です。
 - `voice` はエンジンの音声です。OpenAIの音声名（`alloy`、`nova` など）はエンジンのデフォルト音声を選びます。
 - `response_format`: `mp3`（デフォルト）、`wav`、`pcm`、`opus`、`flac`、`aac`。エンジンはWAVまたはMP3を生成し、それ以外の形式は `ffmpeg` でトランスコードされます（Dockerイメージに同梱）。`speed`（0.25から4.0）も同じ方法で適用されます。
-- `language` は拡張パラメータです。2文字の言語コードで、デフォルトは `TTS_LANGUAGE` です。
+- `language` は拡張パラメータです。2文字の言語コード、または `zh-cn` のようなタグで、デフォルトは `TTS_LANGUAGE` です。
 - `GET /v1/models` はインストール済みのエンジンと `tts-1` を一覧し、`GET /v1/audio/voices?model=<engine>` は1つのエンジンの音声を一覧します。
 
 #### APIリファレンス
 
-`TTS_TOKENS` が設定されている場合、`/api/health` を除くすべてのルートで `Authorization: Bearer <token>` が必要です。`/api/` 配下のエラーは `{"error": "...", "request_id": "..."}` の形式で、`/v1/` 配下のエラーはOpenAIの形式です。
+`TTS_TOKENS` が設定されている場合、`/api/health` を除くすべてのルートで `Authorization: Bearer <token>` が必要です。`/api/` 配下のエラーは `{"error": "...", "request_id": "..."}` の形式で、400 にはさらに理由を示す `message` が付きます。リクエストが検証に通らなかった場合は、問題のあるフィールドが示されます（`language: ...`）。`/v1/` 配下のエラーはOpenAIの形式です。
 
 | メソッド | パス | 用途 |
 | --- | --- | --- |
@@ -202,6 +202,8 @@ audio.write_to_file("hola.mp3")
 | POST | `/v1/audio/speech` | OpenAI互換の合成。上記を参照。 |
 | GET | `/v1/models` | OpenAI互換のモデル一覧。 |
 | GET | `/v1/audio/voices?model=` | 1つのエンジンの音声。 |
+
+`language` は2文字のコード（`en`、`ru`）、または地域や文字体系を含むタグ（`zh-cn`、`pt_BR`、`en-gb`、`es-419`）です。タグは小文字にされ、`-` でつながれます。各エンジンはタグを自分の持つ言語に対応づけます。gtts は独自の表記（`zh-CN`）を受け取り、kokorotts は `en-gb` を英国式の音素変換器で読み上げ、xtts は中国語に `zh-cn` を受け取り、その他のエンジンは言語部分を使います（`pt-br` は `pt`）。`stream=true` はこれまでどおり2文字のコードのみを受け付けます。エンジンが知らない言語は、そのエンジンのデフォルト言語（通常は英語）で読み上げられます（gtts は失敗します）。`TTS_LANGUAGE_STRICT=true` にすると、そのようなリクエストはエンジンの対応言語を列挙した 400 になります。厳格チェックの対象は `stream` なしの `/api/tts`、`/api/history`、`/v1/audio/speech` で、言語を列挙しない pyttsx3 以外のすべてのエンジンです。
 
 #### Web UI
 
@@ -231,6 +233,7 @@ xdg-open https://localhost:8443     # TTS_WWW_TLS_PORT。自己署名証明書�
 | `TTS_ENGINES` | 空 | 起動時にインストールしてウォームアップするエンジン。カンマ区切り（`coquitts,silerotts`）。 |
 | `TTS_ENGINE` | `gtts` | リクエストでエンジンが指定されなかったときに使うエンジン。 |
 | `TTS_LANGUAGE` | `en` | リクエストで言語が指定されなかったときに使う言語。 |
+| `TTS_LANGUAGE_STRICT` | `false` | `true` にすると、エンジンが列挙していない言語に対して、デフォルト言語へのフォールバックではなく 400 を返す。 |
 | `TTS_POOL_SIZE` | `1` | 全エンジン合計で同時に許可する合成呼び出しの数。`0` で上限とウォームアップを無効にする。 |
 | `TTS_QUEUE_SIZE` | `8` | 空きスロットを待てる合成リクエストの数。それを超えると即座に503になる。 |
 | `TTS_HISTORY_MAX` | `200` | 履歴に保持する件数。新しい項目が保存されると最も古いものが削除される。 |

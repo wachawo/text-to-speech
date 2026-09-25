@@ -177,12 +177,12 @@ audio.write_to_file("hola.mp3")
 - `model` 是引擎名称，或者用 `tts-1` / `tts-1-hd` / `gpt-4o-mini-tts` 表示默认引擎。
 - `voice` 是引擎的声音；OpenAI 的声音名称（`alloy`、`nova` 等）会选择引擎的默认声音。
 - `response_format`：`mp3`（默认）、`wav`、`pcm`、`opus`、`flac`、`aac`。引擎生成 WAV 或 MP3；其他格式通过 `ffmpeg` 转码，Docker 镜像中已包含它。`speed`（0.25 到 4.0）以同样的方式应用。
-- `language` 是一个扩展参数：两位字母的语言代码，默认为 `TTS_LANGUAGE`。
+- `language` 是一个扩展参数：两位字母的语言代码或 `zh-cn` 这样的标签，默认为 `TTS_LANGUAGE`。
 - `GET /v1/models` 列出已安装的引擎以及 `tts-1`；`GET /v1/audio/voices?model=<engine>` 列出某个引擎的声音。
 
 #### API 参考
 
-设置了 `TTS_TOKENS` 时，除 `/api/health` 之外的每个路由都需要 `Authorization: Bearer <token>`。`/api/` 下的错误格式为 `{"error": "...", "request_id": "..."}`；`/v1/` 下的错误使用 OpenAI 的格式。
+设置了 `TTS_TOKENS` 时，除 `/api/health` 之外的每个路由都需要 `Authorization: Bearer <token>`。`/api/` 下的错误格式为 `{"error": "...", "request_id": "..."}`；400 响应还带有说明原因的 `message`，请求未通过校验时它会列出出错的字段（`language: ...`）。`/v1/` 下的错误使用 OpenAI 的格式。
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
@@ -202,6 +202,8 @@ audio.write_to_file("hola.mp3")
 | POST | `/v1/audio/speech` | 兼容 OpenAI 的合成，见上文。 |
 | GET | `/v1/models` | 兼容 OpenAI 的模型列表。 |
 | GET | `/v1/audio/voices?model=` | 某个引擎的声音。 |
+
+`language` 是两位字母的代码（`en`、`ru`），或带地区或书写系统的标签（`zh-cn`、`pt_BR`、`en-gb`、`es-419`），标签会转为小写并用 `-` 连接。每个引擎会把标签映射到自己支持的语言：gtts 使用它自己的写法（`zh-CN`），kokorotts 用英式音素转换器朗读 `en-gb`，xtts 对中文使用 `zh-cn`，其他引擎使用语言部分（`pt-br` 即 `pt`）。`stream=true` 与以前一样只接受两位字母的代码。引擎不认识的语言会用该引擎的默认语言朗读，通常是英语（gtts 则会直接失败）；设置 `TTS_LANGUAGE_STRICT=true` 后，这类请求返回 400，并列出该引擎支持的语言。严格检查适用于不带 `stream` 的 `/api/tts`、`/api/history` 和 `/v1/audio/speech`，以及除 pyttsx3 之外的所有引擎，因为 pyttsx3 不列出自己的语言。
 
 #### Web UI
 
@@ -231,6 +233,7 @@ xdg-open https://localhost:8443     # TTS_WWW_TLS_PORT；自签名证书，接�
 | `TTS_ENGINES` | 空 | 启动时要安装并预热的引擎，逗号分隔（`coquitts,silerotts`）。 |
 | `TTS_ENGINE` | `gtts` | 请求未指定引擎时使用的引擎。 |
 | `TTS_LANGUAGE` | `en` | 请求未指定语言时使用的语言。 |
+| `TTS_LANGUAGE_STRICT` | `false` | 为 `true` 时，对引擎未列出的语言返回 400，而不是让引擎回退到默认语言。 |
 | `TTS_POOL_SIZE` | `1` | 所有引擎合计允许同时进行的合成调用数；`0` 取消上限和预热。 |
 | `TTS_QUEUE_SIZE` | `8` | 允许等待空闲槽位的合成请求数；超出的请求会立即收到 503。 |
 | `TTS_HISTORY_MAX` | `200` | 历史记录中保留的条目数；保存新条目时会删除最旧的。 |
