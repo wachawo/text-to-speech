@@ -608,7 +608,9 @@ def stream_tts(text: str, engine: str, language: str, voice: str | None = None):
     Args:
         text: Full utterance; split into chunks of TTS_STREAM_MAX_CHARS.
         engine: Engine name to synthesize with.
-        language: Two-letter language code passed to the engine.
+        language: Language code passed to the engine: a two-letter code from the
+            request (the schema refuses a tag there), or TTS_LANGUAGE as set,
+            which may be a tag such as 'zh-cn'.
         voice: Engine-specific voice id, or None for the engine default.
 
     Returns:

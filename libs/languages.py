@@ -7,6 +7,10 @@ import re
 # A language with a region or script subtag: `zh-cn`, `pt_BR`, `en-gb`, `es-419`.
 LANGUAGE_TAG_REGEX = re.compile(r"[A-Za-z]{2}[-_][A-Za-z0-9]{2,4}")
 
+# The one message for a language that is neither a 2-character code nor a tag,
+# shared by the HTTP schemas (ttssrv.validators) and libs.tools.validate_language.
+LANGUAGE_CODE_ERROR = "Language must be a 2-character code or a tag such as 'zh-cn'"
+
 
 def is_language_code(value: object) -> bool:
     """Return True for any 2-character string (the rule before tags) or a tag such as 'zh-cn' or 'pt_BR'."""

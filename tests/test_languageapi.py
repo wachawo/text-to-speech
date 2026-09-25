@@ -87,6 +87,28 @@ def test_stream_keeps_two_character_rule(client, monkeypatch, app_module, make_w
     assert calls[-1]["language"] == "zh"
 
 
+def test_stream_uses_a_tag_set_as_the_default_language(client, monkeypatch, app_module, make_wav):
+    """The stream rule covers the request field only: TTS_LANGUAGE as a tag reaches the engine as set."""
+    calls = record_synthesis(monkeypatch, app_module, make_wav())
+    monkeypatch.setattr(app_module, "TTS_LANGUAGE_DEFAULT", "zh-cn")
+    resp = client.post("/api/tts", json={"text": "hi", "stream": True})
+    assert resp.status_code == 200
+    assert resp.data  # drain the stream so its pool slot and request context are released
+    assert calls[-1]["language"] == "zh-cn"
+
+
+def test_malformed_language_message_matches_libs_tools(client):
+    """The API names the field and then gives the exact sentence libs.tools.validate_language raises."""
+    from libs.exceptions import ValidationError
+    from libs.languages import LANGUAGE_CODE_ERROR
+
+    resp = client.post("/api/tts", json={"text": "hi", "language": "english"})
+    assert resp.get_json()["message"] == f"language: {LANGUAGE_CODE_ERROR}"
+    with pytest.raises(ValidationError) as excinfo:
+        tools_mod.validate_language("english")
+    assert str(excinfo.value) == LANGUAGE_CODE_ERROR
+
+
 def test_history_accepts_language_tag(client, history_dir, monkeypatch, app_module, make_wav):
     """POST /api/history stores the tag it synthesized with."""
     record_synthesis(monkeypatch, app_module, make_wav())

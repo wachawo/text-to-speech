@@ -11,8 +11,10 @@
   part when it has no such tag), kokorotts reads `en-gb` with the British
   phonemizer, xtts gets `zh-cn` for any Chinese tag, and silerotts, pipertts,
   barktts and kokorotts look a tag up by its language part (`pt-br` is `pt`)
-  instead of falling back to English. `/api/tts` with `stream=true` keeps the
-  2-character rule and answers a tag with a 400.
+  instead of falling back to English.
+  `/api/tts` with `stream=true` keeps the 2-character rule for the request's
+  `language` and answers a tag there with a 400; a stream request without
+  `language` uses `TTS_LANGUAGE` as set, a tag included.
 - `TTS_LANGUAGE_STRICT` (default `false`): when true, a language the engine
   does not list is a 400 that names the engine and the languages it has,
   checked before a pool slot is taken, on `/api/tts` without `stream`,

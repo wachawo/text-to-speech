@@ -15,7 +15,7 @@ from typing import Any, cast
 from engines import get_engine_function, get_engine_languages, get_supported_engines, is_engine_available
 
 from .exceptions import EngineNotAvailableError, TTSException, ValidationError
-from .languages import is_language_code, language_supported, normalize_language
+from .languages import LANGUAGE_CODE_ERROR, is_language_code, language_supported, normalize_language
 
 # Makes the repository root importable when libs/ is used straight from a source
 # checkout rather than from an installed wheel.
@@ -114,7 +114,7 @@ def validate_language(language: str) -> str:
             characters nor a tag such as 'zh-cn', 'pt_BR' or 'es-419'.
     """
     if not is_language_code(language):
-        raise ValidationError("Language must be a 2-character code or a tag such as 'zh-cn'")
+        raise ValidationError(LANGUAGE_CODE_ERROR)
 
     return normalize_language(language)
 

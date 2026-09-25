@@ -5,7 +5,7 @@
 from marshmallow import EXCLUDE, Schema, ValidationError, fields, validate, validates_schema
 
 # Local imports
-from libs.languages import is_language_code
+from libs.languages import LANGUAGE_CODE_ERROR, is_language_code
 from ttssrv.openai_compat import RESPONSE_FORMATS
 
 # Upper bound of the `message` built from schema errors, so a payload with many
@@ -16,7 +16,7 @@ MAX_VALIDATION_MESSAGE_LENGTH = 1000
 def validate_language_field(value: str) -> None:
     """Reject a language that is neither 2 characters nor a tag such as 'zh-cn', 'pt_BR' or 'es-419'."""
     if not is_language_code(value):
-        raise ValidationError("Language must be a 2-character code or a tag such as 'zh-cn'.")
+        raise ValidationError(LANGUAGE_CODE_ERROR)
 
 
 def flatten_validation_messages(messages: object) -> str:
@@ -55,7 +55,10 @@ class TtsRequestSchema(Schema):
 
     @validates_schema
     def reject_language_tag_with_stream(self, data: dict, **kwargs) -> None:
-        """Keep streaming on 2-character codes, the rule it had before tags were accepted.
+        """Keep the request's `language` on 2-character codes when streaming, the rule it had before tags.
+
+        Only the request field is checked: a stream request without `language`
+        uses TTS_LANGUAGE as set, a tag included.
 
         Raises:
             ValidationError: `stream` is true and `language` is a tag such as 'zh-cn'.
