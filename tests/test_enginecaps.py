@@ -15,6 +15,7 @@ from engines import (
     get_engine_languages,
     get_engine_models,
     get_engine_voices,
+    list_engine_models,
 )
 
 
@@ -81,9 +82,39 @@ def test_capabilities_do_not_change_the_hook_result(monkeypatch):
 
 
 def test_capabilities_none_for_unknown_engine():
-    """No engines/<name>.py, or a name that is not a module stem: None."""
+    """No engines/<name>.py, a name that is not a module stem, or the package file itself: None."""
     assert get_engine_capabilities("definitely_not_a_real_engine_xyz") is None
     assert get_engine_capabilities("../libs") is None
+    assert get_engine_capabilities("__init__") is None
+
+
+def test_capabilities_of_a_broken_engine_raise(monkeypatch):
+    """A shipped module that fails to import is broken, not unknown: the error propagates instead of None."""
+
+    def broken_import(name):
+        """Fail like an engine module with a syntax error."""
+        raise ImportError("broken engine module")
+
+    monkeypatch.setattr(engines_pkg, "get_engine_module", broken_import)
+    with pytest.raises(ImportError, match="broken engine module"):
+        get_engine_capabilities("kokorotts")
+
+
+def test_list_engine_models_raises_where_get_engine_models_logs(monkeypatch, caplog):
+    """list_engine_models lets a failing hook raise; get_engine_models logs it and answers []."""
+    fake = fake_engine_with_hooks()
+
+    def unreadable():
+        """Fail like a models directory without read permission."""
+        raise PermissionError(13, "Permission denied")
+
+    fake.list_models = unreadable
+    use_fake_engine(monkeypatch, fake)
+    with pytest.raises(PermissionError):
+        list_engine_models("fake")
+    with caplog.at_level(logging.WARNING, logger="engines"):
+        assert get_engine_models("fake") == []
+    assert "list_models failed: PermissionError" in caplog.text
 
 
 @pytest.mark.parametrize("hook", ["list_models", "default_model", "list_languages"])

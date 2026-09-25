@@ -146,7 +146,7 @@ def test_get_engine_module_returns_module_for_known_engine():
     assert hasattr(module, "generate")
 
 
-@pytest.mark.parametrize("name", ["definitely_not_a_real_engine_xyz", "../libs", "Gtts", ""])
+@pytest.mark.parametrize("name", ["definitely_not_a_real_engine_xyz", "../libs", "Gtts", "", "__init__", "_private"])
 def test_get_engine_module_none_for_unknown_or_malformed_name(name):
     """No module file, or a name that is not a module stem, yields None without importing anything."""
     assert get_engine_module(name) is None

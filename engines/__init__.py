@@ -39,6 +39,11 @@ def get_engine_module_path(engine_name: str) -> Path | None:
     # filesystem lookup or import_module.
     if not isinstance(engine_name, str) or not ENGINE_NAME_REGEX.fullmatch(engine_name):
         return None
+    # The package file itself (and any other underscore module) is not an
+    # engine: get_supported_engines() leaves __init__.py out, and importing it
+    # as `engines.__init__` would run the package code a second time.
+    if engine_name.startswith("_"):
+        return None
     engines_dir = Path(__file__).parent
     module_path = engines_dir / f"{engine_name}.py"
 
@@ -229,11 +234,31 @@ def get_engine_languages(engine_name: str, model: str | None = None) -> list[str
         return None
 
 
-def get_engine_models(engine_name: str) -> list[dict]:
-    """Fetch the models a request may name for an engine, from its optional `list_models()` hook.
+def list_engine_models(engine_name: str) -> list[dict]:
+    """Fetch the models a request may name for an engine, letting a failing import or hook raise.
 
     Each item is {'id': str, 'languages': list[str]|None, 'installed': bool}.
-    The hook reads only file names and metadata and never loads a model.
+    The hook reads only file names and metadata and never loads a model. The
+    model check of a request uses this form, so a server-side failure (an
+    unreadable models directory) is not mistaken for an engine without models.
+
+    Args:
+        engine_name: Name of the engine.
+
+    Returns:
+        The models, or [] when the engine has no hook or no module.
+
+    Raises:
+        Exception: Whatever the engine import or its `list_models()` hook raised.
+    """
+    module = get_engine_module(engine_name)
+    if module is None or not hasattr(module, "list_models"):
+        return []
+    return [dict(item) for item in module.list_models()]
+
+
+def get_engine_models(engine_name: str) -> list[dict]:
+    """Fetch the models of an engine for discovery, as list_engine_models() does, with failures logged.
 
     Args:
         engine_name: Name of the engine.
@@ -243,10 +268,7 @@ def get_engine_models(engine_name: str) -> list[dict]:
         or the hook failed (logged as a warning).
     """
     try:
-        module = get_engine_module(engine_name)
-        if module is None or not hasattr(module, "list_models"):
-            return []
-        return [dict(item) for item in module.list_models()]
+        return list_engine_models(engine_name)
     except Exception as exc:
         log_hook_failure(engine_name, "list_models", exc)
         return []
@@ -289,12 +311,12 @@ def get_engine_capabilities(engine_name: str) -> dict | None:
         Dict with 'models', 'default_model', 'model_selectable', 'languages',
         'voice_selectable', 'output_format' and 'max_text_length', or None when
         no engines/<name>.py matches the name.
+
+    Raises:
+        Exception: A shipped engine module that fails to import; it is broken,
+            not unknown, so the error is not turned into None.
     """
-    try:
-        module = get_engine_module(engine_name)
-    except Exception as exc:
-        log_hook_failure(engine_name, "import", exc)
-        return None
+    module = get_engine_module(engine_name)
     if module is None:
         return None
     models = get_engine_models(engine_name)

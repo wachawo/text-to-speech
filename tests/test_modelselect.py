@@ -47,7 +47,7 @@ def record_synthesis(monkeypatch, app_module, audio_bytes):
 @pytest.fixture
 def kokoro_models(monkeypatch):
     """Make kokorotts list KOKORO_MODELS to the model check."""
-    monkeypatch.setattr(tools_mod, "get_engine_models", lambda engine: KOKORO_MODELS if engine == "kokorotts" else [])
+    monkeypatch.setattr(tools_mod, "list_engine_models", lambda engine: KOKORO_MODELS if engine == "kokorotts" else [])
 
 
 @pytest.fixture
@@ -166,6 +166,29 @@ def test_tts_logs_model_only_when_set(client, kokoro_models, monkeypatch, app_mo
     assert [record.model for record in synthesis_records] == ["kokoro-v1.0.onnx", None]
 
 
+def test_tts_model_listing_failure_is_a_server_error(client, monkeypatch, app_module, make_wav):
+    """A model listing that fails on the server is a 500, not a 400 that says the engine has no models."""
+    calls = record_synthesis(monkeypatch, app_module, make_wav())
+
+    def unreadable(engine):
+        """Fail like a models directory without read permission."""
+        raise PermissionError(13, "Permission denied", "./voices")
+
+    monkeypatch.setattr(tools_mod, "list_engine_models", unreadable)
+    resp = client.post("/api/tts", json={"text": "hi", "engine": "pipertts", "model": "en_US-lessac-medium"})
+    assert resp.status_code == 500
+    assert resp.get_json()["error"] == "TTS failed"
+    assert calls == []
+
+
+def test_tts_model_for_the_package_file_is_not_found(client, monkeypatch, app_module, make_wav):
+    """engines/__init__.py is not an engine: a model for it is refused as an engine that does not exist."""
+    record_synthesis(monkeypatch, app_module, make_wav())
+    resp = client.post("/api/tts", json={"text": "hi", "engine": "__init__", "model": "x"})
+    assert resp.status_code == 400
+    assert resp.get_json()["message"] == "Engine '__init__' not found"
+
+
 # /api/history
 
 
@@ -239,6 +262,17 @@ def test_voices_with_unknown_model_is_refused(client, kokoro_models):
     resp = client.get("/api/voices?engine=kokorotts&language=en&model=bad")
     assert resp.status_code == 400
     assert resp.get_json()["message"].startswith("Unknown model 'bad' for engine 'kokorotts'")
+
+
+@pytest.mark.parametrize("model", ["x\n2026-01-01 00:00:00.000 [INFO]: forged", "a b", "m" * 200])
+def test_voices_with_malformed_model_is_refused_by_the_schema(client, kokoro_models, model, caplog):
+    """?model= follows the /api/tts id rule, so a raw value is neither echoed in the message nor logged."""
+    caplog.set_level("WARNING")
+    resp = client.get("/api/voices", query_string={"engine": "kokorotts", "language": "en", "model": model})
+    assert resp.status_code == 400
+    body = resp.get_json()
+    assert body["message"] == "model: String does not match expected pattern."
+    assert model not in caplog.text
 
 
 def test_voices_with_model_lists_that_models_voices(client, kokoro_models, monkeypatch, app_module):
@@ -346,27 +380,88 @@ def test_engine_details_never_load_a_model(client, kokoro_dir, monkeypatch):
     assert client.get("/api/engines/kokorotts").status_code == 200
 
 
-def test_engine_details_unknown_engine_is_404(client):
-    """An engine without a module is a 404 that names it."""
-    resp = client.get("/api/engines/nope")
-    assert resp.status_code == 404
-    body = resp.get_json()
-    assert body["error"] == "Not Found"
-    assert body["message"] == "Unknown engine 'nope'"
-    assert body["request_id"]
-
-
-@pytest.mark.parametrize("path", ["/api/engines/..%2Flibs", "/api/engines/Gtts", "/api/engines/a.b"])
-def test_engine_details_malformed_name_is_404(client, path):
-    """A name that is not a module stem is a 404 and is not echoed back."""
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/engines/nope",
+        "/api/engines/__init__",
+        "/api/engines/..%2Flibs",
+        "/api/engines/Gtts",
+        "/api/engines/a.b",
+    ],
+)
+def test_engine_details_unknown_engine_is_404(client, path):
+    """An engine without a module, the package file itself or a name that is not a module stem: the plain 404 body."""
     resp = client.get(path)
     assert resp.status_code == 404
     body = resp.get_json()
+    assert set(body) == {"error", "request_id"}
     assert body["error"] == "Not Found"
-    assert body.get("message", "Unknown engine") == "Unknown engine"
+
+
+def test_engine_details_broken_engine_is_not_a_404(client, monkeypatch):
+    """A shipped engine whose module fails to import is a server error, not an unknown engine."""
+    import engines as engines_pkg
+
+    def broken_import(name):
+        """Fail like an engine module with a syntax error."""
+        raise ImportError("broken engine module")
+
+    monkeypatch.setattr(engines_pkg, "get_engine_module", broken_import)
+    resp = client.get("/api/engines/kokorotts")
+    assert resp.status_code == 500
 
 
 def test_engines_list_is_unchanged(client):
     """GET /api/engines keeps exactly its keys."""
     body = client.get("/api/engines").get_json()
     assert set(body) == {"supported", "available", "preload", "default", "language"}
+
+
+# libs.api.text_to_speech_bytes
+
+
+def load_real_api():
+    """Import the real libs/api.py; conftest keeps a stub under sys.modules["libs.api"]."""
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location("libs.api_real", Path(__file__).resolve().parent.parent / "libs" / "api.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture
+def recorded_configs(monkeypatch):
+    """Run the real text_to_speech_bytes against a recording kokorotts generate() and return the configs it got."""
+    real_api = load_real_api()
+    configs = []
+
+    def generate(text, config):
+        """Remember the config the engine was called with."""
+        configs.append(dict(config))
+        return b"RIFF"
+
+    monkeypatch.setattr(tools_mod, "is_engine_available", lambda engine: True)
+    monkeypatch.setattr(tools_mod, "list_engine_models", lambda engine: KOKORO_MODELS)
+    monkeypatch.setattr(real_api, "get_engine_function", lambda engine: generate)
+    return real_api, configs
+
+
+def test_text_to_speech_bytes_passes_a_listed_model(recorded_configs):
+    """A listed model reaches the engine as config["model"]; None and "" leave it None."""
+    real_api, configs = recorded_configs
+    assert real_api.text_to_speech_bytes("hi", "kokorotts", "en", model="kokoro-v1.0.int8.onnx") == b"RIFF"
+    real_api.text_to_speech_bytes("hi", "kokorotts", "en", model=None)
+    real_api.text_to_speech_bytes("hi", "kokorotts", "en", model="")
+    real_api.text_to_speech_bytes("hi", "kokorotts", "en")
+    assert [config["model"] for config in configs] == ["kokoro-v1.0.int8.onnx", None, None, None]
+
+
+def test_text_to_speech_bytes_refuses_an_unlisted_model(recorded_configs):
+    """An id the engine does not list is a ValidationError before generate() runs."""
+    real_api, configs = recorded_configs
+    with pytest.raises(real_api.ValidationError, match="Unknown model 'nope' for engine 'kokorotts'"):
+        real_api.text_to_speech_bytes("hi", "kokorotts", "en", model="nope")
+    assert configs == []

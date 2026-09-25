@@ -85,6 +85,19 @@ class HistoryListSchema(Schema):
     offset = fields.Int(load_default=0, validate=validate.Range(min=0))
 
 
+class VoicesListSchema(Schema):
+    """Query string for GET /api/voices: only `model` is checked, `engine` and `language` are read as before."""
+
+    class Meta:
+        """Leave `engine`, `language` and any other argument to the route."""
+
+        unknown = EXCLUDE
+
+    # The same rule as on /api/tts, so an unknown id echoed in the 400 message
+    # and the log is short and has no control characters.
+    model = fields.Str(load_default=None, validate=validate.Regexp(MODEL_ID_REGEX))
+
+
 class VoiceUploadSchema(Schema):
     """Form fields of POST /api/voices and DELETE /api/voices/<name> (the WAV travels as `file`)."""
 

@@ -15,10 +15,10 @@ from typing import Any, cast
 from engines import (
     get_engine_function,
     get_engine_languages,
-    get_engine_models,
     get_engine_module_path,
     get_supported_engines,
     is_engine_available,
+    list_engine_models,
 )
 
 from .exceptions import EngineNotAvailableError, TTSException, ValidationError
@@ -98,9 +98,9 @@ def validate_engine(engine: str) -> str:
     if not is_engine_available(engine):
         # Distinguish "no such engine" from "engine present, deps missing" so the
         # message tells the user whether to write a module or run pip.
-        engine_file = Path(__file__).parent.parent / "engines" / f"{engine}.py"
-
-        if not engine_file.exists():
+        # get_engine_module_path applies the engine-name rule, so the package
+        # file engines/__init__.py or a path does not count as a shipped engine.
+        if get_engine_module_path(engine) is None:
             supported = ", ".join(get_supported_engines())
             raise ValidationError(
                 f"Engine '{engine}' not found.\n"
@@ -163,12 +163,17 @@ def validate_model(engine: str, model: str | None) -> str | None:
     Raises:
         ValidationError: The engine does not exist, has no selectable models,
             or does not list `model`.
+        TTSException: The engine's model listing failed on the server (an
+            unreadable models directory), which is not the client's error.
     """
     if model is None or model == "":
         return None
     if not get_engine_module_path(engine):
         raise ValidationError(f"Engine '{engine}' not found")
-    models = get_engine_models(engine)
+    try:
+        models = list_engine_models(engine)
+    except Exception as exc:
+        raise TTSException(f"Engine '{engine}' could not list its models: {type(exc).__name__}: {str(exc)}") from exc
     if not models:
         raise ValidationError(f"Engine '{engine}' has no selectable models")
     model_ids = [str(item.get("id")) for item in models]

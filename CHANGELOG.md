@@ -22,10 +22,13 @@
   `languages`, `default_language`, `language_strict`, `voice_selectable`,
   `voices_endpoint`, `output_format`, `max_text_length` and `stream`, plus
   `installed`, `preloaded` and `default` for this server. An unknown engine
-  is a 404 with `message: "Unknown engine '<name>'"`. `GET /api/engines`
-  keeps its response as it was.
+  (or `__init__`, the package file) is the usual `{"error": "Not Found",
+  "request_id"}` 404, and a shipped engine whose module fails to import is a
+  500 rather than a 404. `GET /api/engines` keeps its response as it was.
 - `GET /api/voices?model=`: lists the voices of that model (a 400 for a model
-  the engine does not list); the response gains `model` (null without one).
+  the engine does not list, and for an id that breaks the `/api/tts` id rule,
+  which is then neither echoed nor logged); the response gains `model` (null
+  without one).
 - Language tags: `language` takes a tag with a region or script subtag
   (`zh-cn`, `pt_BR`, `en-gb`, `es-419`) as well as a 2-character code, in
   `/api/tts`, `/api/history`, `/v1/audio/speech`, `ttsgen` and `libs.api`.
@@ -67,7 +70,9 @@
 - `libs.api.text_to_speech_bytes(..., model=None)` takes a model id; it is
   checked against the engine's `list_models()` (an unknown id, or a model
   for an engine without models, is a `ValidationError` that lists the ids
-  the engine has, never a path), and None keeps the engine default.
+  the engine has, never a path), and None keeps the engine default. A
+  `list_models()` that fails on the server (an unreadable models directory)
+  is a `TTSException` (500), not the "no selectable models" 400.
 
 #### Changed
 - A 400 for a request that fails schema validation now carries `message`
@@ -88,6 +93,9 @@
   `TTS_LANGUAGE_STRICT` checks, and the download instructions name the right
   file for every voice (Italian, Ukrainian and Chinese used to show the
   English one).
+- `validate_engine` (and so every request) reports `__init__`, the engines
+  package file, as an engine that does not exist (400) instead of one with
+  missing dependencies (503).
 
 #### Fixed
 - `silerotts` failed to load for `uk` in a fresh process: the Ukrainian alias

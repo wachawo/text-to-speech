@@ -12,7 +12,7 @@ import re
 import pytest
 
 from libs import tools as tools_mod
-from libs.exceptions import EngineNotAvailableError, ValidationError
+from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
 from libs.tools import (
     compose,
     ensure_audio_directory,
@@ -160,20 +160,20 @@ PIPER_MODELS = [
 @pytest.mark.parametrize("model", [None, ""])
 def test_validate_model_empty_means_engine_default(monkeypatch, model):
     """No model, or an empty one, is the engine default and needs no lookup."""
-    monkeypatch.setattr(tools_mod, "get_engine_models", lambda engine: pytest.fail("no lookup expected"))
+    monkeypatch.setattr(tools_mod, "list_engine_models", lambda engine: pytest.fail("no lookup expected"))
     assert validate_model("pipertts", model) is None
 
 
 def test_validate_model_returns_a_listed_model(monkeypatch):
     """A model the engine lists is returned unchanged."""
-    monkeypatch.setattr(tools_mod, "get_engine_models", lambda engine: PIPER_MODELS)
+    monkeypatch.setattr(tools_mod, "list_engine_models", lambda engine: PIPER_MODELS)
     assert validate_model("pipertts", "en_GB-alan-low") == "en_GB-alan-low"
 
 
 @pytest.mark.parametrize("model", ["en_GB-missing-low", "../../etc/passwd", "/tmp/en_GB-alan-low"])
 def test_validate_model_rejects_an_unlisted_model(monkeypatch, model):
     """An unlisted id is refused with the id, the engine and the ids it has, and no filesystem path."""
-    monkeypatch.setattr(tools_mod, "get_engine_models", lambda engine: PIPER_MODELS)
+    monkeypatch.setattr(tools_mod, "list_engine_models", lambda engine: PIPER_MODELS)
     with pytest.raises(ValidationError) as exc:
         validate_model("pipertts", model)
     assert str(exc.value) == (f"Unknown model '{model}' for engine 'pipertts'. Available: en_US-lessac-medium, en_GB-alan-low")
@@ -192,7 +192,7 @@ def test_validate_model_message_names_no_filesystem_path(monkeypatch, tmp_path):
 def test_validate_model_caps_the_listed_ids(monkeypatch):
     """A long catalogue lists the first ids and counts the rest."""
     models = [{"id": f"m{index:02d}", "languages": None, "installed": True} for index in range(25)]
-    monkeypatch.setattr(tools_mod, "get_engine_models", lambda engine: models)
+    monkeypatch.setattr(tools_mod, "list_engine_models", lambda engine: models)
     with pytest.raises(ValidationError) as exc:
         validate_model("kokorotts", "zz")
     assert str(exc.value).endswith("m18, m19 (+5 more)")
@@ -200,12 +200,24 @@ def test_validate_model_caps_the_listed_ids(monkeypatch):
 
 def test_validate_model_engine_without_models(monkeypatch):
     """An engine that lists no models refuses any model."""
-    monkeypatch.setattr(tools_mod, "get_engine_models", lambda engine: [])
+    monkeypatch.setattr(tools_mod, "list_engine_models", lambda engine: [])
     with pytest.raises(ValidationError, match="Engine 'gtts' has no selectable models"):
         validate_model("gtts", "standard")
 
 
-@pytest.mark.parametrize("engine", ["definitely_not_a_real_engine_xyz", "../libs"])
+def test_validate_model_listing_failure_is_a_server_error(monkeypatch):
+    """A listing that fails on the server raises TTSException, not the 'no selectable models' client error."""
+
+    def unreadable(engine):
+        """Fail like a models directory without read permission."""
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(tools_mod, "list_engine_models", unreadable)
+    with pytest.raises(TTSException, match="Engine 'pipertts' could not list its models: PermissionError"):
+        validate_model("pipertts", "en_US-lessac-medium")
+
+
+@pytest.mark.parametrize("engine", ["definitely_not_a_real_engine_xyz", "../libs", "__init__"])
 def test_validate_model_unknown_engine(engine):
     """A model for an engine that does not exist is refused before any lookup."""
     with pytest.raises(ValidationError, match="not found"):
@@ -224,6 +236,13 @@ def test_validate_engine_rejects_unknown_module():
     """An engine name with no matching module is reported as not found."""
     with pytest.raises(ValidationError, match="not found"):
         validate_engine("nonexistent_engine_xyz")
+
+
+@pytest.mark.parametrize("engine", ["__init__", "../libs/tools"])
+def test_validate_engine_package_file_or_path_is_not_found(engine):
+    """engines/__init__.py or a path to another module is not an engine, not an engine with missing dependencies."""
+    with pytest.raises(ValidationError, match="not found"):
+        validate_engine(engine)
 
 
 @pytest.mark.parametrize("bad", ["", None, 0])

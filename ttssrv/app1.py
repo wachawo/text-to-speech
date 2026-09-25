@@ -41,7 +41,6 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from engines import (  # noqa: E402
-    ENGINE_NAME_REGEX,
     get_available_engines,
     get_engine_capabilities,
     get_engine_voices,
@@ -83,6 +82,7 @@ from ttssrv.validators import (  # noqa: E402
     HistoryListSchema,
     SpeechRequestSchema,
     TtsRequestSchema,
+    VoicesListSchema,
     VoiceUploadSchema,
     format_validation_messages,
 )
@@ -506,10 +506,7 @@ def engine_details(engine: str):
     """Describe one engine: models, languages, voices and output without loading any model."""
     caps = get_engine_capabilities(engine)
     if caps is None:
-        # A name that is not a module stem is not echoed back.
-        message = f"Unknown engine '{engine}'" if ENGINE_NAME_REGEX.fullmatch(engine) else "Unknown engine"
-        logger.warning(f"[{get_req_id()}] {message}")
-        return jsonify({"error": "Not Found", "message": message, "request_id": get_req_id()}), 404
+        abort(404)
     body = {
         "engine": engine,
         "installed": is_engine_available(engine),
@@ -539,7 +536,7 @@ def voices_list():
     """List selectable voices for an engine + language (e.g. Silero ru speakers), optionally of one ?model=."""
     engine = request.args.get("engine") or TTS_ENGINE_DEFAULT
     language = request.args.get("language") or TTS_LANGUAGE_DEFAULT
-    model = request.args.get("model") or None
+    model = VoicesListSchema().load(request.args.to_dict()).get("model") or None
     if model:
         validate_model(engine, model)
         info = get_engine_voices(engine, language, model)
@@ -762,7 +759,7 @@ def history_create():
     model = data.get("model") or None
     model_part = f"model={model} " if model else ""
     logger.info(
-        f"[{get_req_id()}] History request: engine={engine} language={language} voice={voice} " f"{model_part}chars={len(text)}"
+        f"[{get_req_id()}] History request: engine={engine} language={language} voice={voice} {model_part}chars={len(text)}"
     )
 
     validate_selection(engine, language, model)
