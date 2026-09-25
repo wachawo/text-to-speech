@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Marshmallow validation schemas for TTS API."""
 
-from marshmallow import EXCLUDE, Schema, ValidationError, fields, validate, validates_schema
+from marshmallow import EXCLUDE, Schema, ValidationError, fields, validate
 
 # Local imports
 from libs.languages import LANGUAGE_CODE_ERROR, is_language_code
@@ -43,7 +43,7 @@ class TtsRequestSchema(Schema):
     # here only guards against pathological inputs (memory / multi-hour stalls).
     text = fields.Str(required=True, validate=validate.Length(min=1, max=1_000_000))
     engine = fields.Str(load_default=None)
-    # A 2-character code, or a tag such as 'zh-cn' / 'pt_BR' (file generation only, see below).
+    # A 2-character code, or a tag such as 'zh-cn' / 'pt_BR'.
     language = fields.Str(load_default=None, validate=validate_language_field)
     # Engine-specific voice/speaker id (e.g. Silero 'baya'). Validated against the
     # engine's available voices downstream; None keeps the engine default.
@@ -52,23 +52,6 @@ class TtsRequestSchema(Schema):
     voice = fields.Str(load_default=None, validate=validate.Length(max=128))
     # When true, stream audio chunk-by-chunk (chunked transfer) for low latency.
     stream = fields.Bool(load_default=False)
-
-    @validates_schema
-    def reject_language_tag_with_stream(self, data: dict, **kwargs) -> None:
-        """Keep the request's `language` on 2-character codes when streaming, the rule it had before tags.
-
-        Only the request field is checked: a stream request without `language`
-        uses TTS_LANGUAGE as set, a tag included.
-
-        Raises:
-            ValidationError: `stream` is true and `language` is a tag such as 'zh-cn'.
-        """
-        language = data.get("language")
-        if data.get("stream") and language and len(language) != 2:
-            raise ValidationError(
-                "Language tags such as 'zh-cn' are supported only for file generation (stream=false).",
-                field_name="language",
-            )
 
 
 class HistoryCreateSchema(TtsRequestSchema):

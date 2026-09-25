@@ -76,22 +76,18 @@ def test_tts_rejects_malformed_language(client, language):
     assert resp.get_json()["message"].startswith("language: ")
 
 
-def test_stream_keeps_two_character_rule(client, monkeypatch, app_module, make_wav):
-    """Streaming is unchanged: a tag is refused there, a 2-character code still streams."""
+@pytest.mark.parametrize(("language", "expected"), [("zh-cn", "zh-cn"), ("pt_BR", "pt-br"), ("zh", "zh")])
+def test_stream_accepts_language_tag(client, monkeypatch, app_module, make_wav, language, expected):
+    """stream=true takes a tag in the request as file generation does, and passes it on normalized."""
     calls = record_synthesis(monkeypatch, app_module, make_wav())
-    resp = client.post("/api/tts", json={"text": "hi", "language": "zh-cn", "stream": True})
-    assert resp.status_code == 400
-    assert "stream=false" in resp.get_json()["message"]
-    assert calls == []
-
-    resp = client.post("/api/tts", json={"text": "hi", "language": "zh", "stream": True})
+    resp = client.post("/api/tts", json={"text": "hi", "language": language, "stream": True})
     assert resp.status_code == 200
     assert resp.data  # drain the stream so its pool slot and request context are released
-    assert calls[-1]["language"] == "zh"
+    assert calls[-1]["language"] == expected
 
 
 def test_stream_uses_a_tag_set_as_the_default_language(client, monkeypatch, app_module, make_wav):
-    """The stream rule covers the request field only: TTS_LANGUAGE as a tag reaches the engine normalized."""
+    """A stream request without `language` uses TTS_LANGUAGE, a tag included, normalized."""
     calls = record_synthesis(monkeypatch, app_module, make_wav())
     monkeypatch.setattr(app_module, "TTS_LANGUAGE_DEFAULT", "ZH_cn")
     resp = client.post("/api/tts", json={"text": "hi", "stream": True})
