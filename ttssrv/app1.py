@@ -921,6 +921,8 @@ def main() -> int:
         f"queue={TTS_QUEUE_SIZE} "
         f"auth={'on' if TTS_TOKENS else 'off'}"
     )
+    if not TTS_TOKENS:
+        logger.warning("Auth is off: TTS_TOKENS is empty, so every route answers without a token")
     init_engine_pool()
     if TTS_DEBUG:
         app.run(host=TTS_HOST, port=TTS_PORT, debug=True)

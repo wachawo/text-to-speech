@@ -67,7 +67,7 @@ DEFAULT_USER_CONFIG = """\
 # TTS_URL=http://localhost:5000
 # TTS_TOKEN=
 
-# HTTP server (used by `ttssrv` and docker-compose*.yml)
+# HTTP server (used by `ttssrv` run on this host; Docker Compose reads only ./.env)
 # TTS_HOST=0.0.0.0
 # TTS_PORT=5000
 # TTS_DEBUG=False

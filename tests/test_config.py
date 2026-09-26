@@ -198,3 +198,16 @@ def test_load_config_process_env_beats_files(monkeypatch, isolated_user_config, 
     monkeypatch.setenv("PROCESS_ENV_KEY", "from_process")
     cfg.load_config()
     assert os.environ["PROCESS_ENV_KEY"] == "from_process"
+
+
+def test_example_config_does_not_blank_the_server_tokens(monkeypatch, isolated_user_config, tmp_path):
+    """ttsgen.conf.example copied as ./ttsgen.conf leaves TTS_TOKENS from ./.env in force, so auth stays on."""
+    example = Path(__file__).resolve().parent.parent / "ttsgen.conf.example"
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "ttsgen.conf").write_text(example.read_text(encoding="utf-8"), encoding="utf-8")
+    (tmp_path / ".env").write_text("TTS_TOKENS=secret\nTTS_TOKEN=secret\n")
+    monkeypatch.delenv("TTS_TOKENS", raising=False)
+    monkeypatch.delenv("TTS_TOKEN", raising=False)
+    cfg.load_config()
+    assert os.environ.get("TTS_TOKENS") == "secret"
+    assert os.environ.get("TTS_TOKEN") == "secret"
