@@ -123,7 +123,9 @@ def list_remote_engines() -> int:
         return 1
     # Human-facing table: stdout, not logging, so the listing stays free of log decoration.
     print(f"Remote engines on {get_url()}:")
-    for name in data.get("engines", []):
+    # "available" is what the server can synthesize with: GET /api/engines has
+    # not carried an "engines" key since 1.0.3.
+    for name in data.get("available", []):
         marker = "*" if name == data.get("default") else " "
         print(f"  {marker} {name}")
     return 0

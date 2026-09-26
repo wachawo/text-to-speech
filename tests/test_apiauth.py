@@ -50,7 +50,7 @@ def captured_calls(monkeypatch):
     def fake_get(url, **kwargs):
         """Record a GET and answer with a canned engine listing."""
         calls.append(("GET", url, kwargs))
-        return FakeResponse(status=200, json_data={"engines": ["gtts"], "default": "gtts"})
+        return FakeResponse(status=200, json_data={"available": ["gtts"], "default": "gtts"})
 
     monkeypatch.setattr(ttsapi.requests, "post", fake_post)
     monkeypatch.setattr(ttsapi.requests, "get", fake_get)
@@ -92,7 +92,7 @@ def test_fetch_engines_sends_bearer_when_token_set(monkeypatch, captured_calls):
 
     data = ttsapi.fetch_engines()
 
-    assert data == {"engines": ["gtts"], "default": "gtts"}
+    assert data == {"available": ["gtts"], "default": "gtts"}
     assert len(captured_calls) == 1
     verb, url, kwargs = captured_calls[0]
     assert verb == "GET"

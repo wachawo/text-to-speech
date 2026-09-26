@@ -139,7 +139,7 @@ def test_list_remote_engines_marks_default_with_asterisk(monkeypatch, capsys):
     monkeypatch.setattr(
         ttsapi,
         "fetch_engines",
-        lambda: {"engines": ["gtts", "coquitts", "pyttsx3"], "default": "coquitts"},
+        lambda: {"available": ["gtts", "coquitts", "pyttsx3"], "default": "coquitts"},
     )
     rc = ttsapi.list_remote_engines()
     assert rc == 0
@@ -166,12 +166,23 @@ def test_list_remote_engines_returns_1_on_network_failure(monkeypatch, caplog):
 
 def test_list_remote_engines_handles_empty_engine_list(monkeypatch, capsys):
     """No engines on server is a degenerate but valid response — exit 0."""
-    monkeypatch.setattr(ttsapi, "fetch_engines", lambda: {"engines": [], "default": ""})
+    monkeypatch.setattr(ttsapi, "fetch_engines", lambda: {"available": [], "default": ""})
     rc = ttsapi.list_remote_engines()
     assert rc == 0
     # Header still printed; just no engine rows
     out = capsys.readouterr().out
     assert "Remote engines on" in out
+
+
+def test_list_remote_engines_reads_the_real_server_listing(monkeypatch, capsys, client, app_module):
+    """The listing is read from the body the server really sends, so the two cannot drift apart again."""
+    monkeypatch.setattr(app_module, "get_available_engines", lambda: {"gtts": object(), "kokorotts": object()})
+    body = client.get("/api/engines").get_json()
+    monkeypatch.setattr(ttsapi, "fetch_engines", lambda: body)
+    rc = ttsapi.list_remote_engines()
+    assert rc == 0
+    rows = capsys.readouterr().out.splitlines()[1:]
+    assert [row[4:] for row in rows] == ["gtts", "kokorotts"]
 
 
 # fetch_audio — error paths (success path covered in test_ttsapi_auth)
