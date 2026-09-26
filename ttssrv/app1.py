@@ -255,6 +255,12 @@ def acquire_slot() -> int | None:
     """
     if TTS_POOL_SIZE <= 0:
         return None
+    # A free slot is taken at once: only a request that has to wait needs a
+    # wait permit, so TTS_QUEUE_SIZE=0 means "never wait", not "always 503".
+    try:
+        return ENGINE_POOL.get_nowait()
+    except queue.Empty:
+        pass
     if not WAIT_QUEUE.acquire(blocking=False):
         raise queue.Empty()
     metrics.wait_begin()

@@ -205,7 +205,7 @@ def test_pool_busy_503_in_openai_shape(client, installed, monkeypatch, app_modul
 
     record_synthesis(monkeypatch, app_module, make_wav())
     monkeypatch.setattr(app_module, "TTS_POOL_SIZE", 1)
-    monkeypatch.setattr(app_module, "ENGINE_POOL", types.SimpleNamespace(get=never_free))
+    monkeypatch.setattr(app_module, "ENGINE_POOL", types.SimpleNamespace(get=never_free, get_nowait=lambda: never_free(0)))
     resp = speech(client, model="tts-1", response_format="wav")
     assert resp.status_code == 503
     error = error_of(resp)
