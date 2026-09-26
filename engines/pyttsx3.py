@@ -93,6 +93,30 @@ def select_voice(voices: list, config: dict):
     return voices[0]
 
 
+def list_voices(language: str = "en") -> dict:
+    """List the ids of the driver voices that serve `language`.
+
+    The default is the voice generate() picks when no voice is requested: the
+    first one of the language. Nothing is listed when pyttsx3 is not installed.
+
+    Returns:
+        Dict with 'voices' (voice ids, e.g. 'gmw/en') and 'default' (an id, or None).
+
+    Raises:
+        TTSException: The driver failed to start or to report its voices.
+    """
+    if not AVAILABLE:
+        return {"voices": [], "default": None}
+    try:
+        with ENGINE_LOCK:
+            voices = pyttsx3.init().getProperty("voices") or []
+    except Exception as exc:
+        raise TTSException(f"pyttsx3 voice listing failed: {exc}") from exc
+    code = str(language or "").strip().lower()
+    ids = [str(voice.id) for voice in voices if voice_matches_language(voice, code)]
+    return {"voices": ids, "default": ids[0] if ids else None}
+
+
 def generate(text: str, config: dict) -> bytes:
     """Synthesize text with the local pyttsx3 backend.
 

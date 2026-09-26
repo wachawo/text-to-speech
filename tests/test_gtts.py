@@ -114,3 +114,24 @@ def test_generate_wraps_underlying_failure_as_tts_exception(engine, monkeypatch)
     monkeypatch.setattr(engine, "gTTS", BoomGTTS)
     with pytest.raises(TTSException, match="gTTS generation failed"):
         engine.generate("hi", {"language": "en"})
+
+
+def test_generate_holds_the_inference_lock_around_the_request(engine, monkeypatch):
+    """The request to Google runs under INFERENCE_LOCK, one at a time per process."""
+    seen = []
+
+    class LockProbeGTTS:
+        """Record whether the engine lock is held while the audio is fetched."""
+
+        def __init__(self, text, lang="en", slow=False):
+            """Accept the arguments the engine passes."""
+
+        def write_to_fp(self, fp):
+            """Note the lock state and write a marker."""
+            seen.append(engine.INFERENCE_LOCK.locked())
+            fp.write(b"MP3")
+
+    monkeypatch.setattr(engine, "gTTS", LockProbeGTTS)
+    engine.generate("hi", {"language": "en"})
+    assert seen == [True]
+    assert engine.INFERENCE_LOCK.locked() is False

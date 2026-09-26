@@ -59,6 +59,7 @@ from libs.sample_resolver import (  # noqa: E402
     list_sample_files,
     sample_path_for_voice,
 )
+from libs.tools import validate_language  # noqa: E402
 from ttssrv import history, metrics  # noqa: E402
 from ttssrv.openai_compat import (  # noqa: E402
     OpenAIRequestError,
@@ -74,6 +75,7 @@ from ttssrv.validators import (  # noqa: E402
     HistoryListSchema,
     SpeechRequestSchema,
     TtsRequestSchema,
+    VoicesQuerySchema,
     VoiceUploadSchema,
 )
 
@@ -172,16 +174,17 @@ def init_engine_pool(size: int = TTS_POOL_SIZE) -> None:
         logger.info(f"Warming up {engine}...")
         start_time = time.monotonic()
         try:
-            text_to_speech_bytes(text=".", engine=engine, language=TTS_LANGUAGE_DEFAULT)
-            elapsed_ms = int((time.monotonic() - start_time) * 1000)
-            metrics.record(engine, elapsed_ms, True)
+            # Through synthesize(), so the warmup logs its Synthesis line and
+            # counts in /metrics by the same rules as a request: a
+            # ValidationError (Silero has nothing to say for ".") is not an
+            # engine failure. The app context gives synthesize() its `g`.
+            with app.app_context():
+                synthesize(".", engine, TTS_LANGUAGE_DEFAULT, label="warmup")
             metrics.set_warm(engine, True)
             logger.info(f"Warmup OK {engine} ({time.monotonic() - start_time:.2f}s)")
         except Exception as exc:
-            elapsed_ms = int((time.monotonic() - start_time) * 1000)
-            metrics.record(engine, elapsed_ms, False, type(exc).__name__)
             metrics.set_warm(engine, False)
-            logger.warning(f"Warmup failed for {engine}: {type(exc).__name__}: {exc} — will retry on first request")
+            logger.warning(f"Warmup failed for {engine}: {type(exc).__name__}: {exc} - will retry on first request")
 
     for slot_index in range(size):
         ENGINE_POOL.put(slot_index)
@@ -198,7 +201,9 @@ class JSONProvider(DefaultJSONProvider):
         return super().default(o)
 
 
-app = Flask(__name__)
+# No static folder: Flask would otherwise register /static/<path:filename>,
+# the one route without @token_required, on the port compose publishes.
+app = Flask(__name__, static_folder=None)
 app.json = JSONProvider(app)
 app.url_map.strict_slashes = False
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_host=1)
@@ -246,6 +251,16 @@ def parse_tts_payload() -> dict:
     return schema.load(payload)
 
 
+def load_voices_query() -> dict:
+    """Validate the query string of the voice listings; an empty parameter counts as absent.
+
+    The language is lowercased later by validate_language(), as the synthesis
+    path does, so `language=RU` lists the voices /api/tts will accept for it.
+    """
+    args = {key: value for key, value in request.args.items() if value}
+    return VoicesQuerySchema().load(args)
+
+
 def acquire_slot() -> int | None:
     """Take one engine-pool token, or None when the pool is unlimited.
 
@@ -255,6 +270,12 @@ def acquire_slot() -> int | None:
     """
     if TTS_POOL_SIZE <= 0:
         return None
+    # A free slot is taken at once: only a request that has to wait needs a
+    # wait permit, so TTS_QUEUE_SIZE=0 means "never wait", not "always 503".
+    try:
+        return ENGINE_POOL.get_nowait()
+    except queue.Empty:
+        pass
     if not WAIT_QUEUE.acquire(blocking=False):
         raise queue.Empty()
     metrics.wait_begin()
@@ -461,8 +482,9 @@ def models_list():
 @token_required
 def voices_list():
     """List selectable voices for an engine + language (e.g. Silero ru speakers)."""
-    engine = request.args.get("engine") or TTS_ENGINE_DEFAULT
-    language = request.args.get("language") or TTS_LANGUAGE_DEFAULT
+    query = load_voices_query()
+    engine = query["engine"] or TTS_ENGINE_DEFAULT
+    language = validate_language(query["language"] or TTS_LANGUAGE_DEFAULT)
     info = get_engine_voices(engine, language)
     # Only the sample-cloning engine has files behind its voices; the web UI
     # shows their size, rate and length in the samples table.
@@ -522,10 +544,7 @@ def voices_upload():
         raise ValidationError(f"Sample limit reached ({TTS_MAX_SAMPLES}); delete one first")
     os.makedirs(get_samples_dir(), exist_ok=True)
     # Written through a .tmp neighbour so a half-written sample never shows up in list_voices().
-    tmp_path = f"{target}.tmp"
-    with open(tmp_path, "wb") as handle:
-        handle.write(audio_bytes)
-    os.replace(tmp_path, target)
+    history.write_atomic(target, audio_bytes)
 
     logger.info(f"[{get_req_id()}] Voice '{form['name']}' saved: {len(audio_bytes)} bytes {rate} Hz {channels} ch {seconds}s")
     return (
@@ -802,8 +821,9 @@ def openai_models():
 @token_required
 def openai_voices():
     """List the voices of the engine behind ?model= (default engine when omitted), as {"voices": [...]}."""
-    engine = map_model_name(request.args.get("model"), TTS_ENGINE_DEFAULT)
-    language = request.args.get("language") or TTS_LANGUAGE_DEFAULT
+    query = load_voices_query()
+    engine = map_model_name(query["model"], TTS_ENGINE_DEFAULT)
+    language = validate_language(query["language"] or TTS_LANGUAGE_DEFAULT)
     info = get_engine_voices(engine, language)
     return jsonify({"voices": info.get("voices", [])}), 200
 
@@ -921,6 +941,8 @@ def main() -> int:
         f"queue={TTS_QUEUE_SIZE} "
         f"auth={'on' if TTS_TOKENS else 'off'}"
     )
+    if not TTS_TOKENS:
+        logger.warning("Auth is off: TTS_TOKENS is empty, so every route answers without a token")
     init_engine_pool()
     if TTS_DEBUG:
         app.run(host=TTS_HOST, port=TTS_PORT, debug=True)

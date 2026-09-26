@@ -87,7 +87,7 @@ def test_create_503_when_pool_busy(client, history_dir, monkeypatch, app_module)
         raise queue.Empty()
 
     monkeypatch.setattr(app_module, "TTS_POOL_SIZE", 1)
-    monkeypatch.setattr(app_module, "ENGINE_POOL", types.SimpleNamespace(get=never_free))
+    monkeypatch.setattr(app_module, "ENGINE_POOL", types.SimpleNamespace(get=never_free, get_nowait=lambda: never_free(0)))
     resp = create(client)
     assert resp.status_code == 503
     assert resp.get_json() == {"error": "All engine slots busy"}

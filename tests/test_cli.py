@@ -199,6 +199,21 @@ def test_write_audio_concatenates_wav_chunks(tmp_path):
         assert merged.getnframes() == int(22050 * 0.3)
 
 
+def test_write_audio_concatenates_wav_chunks_into_a_pipe(tmp_path):
+    """A pipe cannot seek, yet `ttsgen --stdout | ttsplay` still gets one WAV with the right frame count."""
+    a, b = tmp_path / "a.part", tmp_path / "b.part"
+    silent_wav(a, ms=100)
+    silent_wav(b, ms=200)
+    read_fd, write_fd = os.pipe()
+    with os.fdopen(read_fd, "rb") as reader:
+        with os.fdopen(write_fd, "wb") as writer:
+            assert writer.seekable() is False
+            write_audio([str(a), str(b)], writer)
+        data = reader.read()
+    with wave.open(io.BytesIO(data), "rb") as merged:
+        assert merged.getnframes() == int(22050 * 0.3)
+
+
 def test_write_audio_concatenates_mp3_bytes(tmp_path):
     """MP3 chunks are written back to back, untouched."""
     frame = b"\xff\xfb\x90\x64" + b"\x01" * 8
@@ -300,6 +315,17 @@ def test_rec_worker_pushes_sentinel_on_partial_failure(tmp_path):
     assert idx == 2
     assert isinstance(err, RuntimeError)
     assert "synthetic engine error" in str(err)
+
+
+def test_rec_worker_removes_the_chunk_file_it_could_not_write(tmp_path):
+    """A chunk whose bytes cannot be written is reported as failed and leaves no file behind."""
+    q: queue.Queue = queue.Queue()
+    # A str where bytes belong makes the write itself fail, after mkstemp created the file.
+    rec_worker(["only"], lambda text: "not bytes", q, ".wav", str(tmp_path))  # type: ignore[arg-type, return-value]
+    item = q.get_nowait()
+    assert item.error is not None and item.tmp_path is None
+    assert q.get_nowait() is None
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_rec_worker_emits_done_sentinel_even_on_total_failure(tmp_path):

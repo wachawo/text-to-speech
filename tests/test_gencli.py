@@ -116,6 +116,30 @@ def test_ttsgen_engine_failure_returns_nonzero(tmp_path):
     assert "synthetic gTTS network failure" in result.stderr or "Chunk" in result.stderr
 
 
+def test_ttsgen_partial_failure_leaves_no_chunk_files(tmp_path):
+    """Exit 3 removes the chunks that did succeed; with --file they sit next to the requested file."""
+    stub = tmp_path / "stubs" / "gtts"
+    stub.mkdir(parents=True)
+    (stub / "__init__.py").write_text(
+        "class gTTS:\n"
+        "    def __init__(self, text='', **kw):\n"
+        "        self.text = text\n"
+        "    def write_to_fp(self, fp):\n"
+        "        if 'last' in self.text:\n"
+        "            raise RuntimeError('synthetic gTTS network failure')\n"
+        "        fp.write(b'ID3' + b'\\x00' * 32)\n"
+    )
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(tmp_path / "stubs") + os.pathsep + env.get("PYTHONPATH", "")
+    env["TTS_ENGINE"] = "gtts"
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    text = "first " * 40 + ". This is the last sentence."
+    result = run_ttsgen([text, "--engine", "gtts", "--file", str(out_dir / "x.mp3"), "--quiet"], env=env)
+    assert result.returncode == 3, f"ttsgen exit {result.returncode}\nSTDERR:\n{result.stderr}"
+    assert list(out_dir.iterdir()) == []
+
+
 def test_ttsgen_help_runs(tmp_path):
     """Cheapest CLI smoke: --help should exit 0 and print usage."""
     env = stubbed_env()

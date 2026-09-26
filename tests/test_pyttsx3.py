@@ -206,6 +206,27 @@ def test_generate_unknown_voice_falls_back_to_language(monkeypatch):
     assert sys.modules["pyttsx3"].state["voice"] == "roa/de"
 
 
+def test_list_voices_lists_the_voices_of_the_language(monkeypatch):
+    """The listing offers the ids generate() accepts for that language, the first one as the default."""
+    eng = import_engine_with_voices(monkeypatch, ESPEAK_VOICES)
+    assert eng.list_voices("en") == {"voices": ["default", "gmw/en", "gmw/en-US"], "default": "default"}
+    assert eng.list_voices("RU") == {"voices": ["zle/ru"], "default": "zle/ru"}
+    assert eng.list_voices("zz") == {"voices": [], "default": None}
+
+
+def test_list_voices_default_is_the_voice_generate_picks(monkeypatch):
+    """Asking for the listed default gives the same voice as asking for none."""
+    eng = import_engine_with_voices(monkeypatch, ESPEAK_VOICES)
+    eng.generate("hi", {"language": "de"})
+    assert sys.modules["pyttsx3"].state["voice"] == eng.list_voices("de")["default"]
+
+
+def test_list_voices_is_empty_without_pyttsx3(engine, monkeypatch):
+    """A host without pyttsx3 lists nothing instead of failing."""
+    monkeypatch.setattr(engine, "AVAILABLE", False)
+    assert engine.list_voices("en") == {"voices": [], "default": None}
+
+
 def test_generate_unmatched_language_falls_back_to_first_voice(monkeypatch):
     """A language no voice serves keeps the historical voices[0] choice."""
     eng = import_engine_with_voices(monkeypatch, ESPEAK_VOICES)

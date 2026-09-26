@@ -41,6 +41,20 @@ class HistoryListSchema(Schema):
     offset = fields.Int(load_default=0, validate=validate.Range(min=0))
 
 
+class VoicesQuerySchema(Schema):
+    """Query string for GET /api/voices and GET /v1/audio/voices."""
+
+    class Meta:
+        """Ignore parameters these listings have no use for, as before this schema."""
+
+        unknown = EXCLUDE
+
+    engine = fields.Str(load_default=None, validate=validate.Length(min=1, max=64))
+    # An engine name or an OpenAI model name, on /v1/audio/voices only.
+    model = fields.Str(load_default=None, validate=validate.Length(min=1, max=64))
+    language = fields.Str(load_default=None, validate=validate.Length(equal=2))
+
+
 class VoiceUploadSchema(Schema):
     """Form fields of POST /api/voices and DELETE /api/voices/<name> (the WAV travels as `file`)."""
 

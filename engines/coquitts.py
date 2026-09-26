@@ -123,8 +123,8 @@ def generate(text: str, config: dict) -> bytes:
 
     Raises:
         EngineNotAvailableError: Coqui TTS is not installed.
-        ValidationError: Text exceeds MAX_TEXT_LENGTH or the voice name is invalid.
-        CustomError: The reference voice sample WAV is missing.
+        ValidationError: Text exceeds MAX_TEXT_LENGTH, or the voice name is invalid or has no sample.
+        CustomError: The default voice sample WAV (COQUITTS_SAMPLE) is missing.
         TTSException: Model lookup or synthesis failed.
     """
     if not is_available():
@@ -137,14 +137,9 @@ def generate(text: str, config: dict) -> bytes:
     if voice:
         sample_wav = sample_path_for_voice(voice)
         if not os.path.exists(sample_wav):
-            raise CustomError(
-                {
-                    "error": "voice_sample_missing",
-                    "message": f"Voice sample WAV not found for voice '{voice}': {sample_wav}",
-                    "voice": voice,
-                    "path": sample_wav,
-                }
-            )
+            # The caller named the voice, so it is a bad request like any unknown
+            # voice, and the answer carries no server path.
+            raise ValidationError(f"Unknown voice '{voice}' for coquitts")
     else:
         sample_wav = resolve_sample_path(os.getenv("COQUITTS_SAMPLE", DEFAULT_COQUITTS_SAMPLE))
         if not os.path.exists(sample_wav):

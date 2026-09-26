@@ -246,20 +246,16 @@ def test_generate_with_voice_uses_samples_dir_file(engine, monkeypatch, tmp_path
     assert last["speaker"] == str(maria)
 
 
-def test_generate_unknown_voice_raises_custom_error(engine, monkeypatch, tmp_path):
-    """A voice with no sample file is reported as voice_sample_missing naming the voice and the expected path."""
+def test_generate_unknown_voice_raises_validation_error_without_a_path(engine, monkeypatch, tmp_path):
+    """A voice with no sample file is a bad request (400) whose message names the voice but no server path."""
     samples = tmp_path / "samples"
     samples.mkdir()
     monkeypatch.setenv("COQUITTS_SAMPLES", str(samples))
 
-    with pytest.raises(CustomError) as excinfo:
+    with pytest.raises(ValidationError) as excinfo:
         engine.generate("hi", {"language": "en", "voice": "ghost"})
-    payload = excinfo.value.payload
-    assert payload["error"] == "voice_sample_missing"
-    assert payload["voice"] == "ghost"
-    assert payload["path"] == str(samples / "ghost.wav")
-    assert "ghost" in payload["message"]
-    assert excinfo.value.status == 422
+    assert str(excinfo.value) == "Unknown voice 'ghost' for coquitts"
+    assert str(tmp_path) not in str(excinfo.value)
     assert FakeTTS.instances == []
 
 

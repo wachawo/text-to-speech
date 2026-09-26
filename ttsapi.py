@@ -123,7 +123,9 @@ def list_remote_engines() -> int:
         return 1
     # Human-facing table: stdout, not logging, so the listing stays free of log decoration.
     print(f"Remote engines on {get_url()}:")
-    for name in data.get("engines", []):
+    # "available" is what the server can synthesize with: GET /api/engines has
+    # not carried an "engines" key since 1.0.3.
+    for name in data.get("available", []):
         marker = "*" if name == data.get("default") else " "
         print(f"  {marker} {name}")
     return 0
@@ -283,43 +285,45 @@ def main() -> int:
 
     rec = threading.Thread(target=rec_worker, args=(chunks, generator, q, CHUNK_SUFFIX, tmp_dir), daemon=True)
     play = threading.Thread(target=play_worker, args=(q, output_formats, collected_paths, play_audio, failures), daemon=True)
-    rec.start()
-    play.start()
-    rec.join()
-    play.join()
+    try:
+        rec.start()
+        play.start()
+        rec.join()
+        play.join()
 
-    if failures:
-        for idx, err in failures:
-            logger.error(f"Chunk {idx} failed: {type(err).__name__}: {err}")
-        logger.error(f"{len(failures)}/{len(chunks)} chunk(s) failed; aborting with exit code 3.")
-        return 3
-    if not collected_paths:
-        logger.error("No audio was generated: the text holds nothing to synthesize.")
-        return 1
-
-    if out_is_file and output_target is not None:
-        extension = response_extension(LAST_RESPONSE["content_type"], collected_paths)
-        output_filename = output_path_for(output_target, target_is_dir, os.getenv("FILENAME_PREFIX", ""), extension)
-        try:
-            save_audio_file(collected_paths, output_filename)
-        except OSError as exc:
-            logger.error(f"Failed to save {output_filename}: {type(exc).__name__}: {exc}\n{traceback.format_exc()}")
+        if failures:
+            for idx, err in failures:
+                logger.error(f"Chunk {idx} failed: {type(err).__name__}: {err}")
+            logger.error(f"{len(failures)}/{len(chunks)} chunk(s) failed; aborting with exit code 3.")
+            return 3
+        if not collected_paths:
+            logger.error("No audio was generated: the text holds nothing to synthesize.")
             return 1
+
+        if out_is_file and output_target is not None:
+            extension = response_extension(LAST_RESPONSE["content_type"], collected_paths)
+            output_filename = output_path_for(output_target, target_is_dir, os.getenv("FILENAME_PREFIX", ""), extension)
+            try:
+                save_audio_file(collected_paths, output_filename)
+            except OSError as exc:
+                logger.error(f"Failed to save {output_filename}: {type(exc).__name__}: {exc}\n{traceback.format_exc()}")
+                return 1
+            if out_is_stdout:
+                # stdout carries the audio stream, so the filename goes to the log instead.
+                logger.info(output_filename)
+            else:
+                # Shell-pipeable output: FILE=$(ttsapi "Hi" --file) must capture the path alone.
+                print(output_filename, file=sys.stdout)
+
         if out_is_stdout:
-            # stdout carries the audio stream, so the filename goes to the log instead.
-            logger.info(output_filename)
-        else:
-            # Shell-pipeable output: FILE=$(ttsapi "Hi" --file) must capture the path alone.
-            print(output_filename, file=sys.stdout)
+            write_audio(collected_paths, sys.stdout.buffer)
+            sys.stdout.buffer.flush()
 
-    if out_is_stdout:
-        write_audio(collected_paths, sys.stdout.buffer)
-        sys.stdout.buffer.flush()
-
-    for chunk_path in collected_paths:
-        safe_unlink(chunk_path)
-
-    return 0
+        return 0
+    finally:
+        # Every exit, a failed chunk or a failed save included, removes the chunk files.
+        for chunk_path in collected_paths:
+            safe_unlink(chunk_path)
 
 
 if __name__ == "__main__":

@@ -78,7 +78,8 @@ KOKOROTTS_MODELS=cache/kokorotts
 # KOKOROTTS_SPEED=1.0
 
 
-# HTTP API server (used by `ttssrv` and docker-compose*.yml).
+# HTTP API server (used by `ttssrv` run on this host; Docker Compose passes only ./.env
+# to the container, so a server in Docker reads none of the ttsgen.conf files).
 TTS_HOST=0.0.0.0
 TTS_PORT=5000
 TTS_DEBUG=False
@@ -86,9 +87,9 @@ TTS_DEBUG=False
 # JSON object per line with request_id and the synthesis fields (engine, ms, ok).
 TTS_LOG_FORMAT=text
 TZ=America/New_York
-# Server auth: comma-separated bearer tokens. Empty (default) DISABLES auth.
-# Example: TTS_TOKENS=alice-token,bob-token
-TTS_TOKENS=
+# Server auth: comma-separated bearer tokens. Unset or empty (default) DISABLES auth.
+# Kept commented out: an empty value here would win over TTS_TOKENS in ./.env.
+# TTS_TOKENS=alice-token,bob-token
 # Engine pool size for ttssrv (number of pre-warmed engine slots).
 # 0 = unlimited concurrency, no warmup. 1+ = bound on parallel synthesis.
 TTS_POOL_SIZE=1
@@ -105,4 +106,4 @@ TTS_MAX_SAMPLE_BYTES=16777216
 # HTTP API client (used by `ttsapi` to reach a remote `ttssrv`).
 # TTS_TOKEN must match one of TTS_TOKENS on the server when auth is enabled.
 TTS_URL=http://localhost:5000
-TTS_TOKEN=
+# TTS_TOKEN=alice-token

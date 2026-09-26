@@ -45,9 +45,9 @@
               </datalist>
             </template>
             <select id="set-voice" class="form-select form-select-sm set-select" style="width: 220px"
-                    v-model="form.voice" :disabled="wait.length > 0 || voices.length === 0" v-else>
+                    v-model="voicePick" :disabled="wait.length > 0 || voices.length === 0" v-else>
               <option value="">default ({{ serverVoice || '-' }})</option>
-              <option v-for="name in voices" :key="name" :value="name">{{ name }}</option>
+              <option v-for="name in voiceChoices" :key="name" :value="name">{{ name }}</option>
             </select>
           </div>
 
@@ -163,6 +163,22 @@ module.exports = {
        list is in. */
     voiceMix: function () {
       return !!(this.voiceEntry && this.voiceEntry.mix);
+    },
+    /* An engine with one voice that is also its default offers only
+       "default (...)", as in the Studio. */
+    soleVoice: function () {
+      return this.$soleVoice(this.voiceEntry);
+    },
+    voiceChoices: function () {
+      return this.soleVoice ? [] : this.voices;
+    },
+    voicePick: {
+      get: function () {
+        return this.form.voice === this.soleVoice ? '' : this.form.voice;
+      },
+      set: function (value) {
+        this.form.voice = value;
+      },
     },
 
     /* The pair the voices are asked for, with the server's own values in

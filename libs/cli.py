@@ -7,6 +7,7 @@ Used by both `ttsgen` (offline, calls `libs.api.text_to_speech_bytes`) and `ttsa
 pipeline supports both backends.
 """
 
+import io
 import logging
 import os
 import queue
@@ -20,6 +21,7 @@ from typing import IO, NamedTuple
 
 # Local imports
 from .audio import extension_for, is_wav
+from .tempfiles import safe_unlink
 from .tools import ensure_audio_directory, generate_timestamp_filename
 
 logger = logging.getLogger(__name__)
@@ -154,7 +156,14 @@ def write_audio(chunk_paths: list[str], out_stream: IO[bytes]) -> None:
     if not chunk_paths:
         return
     if len(chunk_paths) > 1 and is_wav(read_header(chunk_paths[0])):
-        concat_wav_files(chunk_paths, out_stream)
+        if out_stream.seekable():
+            concat_wav_files(chunk_paths, out_stream)
+            return
+        # The wave module seeks back to patch the header sizes, which a pipe
+        # (`ttsgen --stdout | ttsplay`) cannot do, so the WAV is built in memory.
+        buffer = io.BytesIO()
+        concat_wav_files(chunk_paths, buffer)
+        out_stream.write(buffer.getvalue())
         return
     for path in chunk_paths:
         with open(path, "rb") as handle:
@@ -252,6 +261,7 @@ def rec_worker(
                     f.write(audio_bytes)
             except Exception as exc:
                 logger.error(f"Failed to write temp audio for chunk {i}: {type(exc).__name__}: {exc}")
+                safe_unlink(tmp_path)
                 q.put(ChunkResult(idx=i, tmp_path=None, audio_bytes=audio_bytes, error=exc))
                 continue
 

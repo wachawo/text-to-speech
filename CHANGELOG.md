@@ -1,5 +1,46 @@
 ## Changelog
 
+### [Unreleased]
+
+#### Added
+- `pyttsx3` lists its voices: `GET /api/voices?engine=pyttsx3&language=xx`
+  returns the ids of the driver voices for that language, the first as the
+  default, so the Studio offers a voice select for it.
+- The server logs a warning at start when auth is off (`TTS_TOKENS` empty).
+
+#### Changed
+- An engine that lists exactly one voice, which is also its default (coquitts
+  with a single sample), offers only "default" in the Studio and the settings
+  dialog instead of the same voice twice.
+- An unknown `coquitts` voice is a 400 (`Unknown voice 'x' for coquitts`) like
+  in the other engines, instead of a 422 whose body carried the absolute
+  server path of the missing sample.
+- `pipertts` and `gtts` hold a module lock around synthesis like the other
+  engines, so with `TTS_POOL_SIZE` above 1 one engine runs one request at a
+  time.
+- The startup warmup goes through the same path as a request: it logs a
+  `Synthesis warmup` line, and a text the engine refuses (Silero and ".")
+  no longer counts as a failed call in `/metrics`.
+- `ttssrv` has no `/static/<path>` route any more; every route is under
+  `/api/`, `/v1/` or `/metrics`.
+
+#### Fixed
+- `ttsgen.conf.example` no longer sets `TTS_TOKENS=` and `TTS_TOKEN=` to empty
+  values: a copy in `./ttsgen.conf` loads before `./.env` and switched server
+  auth off although `./.env` set the tokens.
+- `ttsgen --stdout | ttsplay` failed with "Illegal seek" once the text spanned
+  more than one WAV chunk.
+- `ttsgen` and `ttsapi` left their chunk files behind (next to the `--file`
+  target) when a chunk or the save failed; the server left `.tmp` files in the
+  history and samples directories after a failed write.
+- `TTS_QUEUE_SIZE=0` answered every synthesis request with 503, even on an
+  idle server; it now means that no request waits for a busy pool.
+- `GET /api/voices` and `/v1/audio/voices` with an upper-case language
+  (`language=RU`) listed the English Silero speakers, which `/api/tts` then
+  refused; the listings now validate and lowercase their query like synthesis,
+  and an engine that cannot be imported answers 503 instead of 500.
+- `ttsapi --list` printed no engines against any server since 1.0.3.
+
 ### [1.0.7] - 2026-09-23
 
 #### Added

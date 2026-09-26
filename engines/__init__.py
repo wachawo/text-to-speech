@@ -14,6 +14,9 @@ import re
 from collections.abc import Callable
 from pathlib import Path
 
+# Local imports
+from libs.exceptions import EngineNotAvailableError
+
 logger = logging.getLogger(__name__)
 
 # Signature every engine module's `generate` must satisfy.
@@ -164,7 +167,12 @@ def get_engine_voices(engine_name: str, language: str = "en") -> dict[str, objec
     # EngineNotAvailableError itself.
     if not get_engine_module_path(engine_name):
         return {"voices": [], "default": None}
-    module = importlib.import_module(f".{engine_name}", package="engines")
+    try:
+        module = importlib.import_module(f".{engine_name}", package="engines")
+    except ImportError as exc:
+        # An engine whose module imports a missing dependency at the top level
+        # is not installed here: a 503 like synthesis, not a 500 with a traceback.
+        raise EngineNotAvailableError(f"{engine_name} is not available: {type(exc).__name__}: {exc}") from exc
 
     if hasattr(module, "list_voices"):
         voices: dict[str, object] = module.list_voices(language)

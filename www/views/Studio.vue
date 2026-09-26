@@ -38,9 +38,9 @@
         </template>
         <div class="input-group input-group-sm" title="Voice" v-else>
           <select class="form-select form-select-sm" style="width: 150px"
-                  v-model="form.voice" :disabled="wait.length > 0 || voices.length === 0">
+                  v-model="voicePick" :disabled="wait.length > 0 || voices.length === 0">
             <option value="">default</option>
-            <option v-for="name in voices" :key="name" :value="name">{{ name }}</option>
+            <option v-for="name in voiceChoices" :key="name" :value="name">{{ name }}</option>
           </select>
         </div>
       </div>
@@ -270,6 +270,23 @@ module.exports = {
     voiceMix: function () {
       var entry = this.$store.state.catalog.voices[this.voiceKey];
       return !!(entry && entry.mix);
+    },
+    /* An engine with one voice that is also its default offers only
+       "default": the select shows that voice as "default", and choosing
+       "default" asks for the same voice. */
+    soleVoice: function () {
+      return this.$soleVoice(this.$store.state.catalog.voices[this.voiceKey]);
+    },
+    voiceChoices: function () {
+      return this.soleVoice ? [] : this.voices;
+    },
+    voicePick: {
+      get: function () {
+        return this.form.voice === this.soleVoice ? '' : this.form.voice;
+      },
+      set: function (value) {
+        this.form.voice = value;
+      },
     },
 
     /* "WAV - 4.2 s - 186 KB - generated in 3.1 s". The duration is only known

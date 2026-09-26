@@ -81,3 +81,24 @@ def test_acquire_slot_returns_the_wait_permit_with_the_token(app_module, monkeyp
         app_module.release_slot(0)
         app_module.ENGINE_POOL.get_nowait()
     assert permits.acquire(blocking=False)
+
+
+def test_acquire_slot_takes_a_free_slot_without_a_wait_permit(app_module, monkeypatch):
+    """TTS_QUEUE_SIZE=0 means no waiting: a free slot is still served, only a busy pool answers 503."""
+    import queue
+    import threading
+
+    monkeypatch.setattr(app_module, "TTS_POOL_SIZE", 1)
+    monkeypatch.setattr(app_module, "WAIT_QUEUE", threading.Semaphore(0))
+    app_module.ENGINE_POOL.put(0)
+    try:
+        assert app_module.acquire_slot() == 0
+        try:
+            app_module.acquire_slot()
+        except queue.Empty:
+            pass
+        else:
+            raise AssertionError("a busy pool with no wait permits must refuse at once")
+    finally:
+        app_module.release_slot(0)
+        app_module.ENGINE_POOL.get_nowait()
