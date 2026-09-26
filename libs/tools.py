@@ -12,9 +12,19 @@ from pathlib import Path
 from typing import Any, cast
 
 # Local imports
-from engines import get_engine_function, get_supported_engines, is_engine_available
+from engines import (
+    ENGINE_NAME_REGEX,
+    get_engine_function,
+    get_engine_languages,
+    get_engine_module_path,
+    get_supported_engines,
+    is_engine_available,
+    list_engine_model_ids,
+    list_engine_models,
+)
 
 from .exceptions import EngineNotAvailableError, TTSException, ValidationError
+from .languages import LANGUAGE_CODE_ERROR, is_language_code, language_supported, normalize_language
 
 # Makes the repository root importable when libs/ is used straight from a source
 # checkout rather than from an installed wheel.
@@ -29,6 +39,9 @@ Config = dict[str, Any]
 # (libs/cli.chunk_text); this limit only stops pathological inputs that would
 # exhaust memory or stall a worker for hours. 1M chars is roughly a book chapter.
 MAX_TEXT_LENGTH = 1_000_000
+
+# How many model ids an "Unknown model" message lists before it says "(+N more)".
+MAX_LISTED_MODELS = 20
 
 
 def get_default_config() -> Config:
@@ -87,9 +100,9 @@ def validate_engine(engine: str) -> str:
     if not is_engine_available(engine):
         # Distinguish "no such engine" from "engine present, deps missing" so the
         # message tells the user whether to write a module or run pip.
-        engine_file = Path(__file__).parent.parent / "engines" / f"{engine}.py"
-
-        if not engine_file.exists():
+        # get_engine_module_path applies the engine-name rule, so the package
+        # file engines/__init__.py or a path does not count as a shipped engine.
+        if get_engine_module_path(engine) is None:
             supported = ", ".join(get_supported_engines())
             raise ValidationError(
                 f"Engine '{engine}' not found.\n"
@@ -106,15 +119,77 @@ def validate_engine(engine: str) -> str:
 
 
 def validate_language(language: str) -> str:
-    """Return a lowercased two-letter language code.
+    """Return a normalized language code: a lowercased 2-character code or a tag such as 'zh-cn'.
 
     Raises:
-        ValidationError: If the value is not a string of exactly two characters.
+        ValidationError: If the value is neither a string of exactly two
+            characters nor a tag such as 'zh-cn', 'pt_BR' or 'es-419'.
     """
-    if not isinstance(language, str) or len(language) != 2:
-        raise ValidationError("Language must be a 2-character code")
+    if not is_language_code(language):
+        raise ValidationError(LANGUAGE_CODE_ERROR)
 
-    return language.lower()
+    return normalize_language(language)
+
+
+def validate_engine_language(engine: str, language: str, model: str | None = None) -> None:
+    """Refuse a language the engine (or the model named by `model`) declares it does not serve.
+
+    Engines that do not declare their languages (no `list_languages()` hook,
+    or a hook that returns None) accept every code, as does an unknown engine,
+    which validate_engine reports on its own. A tag passes when the engine
+    lists it or its primary subtag ('en-gb' for an engine that lists 'en').
+
+    Raises:
+        ValidationError: The engine lists its languages and `language` is not among them.
+    """
+    languages = get_engine_languages(engine) if model is None else get_engine_languages(engine, model)
+    if language_supported(language, languages):
+        return
+    supported = ", ".join(languages or [])
+    subject = f"engine '{engine}'" if model is None else f"engine '{engine}' model '{model}'"
+    raise ValidationError(f"Language '{language}' is not supported by {subject}. Supported: {supported}")
+
+
+def validate_model(engine: str, model: str | None) -> str | None:
+    """Return a model the engine lists, or None for the engine default.
+
+    The id is only compared with the ids the engine lists (its optional
+    `list_model_ids()` hook, else `list_models()`); it is never used as a
+    path, so a crafted value cannot reach the filesystem, and the messages
+    name no path.
+
+    Args:
+        engine: Engine name.
+        model: A model id from the engine's list_models(), or None / '' for
+            the engine default.
+
+    Raises:
+        ValidationError: The engine does not exist, has no selectable models,
+            or does not list `model`.
+        TTSException: The engine's model listing failed on the server (an
+            unreadable models directory), which is not the client's error.
+    """
+    if model is None or model == "":
+        return None
+    if not get_engine_module_path(engine):
+        # The name comes from a query string on /api/voices; echo it only when
+        # it is a well-formed engine name, never a forged log line or a long URL.
+        if isinstance(engine, str) and ENGINE_NAME_REGEX.fullmatch(engine):
+            raise ValidationError(f"Engine '{engine}' not found")
+        raise ValidationError("Engine not found")
+    try:
+        model_ids = list_engine_model_ids(engine)
+        if model_ids is None:
+            model_ids = [str(item.get("id")) for item in list_engine_models(engine)]
+    except Exception as exc:
+        raise TTSException(f"Engine '{engine}' could not list its models: {type(exc).__name__}: {str(exc)}") from exc
+    if not model_ids:
+        raise ValidationError(f"Engine '{engine}' has no selectable models")
+    if model in model_ids:
+        return model
+    listed = ", ".join(model_ids[:MAX_LISTED_MODELS])
+    more = f" (+{len(model_ids) - MAX_LISTED_MODELS} more)" if len(model_ids) > MAX_LISTED_MODELS else ""
+    raise ValidationError(f"Unknown model '{model}' for engine '{engine}'. Available: {listed}{more}")
 
 
 def get_engine_generate_function(engine_name: str) -> Callable[..., Any]:
@@ -186,7 +261,7 @@ def create_tts_pipeline(engine: str = "gtts", language: str = "en") -> Callable:
 
     Args:
         engine: Engine name used for every call of the returned pipeline.
-        language: Two-letter language code used for every call.
+        language: Language code (two letters or a tag such as 'zh-cn') used for every call.
 
     Returns:
         A callable `(text, output_format="file", filename=None)` returning a
@@ -229,7 +304,7 @@ def batch_tts(
     Args:
         texts: Non-empty list of texts, synthesized sequentially.
         engine: Engine name used for every item.
-        language: Two-letter language code used for every item.
+        language: Language code (two letters or a tag such as 'zh-cn') used for every item.
         output_dir: Destination directory, created if missing.
 
     Returns:

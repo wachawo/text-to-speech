@@ -26,6 +26,7 @@ from .tools import (
     get_default_config,
     validate_engine,
     validate_language,
+    validate_model,
     validate_text,
 )
 
@@ -42,28 +43,33 @@ logger = logging.getLogger(__name__)
 AudioSource = str | bytes
 
 
-def text_to_speech_bytes(text: str, engine: str = "gtts", language: str = "en", voice: str | None = None) -> bytes:
+def text_to_speech_bytes(
+    text: str, engine: str = "gtts", language: str = "en", voice: str | None = None, model: str | None = None
+) -> bytes:
     """Synthesize text with the given engine and return the raw audio bytes.
 
     Args:
         text: Text to synthesize.
         engine: Engine name (gtts, pyttsx3, pipertts, ...).
-        language: Two-letter language code.
+        language: Language code: two letters or a tag such as 'zh-cn'.
         voice: Engine-specific voice/speaker id (None = engine default).
+        model: A model id from the engine's list_models() (None = the engine
+            default, the model it used before models were selectable).
 
     Returns:
         Audio bytes in whatever container the engine produces (MP3 or WAV).
 
     Raises:
         EngineNotAvailableError: If the engine module cannot be loaded.
-        ValidationError: If text, engine or language fail validation.
+        ValidationError: If text, engine, language or model fail validation.
     """
     validated_text = validate_text(text)
     validated_engine = validate_engine(engine)
     validated_language = validate_language(language)
+    validated_model = validate_model(validated_engine, model)
 
     config = get_default_config()
-    config.update({"engine": validated_engine, "language": validated_language, "voice": voice})
+    config.update({"engine": validated_engine, "language": validated_language, "voice": voice, "model": validated_model})
 
     generate_func = get_engine_function(validated_engine)
     if generate_func is None:
@@ -88,7 +94,7 @@ def text_to_speech_file(
         filename: Output path; when None a timestamped name is generated and the
             extension is inferred from the audio header (MP3 vs WAV).
         engine: Engine name.
-        language: Two-letter language code.
+        language: Language code: two letters or a tag such as 'zh-cn'.
 
     Returns:
         Path of the file that was written.

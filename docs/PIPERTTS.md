@@ -113,12 +113,56 @@ echo "PIPERTTS_MODELS=$HOME/my-piper-voices" >> ~/.config/ttsgen.conf
 | `uk` | `uk_UA-ukrainian_tts-medium` | 4/5 | manual download |
 | `zh` | `zh_CN-huayan-medium` | 4/5 | manual download |
 
-These are the voices `engines/pipertts.py` maps to a `--language` code; any
-other code falls back to the English voice. Other voices from the catalogue
-(for example `en_GB-alba-medium`) can be downloaded, but the engine does not
-select them by language.
+These are the voices `engines/pipertts.py` uses for a `--language` code when
+they are installed. Any other voice from the catalogue (for example
+`en_GB-alan-low` or `pl_PL-gosia-medium`) is picked up once its `.onnx` file is
+in the models directory or one of the other search directories.
 
 Full catalogue: <https://rhasspy.github.io/piper-samples/>.
+
+### How a voice is chosen
+
+Without a model the engine picks among the installed voices:
+
+1. a tag with a region (`en-gb`, `pt_BR`) takes an installed voice of that
+   language and region (`en_GB-*`), the table voice first when it matches;
+2. the table voice above for the language, when it is installed, so the 8
+   languages in the table keep the voice they always had;
+3. any installed voice of the language, a `medium` one first, then by name;
+4. when no voice of the language is installed, the table voice (the English
+   one for a language outside the table), as before.
+
+A voice's language comes from its file name
+(`<language>_<REGION>-<name>-<quality>`); a file named otherwise is described
+by `language.family` in its `.onnx.json`. The languages the engine lists
+(`GET /api/engines/pipertts`, and the check under `TTS_LANGUAGE_STRICT`) are the
+languages of the installed voices. With no voice installed the engine lists no
+languages (`languages: null`), so a request, strict or not, gets the download
+instructions of the voice it needs. A search directory that exists but cannot
+be read (a `./voices` without permissions) is skipped with a warning in the
+log.
+
+### Selecting a model per request
+
+The model id is the voice's file stem, such as `en_GB-alan-low`.
+`GET /api/engines/pipertts` lists the installed voices under `models`, each
+with its languages (`["en", "en-gb"]`) and the languages it is the default
+for; the listing reads file names only and loads no voice.
+
+```bash
+curl -X POST localhost:5000/api/tts \
+  -H "Authorization: Bearer $TTS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Hello","engine":"pipertts","model":"en_GB-alan-low"}' -o out.wav
+```
+
+The named voice wins over the language. An id that is not an installed voice
+is a 400 that lists the installed ones; the id is looked up, never used as a
+path. The `voice` field is still ignored by this engine.
+
+At most 8 voices stay loaded at once (about 60 MB each for a `medium` voice,
+so about 500 MB at most); loading one more drops the voice loaded earliest,
+which the next request for it loads again (about 1.5 s on CPU).
 
 ## Troubleshooting
 

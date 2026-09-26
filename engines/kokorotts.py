@@ -28,8 +28,9 @@ from typing import Any
 import numpy as np
 
 # Local imports
-from libs.cached_loader import load_cached
+from libs.cached_loader import get_model_cache_size, load_cached
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
+from libs.languages import normalize_language, primary_language
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,8 @@ DEFAULT_KOKOROTTS_MODEL = "kokoro-v1.0.onnx"
 DEFAULT_KOKOROTTS_VOICES = "voices-v1.0.bin"
 DEFAULT_KOKOROTTS_SPEED = 1.0
 
-# 2-char ISO-ish code → (kokoro lang code, default voice).
+# 2-char ISO-ish code -> (kokoro lang code, default voice). A tag such as
+# 'pt-br' is looked up by its primary subtag.
 # Voice list: https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md
 LANGUAGE_MAP = {
     "en": ("en-us", "af_sarah"),
@@ -67,6 +69,9 @@ LANGUAGE_PREFIXES = {
     "zh": ("z",),
 }
 MAX_MIX_VOICES = 4
+# The release part of a model file name ('kokoro-v1.0.onnx', 'kokoro-v1.0.int8.onnx'
+# -> 'v1.0'): a model named per request is paired with voices-<release>.bin.
+MODEL_RELEASE_RE = re.compile(r"^kokoro-(?P<version>v\d+(?:[._]\d+)*)")
 # One component of a voice spec: `af_bella` or `af_bella(2.5)`. Possessive
 # quantifiers and a weight group without whitespace keep matching linear; the
 # earlier overlapping form backtracked polynomially on an unclosed parenthesis.
@@ -134,12 +139,69 @@ def get_models_directory() -> str:
     return os.path.expanduser("~/.local/share/ttsgen/kokorotts")
 
 
-def get_model_paths() -> tuple[str, str]:
-    """Return absolute paths to (model_file, voices_file)."""
+def env_model_name() -> str:
+    """Return KOKOROTTS_MODEL, or DEFAULT_KOKOROTTS_MODEL when it is unset or blank."""
+    return os.environ.get("KOKOROTTS_MODEL", DEFAULT_KOKOROTTS_MODEL).strip() or DEFAULT_KOKOROTTS_MODEL
+
+
+def env_voices_name() -> str:
+    """Return KOKOROTTS_VOICES, or DEFAULT_KOKOROTTS_VOICES when it is unset or blank."""
+    return os.environ.get("KOKOROTTS_VOICES", DEFAULT_KOKOROTTS_VOICES).strip() or DEFAULT_KOKOROTTS_VOICES
+
+
+def get_model_paths(model: str | None = None) -> tuple[str, str]:
+    """Return absolute paths to (model_file, voices_file).
+
+    Args:
+        model: A model file name from list_models(), or None for KOKOROTTS_MODEL
+            with KOKOROTTS_VOICES, as before models were selectable. A named
+            model is paired with the voices file of its release
+            ('kokoro-v1.0.int8.onnx' -> 'voices-v1.0.bin') when that file is
+            next to the model, else with KOKOROTTS_VOICES.
+
+    Raises:
+        ValidationError: `model` is not a plain file name in the models directory.
+    """
     models_dir = get_models_directory()
-    model_name = os.environ.get("KOKOROTTS_MODEL", DEFAULT_KOKOROTTS_MODEL).strip() or DEFAULT_KOKOROTTS_MODEL
-    voices_name = os.environ.get("KOKOROTTS_VOICES", DEFAULT_KOKOROTTS_VOICES).strip() or DEFAULT_KOKOROTTS_VOICES
-    return os.path.join(models_dir, model_name), os.path.join(models_dir, voices_name)
+    if model is None:
+        return os.path.join(models_dir, env_model_name()), os.path.join(models_dir, env_voices_name())
+    # KOKOROTTS_MODEL is listed as a model even with a directory part
+    # ('v1/kokoro-v1.0.onnx'), so a client naming it back is served; any other
+    # id must be a plain file name in the models directory.
+    if model != env_model_name() and (os.path.basename(model) != model or model in (".", "..")):
+        raise ValidationError(f"Unknown kokorotts model '{model}'")
+    voices_path = os.path.join(models_dir, env_voices_name())
+    match = MODEL_RELEASE_RE.match(os.path.basename(model))
+    if match:
+        release_voices = os.path.join(models_dir, os.path.dirname(model), f"voices-{match.group('version')}.bin")
+        if os.path.exists(release_voices):
+            voices_path = release_voices
+    return os.path.join(models_dir, model), voices_path
+
+
+def default_model(language: str | None = None) -> str:
+    """Return the model a request without `model` uses: KOKOROTTS_MODEL, whatever the language."""
+    return env_model_name()
+
+
+def list_models() -> list[dict]:
+    """Describe the Kokoro model files a request may name: the `*.onnx` files in the models directory.
+
+    KOKOROTTS_MODEL is listed even when its file is missing (`installed:
+    false`), so a client sees which file the installer would fetch; with a
+    directory part (`v1/kokoro-v1.0.onnx`) it is looked up at that path. Only
+    a directory listing, no ONNX session.
+    """
+    models_dir = get_models_directory()
+    installed = set()
+    if os.path.isdir(models_dir):
+        installed = {name for name in os.listdir(models_dir) if name.endswith(".onnx")}
+    default_name = default_model()
+    if os.path.isfile(os.path.join(models_dir, default_name)):
+        installed.add(default_name)
+    languages = list_languages()
+    names = sorted(installed | {default_name})
+    return [{"id": name, "languages": languages, "installed": name in installed} for name in names]
 
 
 def get_download_instructions() -> str:
@@ -183,7 +245,8 @@ def get_kokoro(model_path: str, voices_path: str):
         logger.info(f"Loading Kokoro model: {model_path}")
         return Kokoro(model_path, voices_path)
 
-    return load_cached(KOKORO_CACHE, KOKORO_CACHE_LOCK, (model_path, voices_path), load_kokoro)
+    # A request may name any model file in the directory; at most TTS_MODEL_CACHE_SIZE stay loaded.
+    return load_cached(KOKORO_CACHE, KOKORO_CACHE_LOCK, (model_path, voices_path), load_kokoro, get_model_cache_size())
 
 
 def voice_names(voices_path: str) -> tuple[str, ...]:
@@ -201,15 +264,20 @@ def voice_names(voices_path: str) -> tuple[str, ...]:
     return load_cached(VOICE_NAMES_CACHE, VOICE_NAMES_LOCK, voices_path, read_names)
 
 
+def list_languages(model: str | None = None) -> list[str]:
+    """Return the languages Kokoro has voices for; any other code is spoken as English. Every model has the same."""
+    return sorted(LANGUAGE_MAP)
+
+
 def language_voices(language: str, names: Collection[str]) -> list[str]:
     """Return the names whose first letter belongs to the language (en for unknown codes)."""
-    prefixes = LANGUAGE_PREFIXES.get(language, LANGUAGE_PREFIXES["en"])
+    prefixes = LANGUAGE_PREFIXES.get(primary_language(language), LANGUAGE_PREFIXES["en"])
     return [name for name in names if name[:1] in prefixes]
 
 
 def default_voice(language: str, voices: Sequence[str]) -> str | None:
     """Return the LANGUAGE_MAP default when it is among the voices, else the first voice."""
-    unused_lang_code, preferred = LANGUAGE_MAP.get(language, LANGUAGE_MAP["en"])
+    unused_lang_code, preferred = LANGUAGE_MAP.get(primary_language(language), LANGUAGE_MAP["en"])
     if preferred in voices:
         return preferred
     return voices[0] if voices else None
@@ -220,20 +288,23 @@ def env_voice_spec() -> str:
     return os.environ.get("KOKOROTTS_VOICE", "").strip()
 
 
-def list_voices(language: str = "en") -> dict:
+def list_voices(language: str = "en", model: str | None = None) -> dict:
     """List the voices selectable for a language, plus its default voice.
 
     Cheap on purpose: reads only the voices file index, never the ONNX model.
 
     Args:
-        language: 2-char language code; unknown codes list the English voices.
+        language: Language code or tag (looked up by its primary subtag);
+            unknown codes list the English voices.
+        model: A model file name, whose release picks the voices file (see
+            get_model_paths), or None for KOKOROTTS_VOICES.
 
     Returns:
         Dict with 'voices' (sorted names), 'default' (the voice used when none
         is requested: KOKOROTTS_VOICE, else the language default, or None) and
         'mix' (True when voices can be blended).
     """
-    unused_model_path, voices_path = get_model_paths()
+    unused_model_path, voices_path = get_model_paths(model)
     if not os.path.exists(voices_path):
         return {"voices": [], "default": None, "mix": False}
     voices = language_voices(language, voice_names(voices_path))
@@ -297,9 +368,9 @@ def resolve_voice(spec: str, known_names: Collection[str]) -> list[tuple[str, fl
 
 
 def lang_code_for(language: str, components: Sequence[tuple[str, float]]) -> str:
-    """Return the kokoro lang code: the language's, but en-gb for English led by a b* voice."""
-    lang_code, unused_voice = LANGUAGE_MAP.get(language, LANGUAGE_MAP["en"])
-    if lang_code == "en-us" and components[0][0].startswith("b"):
+    """Return the kokoro lang code: the language's, but en-gb for English led by a b* voice or asked for as 'en-gb'."""
+    lang_code, unused_voice = LANGUAGE_MAP.get(primary_language(language), LANGUAGE_MAP["en"])
+    if lang_code == "en-us" and (components[0][0].startswith("b") or normalize_language(language) == "en-gb"):
         return "en-gb"
     return lang_code
 
@@ -320,7 +391,7 @@ def requested_voice_spec(config: dict, language: str, names: Collection[str]) ->
     env_voice = env_voice_spec()
     if env_voice:
         return env_voice
-    fallback = LANGUAGE_MAP.get(language, LANGUAGE_MAP["en"])[1]
+    fallback = LANGUAGE_MAP.get(primary_language(language), LANGUAGE_MAP["en"])[1]
     return default_voice(language, language_voices(language, names)) or fallback
 
 
@@ -346,9 +417,11 @@ def generate(text: str, config: dict) -> bytes:
 
     Args:
         text: Text to synthesize.
-        config: Configuration dict with `language` (2-char code) and optional
+        config: Configuration dict with `language` (code or tag), optional
             `voice`, a voice spec (`af_bella` or `af_bella(2)+af_sky(1)`); without
-            it KOKOROTTS_VOICE is used, then the language's default voice.
+            it KOKOROTTS_VOICE is used, then the language's default voice; and
+            optional `model`, a model file name from list_models() (None:
+            KOKOROTTS_MODEL).
 
     Returns:
         Audio bytes in WAV format (24000 Hz, 16-bit PCM, mono).
@@ -374,7 +447,7 @@ def generate(text: str, config: dict) -> bytes:
     except ValueError:
         speed = DEFAULT_KOKOROTTS_SPEED
 
-    model_path, voices_path = get_model_paths()
+    model_path, voices_path = get_model_paths(config.get("model"))
     if not os.path.exists(model_path) or not os.path.exists(voices_path):
         raise TTSException(get_download_instructions())
 

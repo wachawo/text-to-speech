@@ -82,7 +82,7 @@ def fetch_audio(text: str, engine: str, language: str) -> bytes:
     Args:
         text: Text to synthesize (one chunk).
         engine: Remote engine name; empty string lets the server pick its default.
-        language: Two-letter language code.
+        language: Language code: two letters or a tag such as 'zh-cn'.
 
     Returns:
         Raw audio bytes (MP3 or WAV, depending on the server-side engine).

@@ -146,11 +146,89 @@ lives in `libs/playback.py`. Adding `to_file()` / `to_bytes()` inside an
 engine is a layering violation and will not be picked up by the loader
 (`engines/__init__.py` calls `generate()` only).
 
-### 3. Config Parameters
+### 3. Optional language list
+
+```python
+def list_languages(model: str | None = None) -> list[str] | None:
+    """Return the language codes the engine (or one of its models) serves, or None when not declared."""
+```
+
+`engines/__init__.py:get_engine_languages` calls it when it exists, with no
+argument unless a model is being checked, so an older hook without the
+`model` parameter keeps working. It must read only constants or metadata
+(never load a model, never touch the network), and it works whether or not
+the engine is available. The server uses it for `TTS_LANGUAGE_STRICT`: a
+language that is not listed, neither as a whole nor by its primary subtag
+(`en` covers `en-gb`), is refused with a 400. An engine without the hook, or
+one that returns None (pyttsx3 has no hook; coquitts returns None for a
+multilingual model other than xtts or a model whose language code has three
+letters, pipertts with no voice installed), accepts every code. List only
+codes a request can carry (`libs.languages.is_language_code`): a 3-letter
+code such as `yue` would refuse every request in strict mode, and a hook that
+raises is logged and treated as None.
+
+### 4. Optional discovery hooks
+
+An engine with more than one model describes them through these optional
+hooks; `GET /api/engines/<engine>` (`engines.get_engine_capabilities`) and the
+`model` request field are built on them.
+
+```python
+def list_models() -> list[dict]:
+    """Return the selectable models: [{"id": str, "languages": list[str] | None, "installed": bool}]."""
+
+def default_model(language: str | None = None) -> str | None:
+    """Return the model a request without `model` uses for `language` (None: depends on the language / no models)."""
+
+def list_model_ids() -> list[str]:
+    """Return the ids list_models() lists, without the work `installed` needs (optional)."""
+
+OUTPUT_FORMAT = "mp3"  # module constant; missing means "wav" (only gtts sets it)
+```
+
+- The same rule as `list_languages()`: file names, a small JSON config and
+  constants only. A hook never calls the engine's loader (`get_tts`,
+  `get_kokoro`, `get_voice`, `load_model`, `torch.hub.load`,
+  `pyttsx3.init`). For discovery (`GET /api/engines/<engine>`) a hook that
+  raises is logged as a warning and gives `[]` or None; for a request that
+  names a model, a `list_models()` that raises is a 500 (`TTSException`),
+  since the server, not the client, is at fault.
+- `id` is what a request sends as `model`. `libs.tools.validate_model` accepts
+  only an id `list_models()` returns, so an id never reaches the filesystem
+  unless the engine itself looks it up; list only models the engine can use
+  without downloading an arbitrary one. An id the request schema refuses
+  (`libs.model_ids.MODEL_ID_REGEX`: a space, a leading `_`) is dropped from
+  the listing with a line in the log.
+- `list_model_ids()` is for an engine whose `list_models()` does real work
+  for `installed` (silerotts walks the torch hub directory): the request
+  check then compares against the ids alone.
+- `generate()` reads `config.get("model")`; None means the behaviour the
+  engine had before models were selectable (environment or language).
+- An engine with both `list_models()` and `list_voices()` takes
+  `list_voices(language="en", model=None)`; `get_engine_voices` passes the
+  model only when one is asked for.
+- Without the hooks an engine reports `models: []`, `default_model: null` and
+  `languages: null`, and a request with `model` is a 400
+  (`Engine '<name>' has no selectable models`).
+
+| Engine | Model id | `list_models()` source |
+| --- | --- | --- |
+| coquitts | Coqui model name (`tts_models/de/thorsten/vits`) | `<COQUITTS_MODELS>/tts/tts_models--*` plus `COQUITTS_MODEL` |
+| kokorotts | model file name (`kokoro-v1.0.int8.onnx`) | `*.onnx` in `KOKOROTTS_MODELS` plus `KOKOROTTS_MODEL` |
+| pipertts | voice stem (`en_GB-alan-low`) | installed `*.onnx` voices in the search directories |
+| silerotts | Silero id (`v3_1_ru`) | `MODEL_CATALOG` (`installed` when `<id>.pt` is downloaded) |
+
+### 5. Config Parameters
 
 ```python
 config = {
-    'language': 'en',     # Language (required)
+    'language': 'en',     # Language (required): a 2-character code or a tag
+                          # such as 'zh-cn' or 'pt-br', lowercased with '-';
+                          # look a tag up by libs.languages.primary_language()
+                          # when the engine keys its tables by 2-letter codes
+    'model': None,        # A model id from list_models(), or None for the
+                          # engine default (always None for engines without
+                          # models)
     'rate': 150,          # Speech rate (optional)
     'volume': 0.9,        # Volume (optional)
     'slow': False,        # Slow speech (optional)
@@ -241,7 +319,7 @@ ttsgen "Hola" --engine custom --language es
 - **Description**: High-quality offline TTS
 - **Dependencies**: `ttsgen --install pipertts` (package + voice models)
 - **Format**: WAV (22050 Hz)
-- **Languages**: en, ru, es, de, fr, it, uk, zh are mapped to a voice; other codes fall back to the English voice
+- **Languages**: those of the installed voices; en, ru, es, de, fr, it, uk, zh keep their table voice when it is installed, and a code without an installed voice falls back to the English voice
 - **Quality**: 4/5
 - **Usage**: `--engine pipertts`
 - **Documentation**: See [docs/PIPERTTS.md](PIPERTTS.md)
@@ -299,7 +377,10 @@ python -c "from engines import get_available_engines; print('\n'.join(get_availa
 1. Create `engines/myengine.py` with `is_available()` and `generate()`; keep the
    optional imports inside `try/except ImportError` so the module loads with
    `AVAILABLE = False` when the dependency is missing. Add `list_voices(language)`
-   if the engine has selectable voices (`engines/__init__.py:get_engine_voices`).
+   if the engine has selectable voices (`engines/__init__.py:get_engine_voices`),
+   `list_languages()` if it serves a known set of languages, and `list_models()`
+   with `default_model()` if a request may pick one of several models (see
+   [Optional discovery hooks](#4-optional-discovery-hooks)).
 2. Do not add the engine's packages to `requirements.txt` or to a pip extra.
    Write `install/myengine.py` with an `install(non_interactive)` function that
    pip-installs the dependency (torch through `install_torch_choice()`), resolves

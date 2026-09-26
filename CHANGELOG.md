@@ -1,5 +1,141 @@
 ## Changelog
 
+### [Unreleased]
+
+#### Added
+- `model` on `/api/tts` (JSON, form or query) and `POST /api/history`: an
+  optional model id from `GET /api/engines/<engine>` (a Piper voice stem, a
+  Kokoro `.onnx` file name, a Silero id or a Coqui model name) that the file
+  is synthesized with. Null, `""` or no field keeps the engine default, so
+  existing clients see no change. An unknown model is a 400 (`Unknown model
+  '<id>' for engine '<engine>'. Available: ...`), as is a model for gtts,
+  pyttsx3 or barktts (`has no selectable models`), both before a pool slot
+  is taken; `model` with `stream=true` is a 400 as well, since streaming keeps
+  the engine default model. The history item records `model` (null without
+  one), the `Synthesis` log line names it when set, and with
+  `TTS_LANGUAGE_STRICT` the language is checked against the model's own
+  languages. `/v1/audio/speech` is unchanged: its `model` still names the
+  engine, which uses its default model.
+- `GET /api/engines/<engine>`: what one engine offers, read from file names
+  and constants without loading a model: `models` (`id`, `languages`,
+  `installed`, `default_for`), `default_model`, `model_selectable`,
+  `languages`, `default_language`, `language_strict`, `voice_selectable`,
+  `voices_endpoint`, `output_format`, `max_text_length` and `stream`, plus
+  `installed`, `preloaded` and `default` for this server. An unknown engine
+  (or `__init__`, the package file) is the usual `{"error": "Not Found",
+  "request_id"}` 404, and a shipped engine whose module fails to import is a
+  500 rather than a 404. `GET /api/engines` keeps its response as it was.
+- `GET /api/voices?model=`: lists the voices of that model (a 400 for a model
+  the engine does not list, and for an id that breaks the `/api/tts` id rule,
+  which is then neither echoed nor logged). With `model`, an `engine` that is
+  not an engine module name is a 400 `Engine not found` that does not repeat
+  the value; the response gains `model` (null without one).
+- Language tags: `language` takes a tag with a region or script subtag
+  (`zh-cn`, `pt_BR`, `en-gb`, `es-419`) as well as a 2-character code, in
+  `/api/tts`, `/api/history`, `/v1/audio/speech`, `ttsgen` and `libs.api`.
+  A tag is lowercased and written with `-`; 2-character codes are handled
+  exactly as before. gtts receives its own spelling (`zh-CN`, or the language
+  part when it has no such tag; `fr-ca` and `pt-pt`, which gTTS folds into
+  `fr` and `pt` with a warning, are sent as `fr` and `pt`), kokorotts reads
+  `en-gb` with the British phonemizer, xtts gets `zh-cn` for any Chinese tag,
+  and silerotts, pipertts, barktts, kokorotts and pyttsx3 look a tag up by its
+  language part (`pt-br` is `pt`) instead of falling back to English.
+  `/api/tts` takes a tag with and without `stream`. The server normalizes the
+  request's `language` (or `TTS_LANGUAGE` when there is none) before it logs,
+  checks or stores it, so a history item and a strict-mode 400 show the code
+  the audio is made with (`pt_BR` is stored as `pt-br`, `EN` as `en`).
+- `TTS_LANGUAGE_STRICT` (default `false`): when true, a language the engine
+  does not list is a 400 that names the engine and the languages it has,
+  checked before a pool slot is taken, on `/api/tts` without `stream`,
+  `/api/history` and `/v1/audio/speech` (OpenAI error shape there). Engines
+  list their languages through an optional `list_languages()` hook that reads
+  only constants or metadata: gtts, kokorotts, pipertts, silerotts, barktts,
+  and coquitts for its configured model (xtts, or a single-language model,
+  whose region tag such as `zh-CN` also lists `zh`). pyttsx3, a coquitts
+  multilingual model other than xtts and a coquitts model whose language code
+  has three letters (`tts_models/ewe/openbible/vits`) list none and accept
+  every code; gtts leaves out `yue`, which no request can carry. With
+  the default `false` nothing changes and an unknown language falls back as
+  before.
+- Engine model hooks: coquitts, kokorotts and silerotts describe the models
+  a request can pick through optional `list_models()` (`id`, `languages`,
+  `installed`), `default_model(language)` and `list_languages(model)` hooks
+  that read only file names, small JSON configs and constants, never a model.
+  `generate()` reads `config["model"]`, and `list_voices(language, model)`
+  lists the voices of that model; without a model every engine behaves as
+  before. coquitts lists the models in its cache plus `COQUITTS_MODEL` (never
+  one it would have to download on its own), kokorotts the `*.onnx` files in
+  its models directory, each paired with the `voices-<release>.bin` of its
+  release, silerotts its `MODEL_CATALOG`, and pipertts every installed voice
+  by its file stem (`en_GB-alan-low`). gtts sets `OUTPUT_FORMAT = "mp3"`.
+  coquitts leaves out cached models its `generate()` cannot drive: a
+  multilingual model other than xtts (your_tts) and a multi-speaker model
+  (vctk, told by its `config.json`); `COQUITTS_MODEL` is always listed. A
+  single-language coquitts model needs no voice sample: only xtts clones one,
+  so the others ignore `voice` and work with no `COQUITTS_SAMPLE` on disk.
+  kokorotts serves a `KOKOROTTS_MODEL` with a directory part when a client
+  names it back, and lists it as installed when that file exists. A model
+  whose id the request schema refuses (a file named `my model.onnx` or
+  `_x.onnx`) is left out of every listing, with a line in the log, so no
+  model is advertised that a request cannot name. An optional
+  `list_model_ids()` hook answers the ids alone for the request check;
+  silerotts uses it, so a request with `model` no longer walks the torch hub
+  directory.
+- `TTS_MODEL_CACHE_SIZE` (default `2`): the models coquitts and kokorotts
+  keep loaded at once. Since a request can name any installed model, loading
+  one more than that drops the model loaded earliest once the new one has
+  loaded, so a client cycling through the model ids cannot pin every
+  checkpoint (about 2 GB for xtts) in memory, and a model that fails to load
+  drops nothing. pipertts keeps at most 8 voices loaded (about 60 MB each for
+  a medium voice), what its 8-language table could load before. silerotts
+  models stay cached as before: they are limited to the catalogue.
+- `libs.api.text_to_speech_bytes(..., model=None)` takes a model id; it is
+  checked against the engine's `list_models()` (an unknown id, or a model
+  for an engine without models, is a `ValidationError` that lists the ids
+  the engine has, never a path), and None keeps the engine default. A
+  `list_models()` that fails on the server (an unreadable models directory)
+  is a `TTSException` (500), not the "no selectable models" 400.
+
+#### Changed
+- A 400 for a request that fails schema validation now carries `message`
+  (`field: reason; field2: reason`, at most 1000 characters) next to `error`
+  and `request_id`, on every `/api/` route with a schema: `/api/tts`,
+  `POST /api/history`, `GET /api/history`, `POST /api/voices`,
+  `DELETE /api/voices/<name>` and `GET /api/voices/<name>/audio`. The other
+  400s already had it, and the web UI shows it next to the control.
+- `pipertts` picks the voice for a language among the installed voices: a
+  tag with a region (`en-gb`) takes an installed voice of that region, then
+  the language's voice from the table in docs/PIPERTTS.md is used when it is
+  installed (the 8 languages there keep the voice they had), then any
+  installed voice of the language (`medium` first), so a Polish voice dropped
+  into `PIPERTTS_MODELS` now speaks `pl` instead of the English voice. A
+  language with no installed voice behaves as before: a language outside the
+  table uses the English voice, and a table language whose voice is missing
+  gets the download instructions for it. This
+  applies to streaming too. `list_languages()` lists the languages of the
+  installed voices instead of the fixed table, which is what
+  `TTS_LANGUAGE_STRICT` checks, and the download instructions name the right
+  file for every voice (Italian, Ukrainian and Chinese used to show the
+  English one). With no voice installed at all, `list_languages()` declares
+  nothing (`languages: null`), so `TTS_LANGUAGE_STRICT` lets the request
+  through to the error with the download instructions. A voice directory
+  that exists but cannot be read is logged and skipped instead of failing
+  every Piper request.
+- `validate_engine` (and so every request) reports `__init__`, the engines
+  package file, as an engine that does not exist (400) instead of one with
+  missing dependencies (503).
+
+#### Fixed
+- `silerotts` failed to load for `uk` in a fresh process: the Ukrainian alias
+  picked the `v3_ua` model but passed `en` as the torch.hub language, and
+  `snakers4/silero-models` has no `v3_ua` under `en`. The hub language now
+  comes from the model (`MODEL_CATALOG`), so `uk` and `ua` both load `v3_ua`
+  under `ua`; the other languages load as before.
+- `coquitts` with xtts_v2 failed with a server error for Chinese: the UI and
+  the API send `zh`, while xtts accepts only `zh-cn`. For xtts models the
+  request code `zh` is now sent as `zh-cn`; every other code is passed as
+  before.
+
 ### [1.0.7] - 2026-09-23
 
 #### Added

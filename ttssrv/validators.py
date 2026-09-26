@@ -2,10 +2,39 @@
 # -*- coding: utf-8 -*-
 """Marshmallow validation schemas for TTS API."""
 
-from marshmallow import EXCLUDE, Schema, fields, validate
+from marshmallow import EXCLUDE, Schema, ValidationError, fields, validate, validates_schema
 
 # Local imports
+from libs.languages import LANGUAGE_CODE_ERROR, is_language_code
+from libs.model_ids import MODEL_ID_REGEX
 from ttssrv.openai_compat import RESPONSE_FORMATS
+
+# Upper bound of the `message` built from schema errors, so a payload with many
+# bad fields cannot produce an unbounded error body.
+MAX_VALIDATION_MESSAGE_LENGTH = 1000
+
+
+def validate_language_field(value: str) -> None:
+    """Reject a language that is neither 2 characters nor a tag such as 'zh-cn', 'pt_BR' or 'es-419'."""
+    if not is_language_code(value):
+        raise ValidationError(LANGUAGE_CODE_ERROR)
+
+
+def flatten_validation_messages(messages: object) -> str:
+    """Join the messages under one field (a string, a list or a nested dict) into one line."""
+    if isinstance(messages, dict):
+        return "; ".join(f"{key}: {flatten_validation_messages(value)}" for key, value in messages.items())
+    if isinstance(messages, list | tuple):
+        return " ".join(flatten_validation_messages(item) for item in messages)
+    return str(messages)
+
+
+def format_validation_messages(messages: dict | list) -> str:
+    """Render Marshmallow's `messages` as "field: msg msg; field2: msg", cut to MAX_VALIDATION_MESSAGE_LENGTH."""
+    text = flatten_validation_messages(messages)
+    if len(text) > MAX_VALIDATION_MESSAGE_LENGTH:
+        return text[: MAX_VALIDATION_MESSAGE_LENGTH - 3] + "..."
+    return text
 
 
 class TtsRequestSchema(Schema):
@@ -15,7 +44,8 @@ class TtsRequestSchema(Schema):
     # here only guards against pathological inputs (memory / multi-hour stalls).
     text = fields.Str(required=True, validate=validate.Length(min=1, max=1_000_000))
     engine = fields.Str(load_default=None)
-    language = fields.Str(load_default=None, validate=validate.Length(equal=2))
+    # A 2-character code, or a tag such as 'zh-cn' / 'pt_BR'.
+    language = fields.Str(load_default=None, validate=validate_language_field)
     # Engine-specific voice/speaker id (e.g. Silero 'baya'). Validated against the
     # engine's available voices downstream; None keeps the engine default.
     # 128, not 64: a four-voice kokorotts mix such as
@@ -23,6 +53,15 @@ class TtsRequestSchema(Schema):
     voice = fields.Str(load_default=None, validate=validate.Length(max=128))
     # When true, stream audio chunk-by-chunk (chunked transfer) for low latency.
     stream = fields.Bool(load_default=False)
+    # A model id from GET /api/engines/<engine>; null or "" keeps the engine
+    # default. Checked against the engine's models before synthesis.
+    model = fields.Str(load_default=None, validate=validate.Regexp(MODEL_ID_REGEX))
+
+    @validates_schema
+    def reject_model_with_stream(self, data: dict, **kwargs) -> None:
+        """Refuse `model` with stream=true: streaming keeps the engine default model."""
+        if data.get("model") and data.get("stream"):
+            raise ValidationError("model is supported only for file generation (stream=false)", field_name="model")
 
 
 class HistoryCreateSchema(TtsRequestSchema):
@@ -39,6 +78,19 @@ class HistoryListSchema(Schema):
 
     limit = fields.Int(load_default=50, validate=validate.Range(min=1, max=200))
     offset = fields.Int(load_default=0, validate=validate.Range(min=0))
+
+
+class VoicesListSchema(Schema):
+    """Query string for GET /api/voices: only `model` is checked, `engine` and `language` are read as before."""
+
+    class Meta:
+        """Leave `engine`, `language` and any other argument to the route."""
+
+        unknown = EXCLUDE
+
+    # The same rule as on /api/tts, so an unknown id echoed in the 400 message
+    # and the log is short and has no control characters.
+    model = fields.Str(load_default=None, validate=validate.Regexp(MODEL_ID_REGEX))
 
 
 class VoiceUploadSchema(Schema):
@@ -68,4 +120,4 @@ class SpeechRequestSchema(Schema):
     voice = fields.Str(load_default=None, validate=validate.Length(max=128))
     response_format = fields.Str(load_default="mp3", validate=validate.OneOf(sorted(RESPONSE_FORMATS)))
     speed = fields.Float(load_default=1.0, validate=validate.Range(min=0.25, max=4.0))
-    language = fields.Str(load_default=None, validate=validate.Length(equal=2))
+    language = fields.Str(load_default=None, validate=validate_language_field)

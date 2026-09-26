@@ -9,6 +9,7 @@ manager (it's already in the dev venv).
 """
 
 import importlib
+import json
 import sys
 import types
 
@@ -186,6 +187,23 @@ def test_generate_raises_custom_error_when_sample_missing(engine, monkeypatch, t
     assert excinfo.value.status == 422
 
 
+def test_single_language_model_needs_no_voice_sample(engine, monkeypatch, tmp_path):
+    """A listed single-speaker model never clones, so a missing COQUITTS_SAMPLE or `voice` file does not stop it."""
+    monkeypatch.setenv("COQUITTS_SAMPLE", str(tmp_path / "no_such_sample.wav"))
+    audio = engine.generate("Hallo", {"language": "de", "model": "tts_models/de/thorsten/vits", "voice": "nobody"})
+    assert audio == b"RIFFFAKECOQUI"
+    assert FakeTTS.instances[-1].calls[-1]["speaker"] is None
+
+
+def test_named_xtts_model_still_needs_the_voice_sample(engine, monkeypatch, tmp_path):
+    """Naming xtts as `model` checks the sample as the default model does."""
+    monkeypatch.setenv("COQUITTS_MODEL", "tts_models/de/thorsten/vits")
+    monkeypatch.setenv("COQUITTS_SAMPLE", str(tmp_path / "no_such_sample.wav"))
+    with pytest.raises(CustomError) as excinfo:
+        engine.generate("hi", {"model": "tts_models/multilingual/multi-dataset/xtts_v2"})
+    assert excinfo.value.payload["error"] == "voice_sample_missing"
+
+
 # generate — happy path & language wiring
 
 
@@ -209,6 +227,196 @@ def test_generate_omits_lang_and_speaker_for_single_speaker_model(engine, monkey
     last = FakeTTS.instances[-1].calls[-1]
     assert last["language"] is None
     assert last["speaker"] is None
+
+
+@pytest.mark.parametrize(
+    "language,expected",
+    [
+        ("zh", "zh-cn"),  # xtts rejects a bare 'zh'
+        ("ZH", "zh-cn"),
+        ("zh-cn", "zh-cn"),
+        ("zh_CN", "zh-cn"),
+        ("zh-tw", "zh-cn"),  # xtts has one Chinese code
+        ("ru", "ru"),
+        ("en", "en"),
+        ("pt-br", "pt"),  # other tags reduce to the primary subtag
+    ],
+)
+def test_xtts_language_maps_request_codes(engine, language, expected):
+    """xtts_language keeps listed codes, turns Chinese into 'zh-cn' and strips other regions."""
+    assert engine.xtts_language(language) == expected
+
+
+def test_xtts_language_results_are_listed_for_known_codes(engine):
+    """Every code the UI and schema send for a supported xtts language maps into XTTS_LANGUAGES."""
+    for language in ("ar", "cs", "de", "en", "es", "fr", "hi", "hu", "it", "ja", "ko", "nl", "pl", "pt", "ru", "tr", "zh"):
+        assert engine.xtts_language(language) in engine.XTTS_LANGUAGES
+
+
+def test_generate_sends_zh_cn_to_xtts_for_chinese(engine, monkeypatch):
+    """A 'zh' request reaches xtts as 'zh-cn', the only Chinese code xtts accepts."""
+    monkeypatch.setenv("COQUITTS_MODEL", "tts_models/multilingual/multi-dataset/xtts_v2")
+    engine.generate("ni hao", {"language": "zh"})
+    assert FakeTTS.instances[-1].calls[-1]["language"] == "zh-cn"
+
+
+def test_generate_keeps_language_for_other_multilingual_models(engine, monkeypatch):
+    """The xtts mapping is not applied to non-xtts multilingual models, which use their own codes."""
+    monkeypatch.setenv("COQUITTS_MODEL", "tts_models/multilingual/multi-dataset/your_tts")
+    engine.generate("hi", {"language": "zh"})
+    assert FakeTTS.instances[-1].calls[-1]["language"] == "zh"
+
+
+@pytest.mark.parametrize(
+    "model,expected",
+    [
+        ("tts_models/multilingual/multi-dataset/xtts_v2", "xtts"),
+        ("tts_models/de/thorsten/vits", ["de"]),
+        ("tts_models/zh-CN/baker/tacotron2-DDC-GST", ["zh", "zh-cn"]),
+        ("tts_models/multilingual/multi-dataset/your_tts", None),
+        ("tts_models/ewe/openbible/vits", None),
+    ],
+)
+def test_list_languages_follows_the_configured_model(engine, monkeypatch, model, expected):
+    """xtts declares its codes plus 'zh', a single-language model its language (and a tag's language part), others nothing."""
+    monkeypatch.setenv("COQUITTS_MODEL", model)
+    languages = engine.list_languages()
+    if expected == "xtts":
+        assert languages == sorted([*engine.XTTS_LANGUAGES, "zh"])
+    else:
+        assert languages == expected
+
+
+def test_region_model_passes_the_strict_check_for_its_language_part(engine, monkeypatch):
+    """A single-language `zh-CN` model serves `zh` (what the web UI sends) and `zh-cn` in strict mode."""
+    from libs.languages import language_supported
+
+    monkeypatch.setenv("COQUITTS_MODEL", "tts_models/zh-CN/baker/tacotron2-DDC-GST")
+    languages = engine.list_languages()
+    assert language_supported("zh", languages)
+    assert language_supported("zh_CN", languages)
+    assert not language_supported("en", languages)
+
+
+def test_three_letter_model_language_passes_the_strict_check(engine, monkeypatch):
+    """A `tts_models/ewe/...` model declares nothing, since no request can carry `ewe`, so strict mode refuses nothing."""
+    from libs.tools import validate_engine_language
+
+    monkeypatch.setenv("COQUITTS_MODEL", "tts_models/ewe/openbible/vits")
+    validate_engine_language("coquitts", "en")
+
+
+def test_list_languages_does_not_load_a_model(engine, monkeypatch):
+    """Declaring languages reads COQUITTS_MODEL only; no TTS instance is built."""
+    monkeypatch.delenv("COQUITTS_MODEL", raising=False)
+    assert "zh-cn" in engine.list_languages()
+    assert FakeTTS.instances == []
+
+
+# Model selection hooks
+
+
+def test_list_languages_of_a_named_model(engine, monkeypatch):
+    """list_languages(model) describes that model, not COQUITTS_MODEL."""
+    monkeypatch.setenv("COQUITTS_MODEL", "tts_models/multilingual/multi-dataset/xtts_v2")
+    assert engine.list_languages("tts_models/de/thorsten/vits") == ["de"]
+
+
+def test_default_model_is_the_configured_model(engine, monkeypatch):
+    """default_model() is COQUITTS_MODEL for every language, and the xtts default without it."""
+    monkeypatch.delenv("COQUITTS_MODEL", raising=False)
+    assert engine.default_model() == engine.DEFAULT_COQUITTS_MODEL
+    monkeypatch.setenv("COQUITTS_MODEL", "tts_models/de/thorsten/vits")
+    assert engine.default_model("ru") == "tts_models/de/thorsten/vits"
+
+
+def test_list_models_reads_the_cache_directory(engine, monkeypatch, tmp_path):
+    """Models on disk are listed by their COQUITTS_MODEL spelling; the default is listed even before its download."""
+    cache = tmp_path / "cache" / "coquitts" / "tts"
+    (cache / "tts_models--de--thorsten--vits").mkdir(parents=True)
+    (cache / "vocoder_models--en--ljspeech--hifigan_v2").mkdir()
+    (cache / "tts_models--stray-file").write_text("x")
+    monkeypatch.delenv("COQUITTS_MODEL", raising=False)
+    models = {model["id"]: model for model in engine.list_models()}
+    assert set(models) == {"tts_models/de/thorsten/vits", engine.DEFAULT_COQUITTS_MODEL}
+    assert models["tts_models/de/thorsten/vits"] == {
+        "id": "tts_models/de/thorsten/vits",
+        "languages": ["de"],
+        "installed": True,
+    }
+    assert models[engine.DEFAULT_COQUITTS_MODEL]["installed"] is False
+    assert "zh-cn" in models[engine.DEFAULT_COQUITTS_MODEL]["languages"]
+    assert FakeTTS.instances == []
+
+
+def test_list_models_leaves_out_models_generate_cannot_drive(engine, monkeypatch, tmp_path):
+    """A multilingual model other than xtts and a multi-speaker model are not listed; COQUITTS_MODEL always is."""
+    cache = tmp_path / "cache" / "coquitts" / "tts"
+    (cache / "tts_models--multilingual--multi-dataset--your_tts").mkdir(parents=True)
+    vctk = cache / "tts_models--en--vctk--vits"
+    vctk.mkdir()
+    (vctk / "config.json").write_text(json.dumps({"model_args": {"num_speakers": 109, "use_speaker_embedding": True}}))
+    thorsten = cache / "tts_models--de--thorsten--vits"
+    thorsten.mkdir()
+    (thorsten / "config.json").write_text(json.dumps({"model_args": {"num_speakers": 0}}))
+    monkeypatch.delenv("COQUITTS_MODEL", raising=False)
+    assert [model["id"] for model in engine.list_models()] == [
+        "tts_models/de/thorsten/vits",
+        engine.DEFAULT_COQUITTS_MODEL,
+    ]
+    monkeypatch.setenv("COQUITTS_MODEL", "tts_models/en/vctk/vits")
+    assert "tts_models/en/vctk/vits" in [model["id"] for model in engine.list_models()]
+
+
+def test_get_tts_keeps_at_most_the_cache_size_models(engine, monkeypatch):
+    """With TTS_MODEL_CACHE_SIZE=1 loading another model drops the loaded one once the new one has loaded."""
+    monkeypatch.setenv("TTS_MODEL_CACHE_SIZE", "1")
+    engine.get_tts("tts_models/multilingual/multi-dataset/xtts_v2", "cpu")
+    engine.get_tts("tts_models/de/thorsten/vits", "cpu")
+    assert list(engine.TTS_CACHE) == [("tts_models/de/thorsten/vits", "cpu")]
+
+
+def test_list_models_declares_no_language_for_a_three_letter_model(engine, monkeypatch, tmp_path):
+    """A cached `ewe` model is listed with languages None, so a request naming it passes the strict check."""
+    from libs.tools import validate_engine_language
+
+    cache = tmp_path / "cache" / "coquitts" / "tts"
+    (cache / "tts_models--ewe--openbible--vits").mkdir(parents=True)
+    monkeypatch.delenv("COQUITTS_MODEL", raising=False)
+    models = {model["id"]: model for model in engine.list_models()}
+    assert models["tts_models/ewe/openbible/vits"]["languages"] is None
+    validate_engine_language("coquitts", "en", "tts_models/ewe/openbible/vits")
+
+
+def test_list_models_marks_an_installed_default(engine, monkeypatch, tmp_path):
+    """A default model already in the cache is listed once, as installed."""
+    cache = tmp_path / "cache" / "coquitts" / "tts"
+    (cache / "tts_models--multilingual--multi-dataset--xtts_v2").mkdir(parents=True)
+    monkeypatch.delenv("COQUITTS_MODEL", raising=False)
+    assert engine.list_models() == [
+        {"id": engine.DEFAULT_COQUITTS_MODEL, "languages": engine.list_languages(), "installed": True}
+    ]
+
+
+def test_generate_uses_the_model_from_config(engine, monkeypatch):
+    """config['model'] picks the checkpoint get_tts loads instead of COQUITTS_MODEL."""
+    monkeypatch.setenv("COQUITTS_MODEL", "tts_models/multilingual/multi-dataset/xtts_v2")
+    engine.generate("hi", {"language": "de", "model": "tts_models/de/thorsten/vits"})
+    assert FakeTTS.instances[-1].model_name == "tts_models/de/thorsten/vits"
+    # A single-language model gets neither language nor speaker_wav.
+    assert FakeTTS.instances[-1].calls[-1]["language"] is None
+
+
+def test_generate_maps_zh_for_an_xtts_model_named_in_config(engine, monkeypatch):
+    """The xtts language mapping follows the requested model, not COQUITTS_MODEL."""
+    monkeypatch.setenv("COQUITTS_MODEL", "tts_models/de/thorsten/vits")
+    engine.generate("ni hao", {"language": "zh", "model": "tts_models/multilingual/multi-dataset/xtts_v2"})
+    assert FakeTTS.instances[-1].calls[-1]["language"] == "zh-cn"
+
+
+def test_list_voices_ignores_the_model(engine):
+    """Every Coqui model clones from the same samples, so `model` does not change the listing."""
+    assert engine.list_voices("en", "tts_models/de/thorsten/vits") == engine.list_voices("en")
 
 
 def test_generate_caches_TTS_instance_between_calls(engine, monkeypatch):

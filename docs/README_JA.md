@@ -122,6 +122,17 @@ curl -X POST localhost:5000/api/tts \
 モデル、音声、履歴:
 
 ```bash
+# 1つのエンジンが提供するもの：モデル、言語、音声（モデルは読み込まない）
+curl localhost:5000/api/engines/pipertts \
+  -H "Authorization: Bearer $TTS_TOKEN"
+
+# そこに列挙されたモデルの一つで合成する
+curl -X POST localhost:5000/api/tts \
+  -H "Authorization: Bearer $TTS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Hello world","engine":"pipertts","language":"en-gb","model":"en_GB-alan-low"}' \
+  -o out.wav
+
 # インストール済みと未インストールのモデル。`ttsgen --list` が表示するのと同じ表
 curl localhost:5000/api/models \
   -H "Authorization: Bearer $TTS_TOKEN"
@@ -174,26 +185,27 @@ audio = client.audio.speech.create(model="coquitts", voice="maria", input="Hola 
 audio.write_to_file("hola.mp3")
 ```
 
-- `model` はエンジン名、またはデフォルトエンジンを指す `tts-1` / `tts-1-hd` / `gpt-4o-mini-tts` です。
+- `model` はエンジン名、またはデフォルトエンジンを指す `tts-1` / `tts-1-hd` / `gpt-4o-mini-tts` です。`/v1` ではエンジン内のモデルを選べず、エンジンはデフォルトモデルを使います。
 - `voice` はエンジンの音声です。OpenAIの音声名（`alloy`、`nova` など）はエンジンのデフォルト音声を選びます。
 - `response_format`: `mp3`（デフォルト）、`wav`、`pcm`、`opus`、`flac`、`aac`。エンジンはWAVまたはMP3を生成し、それ以外の形式は `ffmpeg` でトランスコードされます（Dockerイメージに同梱）。`speed`（0.25から4.0）も同じ方法で適用されます。
-- `language` は拡張パラメータです。2文字の言語コードで、デフォルトは `TTS_LANGUAGE` です。
+- `language` は拡張パラメータです。2文字の言語コード、または `zh-cn` のようなタグで、デフォルトは `TTS_LANGUAGE` です。
 - `GET /v1/models` はインストール済みのエンジンと `tts-1` を一覧し、`GET /v1/audio/voices?model=<engine>` は1つのエンジンの音声を一覧します。
 
 #### APIリファレンス
 
-`TTS_TOKENS` が設定されている場合、`/api/health` を除くすべてのルートで `Authorization: Bearer <token>` が必要です。`/api/` 配下のエラーは `{"error": "...", "request_id": "..."}` の形式で、`/v1/` 配下のエラーはOpenAIの形式です。
+`TTS_TOKENS` が設定されている場合、`/api/health` を除くすべてのルートで `Authorization: Bearer <token>` が必要です。`/api/` 配下のエラーは `{"error": "...", "request_id": "..."}` の形式で、400 にはさらに理由を示す `message` が付きます。リクエストが検証に通らなかった場合は、問題のあるフィールドが示されます（`language: ...`）。`/v1/` 配下のエラーはOpenAIの形式です。
 
 | メソッド | パス | 用途 |
 | --- | --- | --- |
 | GET | `/api/health` | 死活状態、`auth` フラグ、エンジン、プールとキューのサイズ。トークン不要。 |
 | GET | `/api/engines` | 対応エンジン、インストール済みのエンジン、デフォルトのエンジン。 |
+| GET | `/api/engines/<engine>` | 1つのエンジンのモデル、言語、音声一覧、出力形式。モデルは読み込まない。 |
 | GET | `/api/models` | エンジンごとのインストール済みと未インストールのモデル。`ttsgen --list` が表示する表。 |
-| GET | `/api/voices?engine=&language=` | エンジンの音声。`coquitts` ではサイズ、サンプルレート、長さ付きのサンプル。 |
+| GET | `/api/voices?engine=&language=&model=` | エンジンの音声。`coquitts` ではサイズ、サンプルレート、長さ付きのサンプル。`model` を指定すると、そのモデルの音声。 |
 | POST | `/api/voices` | WAVサンプルをアップロードする（`file`、`name`、`engine=coquitts`）。 |
 | GET | `/api/voices/<name>/audio?engine=&download=1` | サンプルを再生またはダウンロードする。 |
 | DELETE | `/api/voices/<name>?engine=` | サンプルを削除する。 |
-| POST, GET | `/api/tts` | `engine`、`language`、`voice` で `text` を合成する。`stream=true` なら準備でき次第チャンクをストリーミングする。 |
+| POST, GET | `/api/tts` | `engine`、`language`、`voice`、`model` で `text` を合成する。`stream=true` なら準備でき次第チャンクをストリーミングする。 |
 | POST | `/api/history` | レスポンス本文ではなく、サーバー側の履歴に合成する。 |
 | GET | `/api/history?limit=&offset=` | 履歴の一覧。新しいものが先頭。 |
 | GET | `/api/history/<id>` | 1件のメタデータ。 |
@@ -202,6 +214,10 @@ audio.write_to_file("hola.mp3")
 | POST | `/v1/audio/speech` | OpenAI互換の合成。上記を参照。 |
 | GET | `/v1/models` | OpenAI互換のモデル一覧。 |
 | GET | `/v1/audio/voices?model=` | 1つのエンジンの音声。 |
+
+`language` は2文字のコード（`en`、`ru`）、または地域や文字体系を含むタグ（`zh-cn`、`pt_BR`、`en-gb`、`es-419`）です。タグは小文字にされ、`-` でつながれます。各エンジンはタグを自分の持つ言語に対応づけます。gtts は独自の表記（`zh-CN`。カナダのフランス語とヨーロッパのポルトガル語はないため、`fr-ca` と `pt-pt` は `fr` と `pt` になります）を受け取り、kokorotts は `en-gb` を英国式の音素変換器で読み上げ、xtts は中国語に `zh-cn` を受け取り、その他のエンジンは言語部分を使います（`pt-br` は `pt`）。エンジンが知らない言語は、そのエンジンのデフォルト言語（通常は英語）で読み上げられます（gtts は失敗します）。`TTS_LANGUAGE_STRICT=true` にすると、そのようなリクエストはエンジンの対応言語を列挙した 400 になります。厳格チェックの対象は `stream` なしの `/api/tts`、`/api/history`、`/v1/audio/speech` で、言語を列挙するすべてのエンジン、つまり pyttsx3 と、音声が1つもインストールされていない pipertts と、xtts 以外の多言語モデルまたは3文字の言語コード（`ewe`）のモデルを使う coquitts を除くすべてのエンジンです。
+
+`model` は `/api/tts` と `/api/history` でエンジン内のモデルを選びます。Piper の音声（`en_GB-alan-low`）、Kokoro のモデルファイル（`kokoro-v1.0.int8.onnx`）、Silero のモデル（`v3_1_ru`）、Coqui のモデル名（`tts_models/de/thorsten/vits`）のいずれかです。`GET /api/engines/<engine>` はそれらを `models` に列挙し、各モデルに `languages`、`installed`、`default_for`（リクエストがモデルを指定しないときにそのモデルを使う言語）を付けます。あわせてエンジンの `languages`、`output_format`、`max_text_length`、音声一覧の有無も返します。モデルは読み込まず、未知のエンジンは 404 になります。`model` がなければエンジンは従来どおりに選びます。エンジンが列挙していない id は利用可能な id を示す 400 になり、`stream=true` と `model` の組み合わせも 400 になります。ストリームは常にエンジンのデフォルトモデルを使うためです。gtts、pyttsx3、barktts にはモデルがありません。モデルの指定がない場合、pipertts はインストール済みの音声から選びます。地域付きのタグ（`en-gb`）はその地域の音声を使い、組み込みの表にない言語は英語の音声ではなくその言語のインストール済み音声を使います。pipertts の言語一覧はインストール済み音声の言語です。
 
 #### Web UI
 
@@ -231,6 +247,8 @@ xdg-open https://localhost:8443     # TTS_WWW_TLS_PORT。自己署名証明書�
 | `TTS_ENGINES` | 空 | 起動時にインストールしてウォームアップするエンジン。カンマ区切り（`coquitts,silerotts`）。 |
 | `TTS_ENGINE` | `gtts` | リクエストでエンジンが指定されなかったときに使うエンジン。 |
 | `TTS_LANGUAGE` | `en` | リクエストで言語が指定されなかったときに使う言語。 |
+| `TTS_LANGUAGE_STRICT` | `false` | `true` にすると、エンジンが列挙していない言語に対して、デフォルト言語へのフォールバックではなく 400 を返す。 |
+| `TTS_MODEL_CACHE_SIZE` | `2` | coquitts と kokorotts が同時に読み込んでおくモデルの数。さらに別のモデルを求めるリクエストは、最初に読み込んだモデルを解放する。 |
 | `TTS_POOL_SIZE` | `1` | 全エンジン合計で同時に許可する合成呼び出しの数。`0` で上限とウォームアップを無効にする。 |
 | `TTS_QUEUE_SIZE` | `8` | 空きスロットを待てる合成リクエストの数。それを超えると即座に503になる。 |
 | `TTS_HISTORY_MAX` | `200` | 履歴に保持する件数。新しい項目が保存されると最も古いものが削除される。 |

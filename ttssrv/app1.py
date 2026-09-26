@@ -40,7 +40,13 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from engines import get_available_engines, get_engine_voices, get_supported_engines  # noqa: E402
+from engines import (  # noqa: E402
+    get_available_engines,
+    get_engine_capabilities,
+    get_engine_voices,
+    get_supported_engines,
+    is_engine_available,
+)
 from libs.api import text_to_speech_bytes  # noqa: E402
 from libs.audio import audio_format, audio_mime  # noqa: E402
 from libs.cli import chunk_text  # noqa: E402
@@ -51,6 +57,7 @@ from libs.exceptions import (  # noqa: E402
     TTSException,
     ValidationError,
 )
+from libs.languages import normalize_language  # noqa: E402
 from libs.logjson import JsonFormatter  # noqa: E402
 from libs.models import collect_engine_rows  # noqa: E402
 from libs.sample_resolver import (  # noqa: E402
@@ -59,6 +66,7 @@ from libs.sample_resolver import (  # noqa: E402
     list_sample_files,
     sample_path_for_voice,
 )
+from libs.tools import validate_engine_language, validate_model  # noqa: E402
 from ttssrv import history, metrics  # noqa: E402
 from ttssrv.openai_compat import (  # noqa: E402
     OpenAIRequestError,
@@ -74,7 +82,9 @@ from ttssrv.validators import (  # noqa: E402
     HistoryListSchema,
     SpeechRequestSchema,
     TtsRequestSchema,
+    VoicesListSchema,
     VoiceUploadSchema,
+    format_validation_messages,
 )
 
 # Shell env > ./ttsgen.conf > ~/.config/ttsgen.conf > ./.env.local > ./.env, cwd only.
@@ -117,6 +127,10 @@ TTS_ENGINE_DEFAULT = os.getenv("TTS_ENGINE") or (TTS_ENGINES[0] if TTS_ENGINES e
 if not TTS_ENGINES:
     TTS_ENGINES = [TTS_ENGINE_DEFAULT]
 TTS_LANGUAGE_DEFAULT = os.getenv("TTS_LANGUAGE", "en")
+# true: a language the engine declares it does not serve is a 400 on file
+# generation (/api/tts without stream, /api/history, /v1/audio/speech);
+# false keeps the engine's own fallback (English for most engines).
+TTS_LANGUAGE_STRICT = os.getenv("TTS_LANGUAGE_STRICT", "False").lower() in TRUE_VALUES
 TTS_STREAM_MAX_CHARS = int(os.getenv("TTS_STREAM_MAX_CHARS", "200"))
 TIMEZONE = pytz.timezone(os.getenv("TZ", "America/New_York"))
 DATETIME_FMT = "%Y-%m-%d %H:%M:%S"
@@ -271,7 +285,36 @@ def release_slot(slot: int | None) -> None:
         ENGINE_POOL.put(slot)
 
 
-def synthesize(text: str, engine: str, language: str, voice: str | None = None, label: str = "") -> bytes:
+def resolve_request_language(requested: str | None) -> str:
+    """Return the request's language, or TTS_LANGUAGE when it names none, normalized.
+
+    A tag is lowercased and written with '-' ('pt_BR' -> 'pt-br'); a 2-character
+    code is only lowercased, as libs.api does before the engine call. The logs,
+    the strict-mode message and the history item then show the code the audio
+    was made with.
+    """
+    return normalize_language(requested or TTS_LANGUAGE_DEFAULT)
+
+
+def validate_selection(engine: str, language: str, model: str | None = None) -> None:
+    """Reject an unknown model, and with TTS_LANGUAGE_STRICT an unsupported language, before a pool slot is taken.
+
+    Called only on file generation; streaming keeps the engine default model
+    and the engine fallback. An engine that does not declare its languages
+    accepts every code. With a model, its own languages are checked.
+
+    Raises:
+        ValidationError: The engine does not list `model`, or TTS_LANGUAGE_STRICT
+            is on and the engine (or the model) does not list the language.
+    """
+    validate_model(engine, model)
+    if TTS_LANGUAGE_STRICT:
+        validate_engine_language(engine, language, model)
+
+
+def synthesize(
+    text: str, engine: str, language: str, voice: str | None = None, label: str = "", model: str | None = None
+) -> bytes:
     """Run text_to_speech_bytes and log one Synthesis line with the engine time.
 
     The request line in after_request carries the whole request time, which
@@ -282,9 +325,12 @@ def synthesize(text: str, engine: str, language: str, voice: str | None = None, 
     Args:
         text: Text to synthesize.
         engine: Engine name to synthesize with.
-        language: Two-letter language code passed to the engine.
+        language: Language code passed to the engine: two letters or a tag
+            such as 'zh-cn'.
         voice: Engine-specific voice id, or None for the engine default.
         label: Optional qualifier after "Synthesis", such as "chunk 2/5".
+        model: A model id from the engine's list_models(), or None for the
+            engine default. It reaches text_to_speech_bytes only when set.
 
     Returns:
         The audio bytes produced by the engine.
@@ -300,7 +346,10 @@ def synthesize(text: str, engine: str, language: str, voice: str | None = None, 
     # /metrics without bound.
     reached_engine = True
     try:
-        audio = text_to_speech_bytes(text=text, engine=engine, language=language, voice=voice)
+        if model:
+            audio = text_to_speech_bytes(text=text, engine=engine, language=language, voice=voice, model=model)
+        else:
+            audio = text_to_speech_bytes(text=text, engine=engine, language=language, voice=voice)
         audio_size = len(audio)
         size_part = f"bytes={audio_size} "
         status = "ok"
@@ -313,15 +362,17 @@ def synthesize(text: str, engine: str, language: str, voice: str | None = None, 
     finally:
         elapsed_ms = int((time.monotonic() - start_time) * 1000)
         name = f"Synthesis {label}" if label else "Synthesis"
+        model_part = f"model={model} " if model else ""
         logger.info(
             f"[{get_req_id()}] {name}: engine={engine} language={language} "
-            f"voice={voice} chars={len(text)} {size_part}ms={elapsed_ms} {status}",
+            f"voice={voice} {model_part}chars={len(text)} {size_part}ms={elapsed_ms} {status}",
             extra={
                 "request_id": get_req_id(),
                 "event": "synthesis",
                 "engine": engine,
                 "language": language,
                 "voice": voice,
+                "model": model,
                 "chars": len(text),
                 "bytes": audio_size,
                 "ms": elapsed_ms,
@@ -449,6 +500,28 @@ def engines_list():
     )
 
 
+@app.route("/api/engines/<engine>", methods=["GET"])
+@token_required
+def engine_details(engine: str):
+    """Describe one engine: models, languages, voices and output without loading any model."""
+    caps = get_engine_capabilities(engine)
+    if caps is None:
+        abort(404)
+    body = {
+        "engine": engine,
+        "installed": is_engine_available(engine),
+        "preloaded": engine in TTS_ENGINES,
+        "default": engine == TTS_ENGINE_DEFAULT,
+        **caps,
+        "default_language": TTS_LANGUAGE_DEFAULT,
+        "language_strict": TTS_LANGUAGE_STRICT,
+        "voices_endpoint": f"/api/voices?engine={engine}" if caps["voice_selectable"] else None,
+        # Streaming is server-side: the text is synthesized chunk by chunk with the engine default model.
+        "stream": "chunked",
+    }
+    return jsonify(body), 200
+
+
 @app.route("/api/models", methods=["GET"])
 @token_required
 def models_list():
@@ -460,10 +533,15 @@ def models_list():
 @app.route("/api/voices", methods=["GET"])
 @token_required
 def voices_list():
-    """List selectable voices for an engine + language (e.g. Silero ru speakers)."""
+    """List selectable voices for an engine + language (e.g. Silero ru speakers), optionally of one ?model=."""
     engine = request.args.get("engine") or TTS_ENGINE_DEFAULT
     language = request.args.get("language") or TTS_LANGUAGE_DEFAULT
-    info = get_engine_voices(engine, language)
+    model = VoicesListSchema().load(request.args.to_dict()).get("model") or None
+    if model:
+        validate_model(engine, model)
+        info = get_engine_voices(engine, language, model)
+    else:
+        info = get_engine_voices(engine, language)
     # Only the sample-cloning engine has files behind its voices; the web UI
     # shows their size, rate and length in the samples table.
     samples = describe_sample_files() if engine == "coquitts" else []
@@ -472,6 +550,7 @@ def voices_list():
             {
                 "engine": engine,
                 "language": language,
+                "model": model,
                 "voices": info.get("voices", []),
                 "default": info.get("default"),
                 # Whether the engine blends voices ("af_bella(2)+af_sky(1)"); the
@@ -588,7 +667,8 @@ def stream_tts(text: str, engine: str, language: str, voice: str | None = None):
     Args:
         text: Full utterance; split into chunks of TTS_STREAM_MAX_CHARS.
         engine: Engine name to synthesize with.
-        language: Two-letter language code passed to the engine.
+        language: Language code passed to the engine: two letters or a tag
+            such as 'zh-cn'.
         voice: Engine-specific voice id, or None for the engine default.
 
     Returns:
@@ -637,20 +717,23 @@ def tts_generate():
     data = parse_tts_payload()
     text = data["text"]
     engine = data.get("engine") or TTS_ENGINE_DEFAULT
-    language = data.get("language") or TTS_LANGUAGE_DEFAULT
+    language = resolve_request_language(data.get("language"))
     voice = data.get("voice")
+    model = data.get("model") or None
+    model_part = f"model={model} " if model else ""
 
     logger.info(
         f"[{get_req_id()}] TTS request: engine={engine} language={language} "
-        f"voice={voice} chars={len(text)} stream={data['stream']}"
+        f"voice={voice} {model_part}chars={len(text)} stream={data['stream']}"
     )
 
     if data["stream"]:
         return stream_tts(text, engine, language, voice)
 
+    validate_selection(engine, language, model)
     slot = acquire_slot()
     try:
-        audio_bytes = synthesize(text=text, engine=engine, language=language, voice=voice)
+        audio_bytes = synthesize(text=text, engine=engine, language=language, voice=voice, model=model)
     finally:
         release_slot(slot)
 
@@ -671,19 +754,24 @@ def history_create():
     data = HistoryCreateSchema().load(request.get_json(silent=True) or {})
     text = data["text"]
     engine = data.get("engine") or TTS_ENGINE_DEFAULT
-    language = data.get("language") or TTS_LANGUAGE_DEFAULT
+    language = resolve_request_language(data.get("language"))
     voice = data.get("voice")
-    logger.info(f"[{get_req_id()}] History request: engine={engine} language={language} voice={voice} chars={len(text)}")
+    model = data.get("model") or None
+    model_part = f"model={model} " if model else ""
+    logger.info(
+        f"[{get_req_id()}] History request: engine={engine} language={language} voice={voice} {model_part}chars={len(text)}"
+    )
 
+    validate_selection(engine, language, model)
     slot = acquire_slot()
     start_time = time.monotonic()
     try:
-        audio_bytes = synthesize(text=text, engine=engine, language=language, voice=voice)
+        audio_bytes = synthesize(text=text, engine=engine, language=language, voice=voice, model=model)
     finally:
         release_slot(slot)
     elapsed = time.monotonic() - start_time
 
-    meta = {"engine": engine, "language": language, "voice": voice, "text": text, "elapsed": elapsed}
+    meta = {"engine": engine, "language": language, "voice": voice, "model": model, "text": text, "elapsed": elapsed}
     item = history.save_item(TTS_HISTORY_DIR, audio_bytes, meta, datetime.now(TIMEZONE), TTS_HISTORY_MAX)
     return jsonify(item), 201
 
@@ -770,7 +858,7 @@ def openai_speech():
         raise OpenAIRequestError(f"Model '{data['model']}' is not an installed engine", param="model")
     text = data["input"]
     voice = map_voice_name(data["voice"])
-    language = data["language"] or TTS_LANGUAGE_DEFAULT
+    language = resolve_request_language(data["language"])
     response_format = data["response_format"]
     speed = data["speed"]
     logger.info(
@@ -778,6 +866,7 @@ def openai_speech():
         f"voice={voice} chars={len(text)} format={response_format} speed={speed}"
     )
 
+    validate_selection(engine, language)
     slot = acquire_slot()
     try:
         audio_bytes = synthesize(text=text, engine=engine, language=language, voice=voice)
@@ -817,9 +906,10 @@ def handle_pool_busy(error):
 
 @app.errorhandler(MarshmallowValidationError)
 def handle_marshmallow_validation_error(error):
-    """Answer 400 when the request payload fails schema validation."""
+    """Answer 400 when the request payload fails schema validation, with the field messages as `message`."""
     logger.warning(f"[{get_req_id()}] Validation error: {error.messages}")
-    return jsonify({"error": "Bad Request", "request_id": get_req_id()}), 400
+    body = {"error": "Bad Request", "message": format_validation_messages(error.messages), "request_id": get_req_id()}
+    return jsonify(body), 400
 
 
 @app.errorhandler(ValidationError)

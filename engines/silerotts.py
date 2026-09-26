@@ -17,6 +17,7 @@ import numpy as np
 # Local imports
 from libs.cached_loader import load_cached
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
+from libs.languages import primary_language
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,28 @@ TTS_CACHE: dict = {}
 # this lock bounds this engine to one synthesis at a time.
 TTS_CACHE_LOCK = threading.Lock()
 INFERENCE_LOCK = threading.Lock()
+
+# Silero model id -> (language key in snakers4/silero-models, default speaker,
+# sample rate). The language key is what torch.hub.load expects as `language`.
+MODEL_CATALOG: dict[str, tuple[str, str, int]] = {
+    "v3_1_ru": ("ru", "aidar", 48000),  # Russian (excellent quality)
+    "v3_en": ("en", "en_0", 48000),  # English
+    "v3_de": ("de", "bernd_ungerer", 48000),  # German
+    "v3_es": ("es", "es_0", 48000),  # Spanish
+    "v3_fr": ("fr", "fr_0", 48000),  # French
+    "v3_ua": ("ua", "mykyta", 48000),  # Ukrainian
+}
+
+# Request language -> model id. `uk` (ISO 639-1) is an alias for Silero's `ua`.
+LANGUAGE_DEFAULT_MODELS: dict[str, str] = {
+    "ru": "v3_1_ru",
+    "en": "v3_en",
+    "de": "v3_de",
+    "es": "v3_es",
+    "fr": "v3_fr",
+    "ua": "v3_ua",
+    "uk": "v3_ua",
+}
 
 # Try to import Silero dependencies
 try:
@@ -58,23 +81,82 @@ def get_model_info(language: str = "en") -> tuple:
     Get model information for language.
 
     Args:
-        language: Language code
+        language: Language code; a tag such as 'ru-ru' is looked up by its
+            primary subtag.
 
     Returns:
         Tuple of (model_id, speaker, sample_rate)
     """
-    language_models = {
-        "ru": ("v3_1_ru", "aidar", 48000),  # Russian (excellent quality)
-        "en": ("v3_en", "en_0", 48000),  # English
-        "de": ("v3_de", "bernd_ungerer", 48000),  # German
-        "es": ("v3_es", "es_0", 48000),  # Spanish
-        "fr": ("v3_fr", "fr_0", 48000),  # French
-        "ua": ("v3_ua", "mykyta", 48000),  # Ukrainian
-        "uk": ("v3_ua", "mykyta", 48000),  # Ukrainian (alias)
-    }
-
     # Default to English if language not found
-    return language_models.get(language, language_models["en"])
+    model_id = LANGUAGE_DEFAULT_MODELS.get(primary_language(language), LANGUAGE_DEFAULT_MODELS["en"])
+    unused_hub_language, speaker, sample_rate = MODEL_CATALOG[model_id]
+    return model_id, speaker, sample_rate
+
+
+def model_languages(model_id: str) -> list[str]:
+    """Return the request languages served by a catalogued model: its hub language plus any alias ('ua' and 'uk')."""
+    return sorted(language for language, default_id in LANGUAGE_DEFAULT_MODELS.items() if default_id == model_id)
+
+
+def list_languages(model: str | None = None) -> list[str] | None:
+    """Return the request languages that have a Silero model; any other code falls back to English.
+
+    With `model`, the languages of that model, or None when it is not in MODEL_CATALOG.
+    """
+    if model is None:
+        return sorted(LANGUAGE_DEFAULT_MODELS)
+    if model not in MODEL_CATALOG:
+        return None
+    return model_languages(model)
+
+
+def default_model(language: str | None = None) -> str | None:
+    """Return the model a request without `model` uses for `language`.
+
+    None when no language is given, since the model depends on it; an unknown
+    language gets the English model, as get_model_info() does.
+    """
+    if language is None:
+        return None
+    return LANGUAGE_DEFAULT_MODELS.get(primary_language(language), LANGUAGE_DEFAULT_MODELS["en"])
+
+
+def list_model_ids() -> list[str]:
+    """Return the ids a request may name, the MODEL_CATALOG keys, without the walk list_models() makes for `installed`."""
+    return list(MODEL_CATALOG)
+
+
+def list_downloaded_files() -> set[str]:
+    """Return the names of the `*.pt` files under the models directory (one walk, no torch)."""
+    names: set[str] = set()
+    for unused_root, unused_dirs, files in os.walk(get_models_directory()):
+        names.update(name for name in files if name.endswith(".pt"))
+    return names
+
+
+def list_models() -> list[dict]:
+    """Describe the catalogued Silero models; `installed` is True when `<id>.pt` is already downloaded.
+
+    Only a directory walk: torch.hub is not called and no model is loaded, so
+    a model that is not installed yet is downloaded on its first request, as
+    the language defaults are today.
+    """
+    downloaded = list_downloaded_files()
+    return [
+        {"id": model_id, "languages": model_languages(model_id), "installed": f"{model_id}.pt" in downloaded}
+        for model_id in MODEL_CATALOG
+    ]
+
+
+def get_hub_language(model_id: str) -> str:
+    """Return the snakers4/silero-models language key that holds `model_id`.
+
+    torch.hub.load looks the speaker up under this key, so it has to match the
+    model rather than the request language: the `uk` alias loads `v3_ua`,
+    which lives under `ua`.
+    """
+    hub_language, unused_speaker, unused_rate = MODEL_CATALOG[model_id]
+    return hub_language
 
 
 def get_models_directory() -> str:
@@ -107,14 +189,36 @@ def get_models_directory() -> str:
     return os.path.expanduser("~/.cache/torch/hub")
 
 
-def load_model(language: str) -> tuple:
-    """Load (and cache) the Silero model for a language.
+def resolve_model_info(language: str, model: str | None = None) -> tuple[str, str, int]:
+    """Return (model_id, default_speaker, sample_rate) for a request.
+
+    Args:
+        language: Request language; picks the model when `model` is None.
+        model: A model id from MODEL_CATALOG, or None for the language default.
+
+    Raises:
+        ValidationError: `model` is not in MODEL_CATALOG.
+    """
+    if model is None:
+        model_id, speaker, sample_rate = get_model_info(language)
+        return model_id, speaker, sample_rate
+    if model not in MODEL_CATALOG:
+        raise ValidationError(f"Unknown silerotts model '{model}'. Available: {', '.join(MODEL_CATALOG)}")
+    unused_hub_language, speaker, sample_rate = MODEL_CATALOG[model]
+    return model, speaker, sample_rate
+
+
+def load_model(language: str, model: str | None = None) -> tuple:
+    """Load (and cache) the Silero model for a language, or the model named by `model`.
 
     Returns:
         Tuple of (model, default_speaker, sample_rate). The model is cached in
         TTS_CACHE by (model_id, device) so repeated calls are cheap.
+
+    Raises:
+        ValidationError: `model` is not in MODEL_CATALOG.
     """
-    model_id, default_speaker, sample_rate = get_model_info(language)
+    model_id, default_speaker, sample_rate = resolve_model_info(language, model)
     device = torch.device("cpu")
 
     def load_silero():
@@ -139,7 +243,7 @@ def load_model(language: str) -> tuple:
         result = torch.hub.load(
             repo_or_dir="snakers4/silero-models",
             model="silero_tts",
-            language=(language if language in ["ru", "en", "de", "es", "fr", "ua"] else "en"),
+            language=get_hub_language(model_id),
             speaker=model_id,
             verbose=False,
             trust_repo=True,
@@ -164,8 +268,11 @@ def load_model(language: str) -> tuple:
     return model, default_speaker, sample_rate
 
 
-def list_voices(language: str = "en") -> dict:
-    """List the speaker voices available for a language's Silero model.
+def list_voices(language: str = "en", model: str | None = None) -> dict:
+    """List the speaker voices available for a language's Silero model, or for the model named by `model`.
+
+    Unlike the discovery hooks this loads the model: the speakers are read
+    from it.
 
     Returns:
         Dict with 'voices' (list of speaker ids, e.g. baya/kseniya for ru) and
@@ -176,8 +283,8 @@ def list_voices(language: str = "en") -> dict:
             "Silero TTS not available. Install with: pip install torch torchaudio\n"
             "See docs/SILEROTTS.md for setup instructions."
         )
-    model, default_speaker, unused_rate = load_model(language)
-    speakers = list(getattr(model, "speakers", []) or [])
+    silero_model, default_speaker, unused_rate = load_model(language, model)
+    speakers = list(getattr(silero_model, "speakers", []) or [])
     return {"voices": speakers, "default": default_speaker}
 
 
@@ -187,7 +294,8 @@ def generate(text: str, config: dict) -> bytes:
 
     Args:
         text: Text to synthesize
-        config: Configuration dict with language and optional voice
+        config: Configuration dict with language, optional voice and optional
+            model (a MODEL_CATALOG id; None picks the model by language)
 
     Returns:
         Audio bytes in WAV format (48000 Hz, 16-bit, mono)
@@ -213,7 +321,7 @@ def generate(text: str, config: dict) -> bytes:
         raise ValidationError(f"Text too long for silerotts: {len(text)} > {MAX_TEXT_LENGTH}")
     language = config.get("language", "en")
     try:
-        model, default_speaker, sample_rate = load_model(language)
+        model, default_speaker, sample_rate = load_model(language, config.get("model"))
 
         # Pick the speaker: requested voice or the language default. Validate
         # against the model's speaker list (when exposed) so an unknown voice is

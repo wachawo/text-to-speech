@@ -122,6 +122,17 @@ curl -X POST localhost:5000/api/tts \
 모델, 음성, 히스토리:
 
 ```bash
+# 엔진 하나가 제공하는 것: 모델, 언어, 음성 (모델을 로드하지 않음)
+curl localhost:5000/api/engines/pipertts \
+  -H "Authorization: Bearer $TTS_TOKEN"
+
+# 거기에 나온 모델 중 하나로 합성
+curl -X POST localhost:5000/api/tts \
+  -H "Authorization: Bearer $TTS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Hello world","engine":"pipertts","language":"en-gb","model":"en_GB-alan-low"}' \
+  -o out.wav
+
 # 설치된 모델과 누락된 모델, `ttsgen --list`가 출력하는 것과 같은 표
 curl localhost:5000/api/models \
   -H "Authorization: Bearer $TTS_TOKEN"
@@ -174,26 +185,27 @@ audio = client.audio.speech.create(model="coquitts", voice="maria", input="Hola 
 audio.write_to_file("hola.mp3")
 ```
 
-- `model`은 엔진 이름이거나, 기본 엔진을 뜻하는 `tts-1` / `tts-1-hd` / `gpt-4o-mini-tts`입니다.
+- `model`은 엔진 이름이거나, 기본 엔진을 뜻하는 `tts-1` / `tts-1-hd` / `gpt-4o-mini-tts`입니다. `/v1`에서는 엔진 안의 모델을 고를 수 없으며, 엔진은 기본 모델을 사용합니다.
 - `voice`는 엔진의 음성입니다. OpenAI 음성 이름(`alloy`, `nova`, ...)은 엔진 기본값을 선택합니다.
 - `response_format`: `mp3`(기본값), `wav`, `pcm`, `opus`, `flac`, `aac`. 엔진은 WAV 또는 MP3를 생성하며, 그 외 형식은 Docker 이미지에 포함된 `ffmpeg`로 트랜스코딩됩니다. `speed`(0.25에서 4.0)도 같은 방식으로 적용됩니다.
-- `language`는 확장 항목입니다: 두 글자 코드이며 기본값은 `TTS_LANGUAGE`입니다.
+- `language`는 확장 항목입니다: 두 글자 코드 또는 `zh-cn` 같은 태그이며 기본값은 `TTS_LANGUAGE`입니다.
 - `GET /v1/models`는 설치된 엔진과 `tts-1`을 나열하고, `GET /v1/audio/voices?model=<engine>`는 엔진 하나의 음성을 나열합니다.
 
 #### API 레퍼런스
 
-`TTS_TOKENS`가 설정되어 있으면 `/api/health`를 제외한 모든 경로에 `Authorization: Bearer <token>`이 필요합니다. `/api/` 아래의 오류는 `{"error": "...", "request_id": "..."}` 형태이고, `/v1/` 아래의 오류는 OpenAI 형식을 사용합니다.
+`TTS_TOKENS`가 설정되어 있으면 `/api/health`를 제외한 모든 경로에 `Authorization: Bearer <token>`이 필요합니다. `/api/` 아래의 오류는 `{"error": "...", "request_id": "..."}` 형태이며, 400 응답에는 이유를 담은 `message`가 추가로 들어 있어 요청이 검증을 통과하지 못하면 문제가 된 필드를 알려 줍니다(`language: ...`). `/v1/` 아래의 오류는 OpenAI 형식을 사용합니다.
 
 | 메서드 | 경로 | 용도 |
 | --- | --- | --- |
 | GET | `/api/health` | 활성 상태, `auth` 플래그, 엔진, 풀과 큐 크기. 토큰 불필요. |
 | GET | `/api/engines` | 지원 엔진, 설치된 엔진, 기본 엔진. |
+| GET | `/api/engines/<engine>` | 한 엔진의 모델, 언어, 음성 목록, 출력 형식을 모델을 로드하지 않고 읽음. |
 | GET | `/api/models` | 엔진별 설치된 모델과 누락된 모델, `ttsgen --list`가 출력하는 표. |
-| GET | `/api/voices?engine=&language=` | 엔진의 음성; `coquitts`의 경우 크기, 샘플링 레이트, 길이를 포함한 샘플. |
+| GET | `/api/voices?engine=&language=&model=` | 엔진의 음성; `coquitts`의 경우 크기, 샘플링 레이트, 길이를 포함한 샘플. `model`을 주면 그 모델의 음성. |
 | POST | `/api/voices` | WAV 샘플 업로드(`file`, `name`, `engine=coquitts`). |
 | GET | `/api/voices/<name>/audio?engine=&download=1` | 샘플 재생 또는 다운로드. |
 | DELETE | `/api/voices/<name>?engine=` | 샘플 삭제. |
-| POST, GET | `/api/tts` | `engine`, `language`, `voice`로 `text` 합성; `stream=true`는 준비되는 대로 청크를 스트리밍. |
+| POST, GET | `/api/tts` | `engine`, `language`, `voice`, `model`로 `text` 합성; `stream=true`는 준비되는 대로 청크를 스트리밍. |
 | POST | `/api/history` | 응답 본문 대신 서버 측 히스토리로 합성. |
 | GET | `/api/history?limit=&offset=` | 히스토리 항목 목록, 최신순. |
 | GET | `/api/history/<id>` | 항목 하나의 메타데이터. |
@@ -202,6 +214,10 @@ audio.write_to_file("hola.mp3")
 | POST | `/v1/audio/speech` | OpenAI 호환 합성, 위 참조. |
 | GET | `/v1/models` | OpenAI 호환 모델 목록. |
 | GET | `/v1/audio/voices?model=` | 엔진 하나의 음성. |
+
+`language`는 두 글자 코드(`en`, `ru`) 또는 지역이나 문자 체계가 붙은 태그(`zh-cn`, `pt_BR`, `en-gb`, `es-419`)이며, 태그는 소문자로 바뀌고 `-`로 연결됩니다. 각 엔진은 태그를 자신이 가진 언어에 맞춥니다: gtts는 자체 표기(`zh-CN`; 캐나다 프랑스어와 유럽 포르투갈어가 없어 `fr-ca`와 `pt-pt`는 `fr`과 `pt`)를 받고, kokorotts는 `en-gb`를 영국식 음소 변환기로 읽으며, xtts는 중국어에 `zh-cn`을 받고, 나머지 엔진은 언어 부분을 사용합니다(`pt-br`은 `pt`). 엔진이 모르는 언어는 엔진의 기본 언어(보통 영어)로 읽힙니다(gtts는 대신 실패합니다). `TTS_LANGUAGE_STRICT=true`이면 이런 요청은 엔진의 언어 목록을 알려 주는 400이 됩니다. 엄격한 검사는 `stream`이 없는 `/api/tts`, `/api/history`, `/v1/audio/speech`에 적용되며, 언어 목록을 제공하는 모든 엔진, 즉 pyttsx3와, 음성이 하나도 설치되지 않은 pipertts와, xtts가 아닌 다국어 모델이나 세 글자 언어 코드(`ewe`)의 모델을 쓰는 coquitts를 제외한 모든 엔진이 대상입니다.
+
+`model`은 `/api/tts`와 `/api/history`에서 엔진 안의 모델을 고릅니다: Piper 음성(`en_GB-alan-low`), Kokoro 모델 파일(`kokoro-v1.0.int8.onnx`), Silero 모델(`v3_1_ru`) 또는 Coqui 모델 이름(`tts_models/de/thorsten/vits`). `GET /api/engines/<engine>`은 이를 `models`에 나열하며, 각 모델에는 `languages`, `installed`, `default_for`(요청이 모델을 지정하지 않을 때 그 모델을 쓰는 언어)가 붙고, 엔진의 `languages`, `output_format`, `max_text_length`, 음성 목록 제공 여부도 함께 알려 줍니다. 모델은 로드하지 않으며, 알 수 없는 엔진은 404입니다. `model`이 없으면 엔진은 이전과 같이 고릅니다. 엔진이 나열하지 않은 id는 사용 가능한 id를 알려 주는 400이고, `stream=true`와 함께 쓴 `model`도 400입니다. 스트림은 항상 엔진의 기본 모델을 쓰기 때문입니다. gtts, pyttsx3, barktts에는 모델이 없습니다. 모델이 없으면 pipertts는 설치된 음성 중에서 고릅니다: 지역이 붙은 태그(`en-gb`)는 그 지역의 음성을, 내장 표에 없는 언어는 영어 음성 대신 그 언어의 설치된 음성을 사용합니다. pipertts의 언어 목록은 설치된 음성의 언어입니다.
 
 #### 웹 UI
 
@@ -231,6 +247,8 @@ xdg-open https://localhost:8443     # TTS_WWW_TLS_PORT; 자체 서명 인증서,
 | `TTS_ENGINES` | 비어 있음 | 시작 시 설치하고 워밍업할 엔진, 쉼표로 구분(`coquitts,silerotts`). |
 | `TTS_ENGINE` | `gtts` | 요청에 엔진이 지정되지 않았을 때 사용하는 엔진. |
 | `TTS_LANGUAGE` | `en` | 요청에 언어가 지정되지 않았을 때 사용하는 언어. |
+| `TTS_LANGUAGE_STRICT` | `false` | `true`이면 엔진 목록에 없는 언어에 대해 엔진의 기본 언어로 대체하는 대신 400을 반환. |
+| `TTS_MODEL_CACHE_SIZE` | `2` | coquitts와 kokorotts가 동시에 로드해 두는 모델 수; 모델을 하나 더 요청하면 가장 먼저 로드된 모델이 해제됩니다. |
 | `TTS_POOL_SIZE` | `1` | 모든 엔진을 통틀어 동시에 허용되는 합성 호출 수; `0`은 제한과 워밍업을 없앱니다. |
 | `TTS_QUEUE_SIZE` | `8` | 빈 슬롯을 기다릴 수 있는 합성 요청 수; 초과분은 즉시 503을 받습니다. |
 | `TTS_HISTORY_MAX` | `200` | 히스토리에 보관되는 항목 수; 새 항목이 저장되면 가장 오래된 것이 삭제됩니다. |

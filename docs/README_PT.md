@@ -122,6 +122,17 @@ curl -X POST localhost:5000/api/tts \
 Modelos, vozes e histórico:
 
 ```bash
+# O que um motor oferece: modelos, idiomas e vozes, lidos sem carregar nenhum modelo
+curl localhost:5000/api/engines/pipertts \
+  -H "Authorization: Bearer $TTS_TOKEN"
+
+# Sintetizar com um dos modelos listados ali
+curl -X POST localhost:5000/api/tts \
+  -H "Authorization: Bearer $TTS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Hello world","engine":"pipertts","language":"en-gb","model":"en_GB-alan-low"}' \
+  -o out.wav
+
 # Modelos instalados e ausentes, a mesma tabela que `ttsgen --list` imprime
 curl localhost:5000/api/models \
   -H "Authorization: Bearer $TTS_TOKEN"
@@ -174,26 +185,27 @@ audio = client.audio.speech.create(model="coquitts", voice="maria", input="Hola 
 audio.write_to_file("hola.mp3")
 ```
 
-- `model` é o nome de um motor, ou `tts-1` / `tts-1-hd` / `gpt-4o-mini-tts` para o motor padrão.
+- `model` é o nome de um motor, ou `tts-1` / `tts-1-hd` / `gpt-4o-mini-tts` para o motor padrão. Em `/v1` não há escolha de modelo dentro do motor: o motor usa o seu modelo padrão.
 - `voice` é uma voz do motor; os nomes de voz da OpenAI (`alloy`, `nova`, ...) selecionam a voz padrão do motor.
 - `response_format`: `mp3` (padrão), `wav`, `pcm`, `opus`, `flac`, `aac`. Os motores produzem WAV ou MP3; qualquer outro formato é transcodificado com `ffmpeg`, que as imagens Docker incluem. `speed` (de 0.25 a 4.0) é aplicado da mesma forma.
-- `language` é uma extensão: um código de duas letras, padrão `TTS_LANGUAGE`.
+- `language` é uma extensão: um código de duas letras ou uma tag como `zh-cn`, padrão `TTS_LANGUAGE`.
 - `GET /v1/models` lista os motores instalados mais `tts-1`; `GET /v1/audio/voices?model=<engine>` lista as vozes de um motor.
 
 #### Referência da API
 
-Toda rota exceto `/api/health` exige `Authorization: Bearer <token>` quando `TTS_TOKENS` está definido. Os erros em `/api/` têm a forma `{"error": "...", "request_id": "..."}`; os erros em `/v1/` usam o formato da OpenAI.
+Toda rota exceto `/api/health` exige `Authorization: Bearer <token>` quando `TTS_TOKENS` está definido. Os erros em `/api/` têm a forma `{"error": "...", "request_id": "..."}`; uma resposta 400 traz também `message` com o motivo, que nomeia os campos com falha quando a solicitação não passa na validação (`language: ...`). Os erros em `/v1/` usam o formato da OpenAI.
 
 | Método | Caminho | Propósito |
 | --- | --- | --- |
 | GET | `/api/health` | Liveness, flag `auth`, motores, tamanhos do pool e da fila. Não precisa de token. |
 | GET | `/api/engines` | Motores suportados, os instalados e o padrão. |
+| GET | `/api/engines/<engine>` | Modelos, idiomas, lista de vozes e formato de saída de um motor, lidos sem carregar nenhum modelo. |
 | GET | `/api/models` | Modelos instalados e ausentes por motor, a tabela que `ttsgen --list` imprime. |
-| GET | `/api/voices?engine=&language=` | Vozes de um motor; para `coquitts`, as amostras com tamanho, taxa e duração. |
+| GET | `/api/voices?engine=&language=&model=` | Vozes de um motor; para `coquitts`, as amostras com tamanho, taxa e duração. Com `model`, as vozes desse modelo. |
 | POST | `/api/voices` | Envia uma amostra WAV (`file`, `name`, `engine=coquitts`). |
 | GET | `/api/voices/<name>/audio?engine=&download=1` | Reproduz ou baixa uma amostra. |
 | DELETE | `/api/voices/<name>?engine=` | Exclui uma amostra. |
-| POST, GET | `/api/tts` | Sintetiza `text` com `engine`, `language`, `voice`; `stream=true` transmite os trechos conforme ficam prontos. |
+| POST, GET | `/api/tts` | Sintetiza `text` com `engine`, `language`, `voice`, `model`; `stream=true` transmite os trechos conforme ficam prontos. |
 | POST | `/api/history` | Sintetiza para o histórico do servidor em vez do corpo da resposta. |
 | GET | `/api/history?limit=&offset=` | Lista os itens do histórico, os mais recentes primeiro. |
 | GET | `/api/history/<id>` | Metadados de um item. |
@@ -202,6 +214,10 @@ Toda rota exceto `/api/health` exige `Authorization: Bearer <token>` quando `TTS
 | POST | `/v1/audio/speech` | Síntese compatível com OpenAI, veja acima. |
 | GET | `/v1/models` | Lista de modelos compatível com OpenAI. |
 | GET | `/v1/audio/voices?model=` | Vozes de um motor. |
+
+`language` é um código de duas letras (`en`, `ru`) ou uma tag com região ou escrita (`zh-cn`, `pt_BR`, `en-gb`, `es-419`), convertida para minúsculas e escrita com `-`. Cada motor converte a tag no que tem: o gtts recebe a própria grafia (`zh-CN`; ele não tem francês canadense nem português europeu, então `fr-ca` e `pt-pt` viram `fr` e `pt`), o kokorotts fala `en-gb` com o fonemizador britânico, o xtts recebe `zh-cn` para chinês e os demais motores usam a parte do idioma (`pt-br` vira `pt`). Um idioma que o motor não conhece é falado no idioma padrão dele, normalmente inglês (o gtts falha em vez disso); com `TTS_LANGUAGE_STRICT=true` é um 400 que lista os idiomas do motor. A verificação estrita vale para `/api/tts` sem `stream`, `/api/history` e `/v1/audio/speech`, e para todos os motores que listam seus idiomas: todos exceto o pyttsx3, o pipertts sem nenhuma voz instalada e o coquitts com um modelo multilíngue que não seja o xtts ou com um modelo cujo código de idioma tem três letras (`ewe`).
+
+`model` escolhe um modelo dentro do motor em `/api/tts` e `/api/history`: uma voz do Piper (`en_GB-alan-low`), um arquivo de modelo do Kokoro (`kokoro-v1.0.int8.onnx`), um modelo do Silero (`v3_1_ru`) ou o nome de um modelo do Coqui (`tts_models/de/thorsten/vits`). `GET /api/engines/<engine>` os lista em `models`, cada um com seus `languages`, `installed` e `default_for` (os idiomas que o usam quando a requisição não indica modelo), junto com os `languages` do motor, `output_format`, `max_text_length` e se ele tem lista de vozes; nenhum modelo é carregado, e um motor desconhecido dá 404. Sem `model` o motor escolhe como antes; um id que o motor não lista é um 400 que nomeia os que ele tem, assim como `model` com `stream=true`, porque um stream sempre usa o modelo padrão do motor. O gtts, o pyttsx3 e o barktts não têm modelos. Sem modelo, o pipertts escolhe entre as vozes instaladas: uma tag com região (`en-gb`) pega uma voz dessa região, e um idioma fora da tabela embutida pega uma voz instalada desse idioma em vez da inglesa; a lista de idiomas dele são os idiomas das vozes instaladas.
 
 #### Interface web
 
@@ -231,6 +247,8 @@ Toda configuração é uma variável de ambiente; `env.example` documenta todas 
 | `TTS_ENGINES` | vazio | Motores a instalar e aquecer na inicialização, separados por vírgula (`coquitts,silerotts`). |
 | `TTS_ENGINE` | `gtts` | Motor usado quando a solicitação não indica nenhum. |
 | `TTS_LANGUAGE` | `en` | Idioma usado quando a solicitação não indica nenhum. |
+| `TTS_LANGUAGE_STRICT` | `false` | `true` responde 400 a um idioma que o motor não lista, em vez de o motor recorrer ao idioma padrão. |
+| `TTS_MODEL_CACHE_SIZE` | `2` | Modelos que coquitts e kokorotts mantêm carregados ao mesmo tempo; uma solicitação de mais um descarta o carregado primeiro. |
 | `TTS_POOL_SIZE` | `1` | Chamadas de síntese permitidas ao mesmo tempo entre todos os motores; `0` remove o limite e o aquecimento. |
 | `TTS_QUEUE_SIZE` | `8` | Solicitações de síntese que podem esperar por uma vaga livre; as demais recebem 503 imediatamente. |
 | `TTS_HISTORY_MAX` | `200` | Itens mantidos no histórico; os mais antigos são removidos quando um novo é salvo. |

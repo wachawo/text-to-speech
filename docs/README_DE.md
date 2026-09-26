@@ -122,6 +122,17 @@ curl -X POST localhost:5000/api/tts \
 Modelle, Stimmen und Verlauf:
 
 ```bash
+# Was eine Engine bietet: Modelle, Sprachen und Stimmen, gelesen ohne ein Modell zu laden
+curl localhost:5000/api/engines/pipertts \
+  -H "Authorization: Bearer $TTS_TOKEN"
+
+# Mit einem der dort aufgeführten Modelle synthetisieren
+curl -X POST localhost:5000/api/tts \
+  -H "Authorization: Bearer $TTS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Hello world","engine":"pipertts","language":"en-gb","model":"en_GB-alan-low"}' \
+  -o out.wav
+
 # Installierte und fehlende Modelle, dieselbe Tabelle, die `ttsgen --list` ausgibt
 curl localhost:5000/api/models \
   -H "Authorization: Bearer $TTS_TOKEN"
@@ -174,26 +185,27 @@ audio = client.audio.speech.create(model="coquitts", voice="maria", input="Hola 
 audio.write_to_file("hola.mp3")
 ```
 
-- `model` ist ein Engine-Name oder `tts-1` / `tts-1-hd` / `gpt-4o-mini-tts` für die Standard-Engine.
+- `model` ist ein Engine-Name oder `tts-1` / `tts-1-hd` / `gpt-4o-mini-tts` für die Standard-Engine. Auf `/v1` lässt sich kein Modell innerhalb einer Engine wählen: Die Engine verwendet ihr Standardmodell.
 - `voice` ist eine Engine-Stimme; die OpenAI-Stimmennamen (`alloy`, `nova`, ...) wählen den Engine-Standard.
 - `response_format`: `mp3` (Standard), `wav`, `pcm`, `opus`, `flac`, `aac`. Die Engines erzeugen WAV oder MP3; alles andere wird mit `ffmpeg` transkodiert, das in den Docker-Images enthalten ist. `speed` (0.25 bis 4.0) wird auf dieselbe Weise angewendet.
-- `language` ist eine Erweiterung: ein zweibuchstabiger Code, Standard `TTS_LANGUAGE`.
+- `language` ist eine Erweiterung: ein zweibuchstabiger Code oder ein Tag wie `zh-cn`, Standard `TTS_LANGUAGE`.
 - `GET /v1/models` listet die installierten Engines plus `tts-1`; `GET /v1/audio/voices?model=<engine>` listet die Stimmen einer Engine.
 
 #### API-Referenz
 
-Jede Route außer `/api/health` erfordert `Authorization: Bearer <token>`, wenn `TTS_TOKENS` gesetzt ist. Fehler unter `/api/` haben die Form `{"error": "...", "request_id": "..."}`; Fehler unter `/v1/` verwenden das OpenAI-Format.
+Jede Route außer `/api/health` erfordert `Authorization: Bearer <token>`, wenn `TTS_TOKENS` gesetzt ist. Fehler unter `/api/` haben die Form `{"error": "...", "request_id": "..."}`; eine 400-Antwort enthält zusätzlich `message` mit dem Grund, der bei einer ungültigen Anfrage die fehlerhaften Felder nennt (`language: ...`). Fehler unter `/v1/` verwenden das OpenAI-Format.
 
 | Methode | Pfad | Zweck |
 | --- | --- | --- |
 | GET | `/api/health` | Liveness, `auth`-Flag, Engines, Pool- und Warteschlangengrößen. Kein Token nötig. |
 | GET | `/api/engines` | Unterstützte Engines, die installierten und die Standard-Engine. |
+| GET | `/api/engines/<engine>` | Modelle, Sprachen, Stimmenliste und Ausgabeformat einer Engine, gelesen ohne ein Modell zu laden. |
 | GET | `/api/models` | Installierte und fehlende Modelle pro Engine, die Tabelle, die `ttsgen --list` ausgibt. |
-| GET | `/api/voices?engine=&language=` | Stimmen einer Engine; für `coquitts` die Proben mit Größe, Abtastrate und Dauer. |
+| GET | `/api/voices?engine=&language=&model=` | Stimmen einer Engine; für `coquitts` die Proben mit Größe, Abtastrate und Dauer. Mit `model` die Stimmen dieses Modells. |
 | POST | `/api/voices` | Eine WAV-Probe hochladen (`file`, `name`, `engine=coquitts`). |
 | GET | `/api/voices/<name>/audio?engine=&download=1` | Eine Probe abspielen oder herunterladen. |
 | DELETE | `/api/voices/<name>?engine=` | Eine Probe löschen. |
-| POST, GET | `/api/tts` | `text` mit `engine`, `language`, `voice` synthetisieren; `stream=true` streamt die Abschnitte, sobald sie fertig sind. |
+| POST, GET | `/api/tts` | `text` mit `engine`, `language`, `voice`, `model` synthetisieren; `stream=true` streamt die Abschnitte, sobald sie fertig sind. |
 | POST | `/api/history` | In den serverseitigen Verlauf synthetisieren statt in den Antwortkörper. |
 | GET | `/api/history?limit=&offset=` | Verlaufseinträge auflisten, neueste zuerst. |
 | GET | `/api/history/<id>` | Metadaten eines Eintrags. |
@@ -202,6 +214,10 @@ Jede Route außer `/api/health` erfordert `Authorization: Bearer <token>`, wenn 
 | POST | `/v1/audio/speech` | OpenAI-kompatible Synthese, siehe oben. |
 | GET | `/v1/models` | OpenAI-kompatible Modellliste. |
 | GET | `/v1/audio/voices?model=` | Stimmen einer Engine. |
+
+`language` ist ein zweibuchstabiger Code (`en`, `ru`) oder ein Tag mit Region oder Schrift (`zh-cn`, `pt_BR`, `en-gb`, `es-419`), der in Kleinbuchstaben und mit `-` geschrieben wird. Jede Engine bildet ein Tag auf das ab, was sie hat: gtts bekommt die eigene Schreibweise (`zh-CN`; es hat kein kanadisches Französisch und kein europäisches Portugiesisch, daher werden `fr-ca` und `pt-pt` zu `fr` und `pt`), kokorotts spricht `en-gb` mit dem britischen Phonemizer, xtts bekommt für Chinesisch `zh-cn`, und die übrigen Engines verwenden den Sprachteil (`pt-br` wird zu `pt`). Eine Sprache, die eine Engine nicht kennt, wird in ihrer Standardsprache gesprochen, meist Englisch (gtts schlägt stattdessen fehl); mit `TTS_LANGUAGE_STRICT=true` ist sie ein 400, der die Sprachen der Engine aufzählt. Die strenge Prüfung gilt für `/api/tts` ohne `stream`, `/api/history` und `/v1/audio/speech` und für jede Engine, die ihre Sprachen auflistet: alle außer pyttsx3, pipertts ohne installierte Stimme und coquitts mit einem mehrsprachigen Modell außer xtts oder einem Modell mit dreibuchstabigem Sprachcode (`ewe`).
+
+`model` wählt auf `/api/tts` und `/api/history` ein Modell innerhalb der Engine: eine Piper-Stimme (`en_GB-alan-low`), eine Kokoro-Modelldatei (`kokoro-v1.0.int8.onnx`), ein Silero-Modell (`v3_1_ru`) oder einen Coqui-Modellnamen (`tts_models/de/thorsten/vits`). `GET /api/engines/<engine>` führt sie unter `models` auf, jedes mit `languages`, `installed` und `default_for` (den Sprachen, die es verwenden, wenn eine Anfrage kein Modell nennt), dazu die `languages` der Engine, `output_format`, `max_text_length` und ob sie eine Stimmenliste hat; dabei wird kein Modell geladen, und eine unbekannte Engine ergibt 404. Ohne `model` wählt die Engine wie bisher; eine ID, die die Engine nicht aufführt, ist ein 400, der die vorhandenen nennt, ebenso `model` mit `stream=true`, weil ein Stream immer das Standardmodell der Engine verwendet. gtts, pyttsx3 und barktts haben keine Modelle. Ohne Modell wählt pipertts unter den installierten Stimmen: Ein Tag mit Region (`en-gb`) nimmt eine Stimme dieser Region, und eine Sprache außerhalb der eingebauten Tabelle nimmt statt der englischen eine installierte Stimme dieser Sprache; seine Sprachliste sind die Sprachen der installierten Stimmen.
 
 #### Web-Oberfläche
 
@@ -231,6 +247,8 @@ Jede Einstellung ist eine Umgebungsvariable; `env.example` dokumentiert sie alle
 | `TTS_ENGINES` | leer | Engines, die beim Start installiert und vorgewärmt werden, kommagetrennt (`coquitts,silerotts`). |
 | `TTS_ENGINE` | `gtts` | Engine, die verwendet wird, wenn eine Anfrage keine nennt. |
 | `TTS_LANGUAGE` | `en` | Sprache, die verwendet wird, wenn eine Anfrage keine nennt. |
+| `TTS_LANGUAGE_STRICT` | `false` | `true` beantwortet eine Sprache, die die Engine nicht auflistet, mit 400 statt mit dem Rückfall der Engine auf ihre Standardsprache. |
+| `TTS_MODEL_CACHE_SIZE` | `2` | Modelle, die coquitts und kokorotts gleichzeitig geladen halten; eine Anfrage nach einem weiteren entfernt das zuerst geladene. |
 | `TTS_POOL_SIZE` | `1` | Gleichzeitig erlaubte Synthese-Aufrufe über alle Engines hinweg; `0` entfernt das Limit und das Vorwärmen. |
 | `TTS_QUEUE_SIZE` | `8` | Synthese-Anfragen, die auf einen freien Platz warten dürfen; weitere erhalten sofort 503. |
 | `TTS_HISTORY_MAX` | `200` | Im Verlauf behaltene Einträge; die ältesten werden entfernt, wenn ein neuer gespeichert wird. |

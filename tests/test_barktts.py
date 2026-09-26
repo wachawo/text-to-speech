@@ -110,6 +110,20 @@ def test_speaker_unknown_language_falls_back_to_english(engine):
     assert engine.get_speaker_for_language("xx") == engine.get_speaker_for_language("en")
 
 
+@pytest.mark.parametrize(
+    "lang,expected", [("pt-br", "v2/pt_speaker_0"), ("zh_TW", "v2/zh_speaker_0"), ("xx-yy", "v2/en_speaker_6")]
+)
+def test_speaker_for_language_tag_uses_primary_subtag(engine, lang, expected):
+    """A tag such as 'pt-br' gets the preset of its primary subtag; an unknown one gets the English speaker."""
+    assert engine.get_speaker_for_language(lang) == expected
+
+
+def test_list_languages_are_the_preset_languages(engine):
+    """list_languages() declares exactly the languages that have a speaker preset."""
+    assert engine.list_languages() == sorted(engine.SPEAKER_PRESETS)
+    assert "en" in engine.list_languages()
+
+
 # get_models_directory
 
 

@@ -92,6 +92,83 @@ def test_generate_defaults_language_to_en_and_slow_to_false(engine):
     assert audio == b"MP3:en:False:hi"
 
 
+# Language tags
+
+
+@pytest.fixture
+def gtts_langs(monkeypatch):
+    """Serve a small gTTS language table as `gtts.lang`, spelled the way gTTS spells its tags."""
+    fake_lang = types.ModuleType("gtts.lang")
+    fake_lang.tts_langs = lambda: {
+        "en": "English",
+        "fr": "French",
+        "fr-CA": "French (Canada)",
+        "pt": "Portuguese",
+        "pt-PT": "Portuguese (Portugal)",
+        "zh-CN": "Chinese",
+    }
+    monkeypatch.setitem(sys.modules, "gtts.lang", fake_lang)
+
+
+@pytest.mark.parametrize(
+    "language,expected",
+    [
+        ("zh-cn", "zh-CN"),
+        ("ZH_cn", "zh-CN"),
+        ("fr-ca", "fr"),
+        ("FR_ca", "fr"),
+        ("pt-pt", "pt"),
+        ("pt-br", "pt"),
+        ("en", "en"),
+        ("xx", "xx"),
+        ("xx-yy", "xx-yy"),
+    ],
+)
+def test_gtts_language_maps_tags_to_gtts_spelling(engine, gtts_langs, language, expected):
+    """A listed tag gets gTTS's spelling, an unlisted one its primary subtag, anything else passes unchanged."""
+    assert engine.gtts_language(language) == expected
+
+
+def test_generate_sends_the_gtts_spelling(engine, gtts_langs):
+    """generate() hands gTTS the tag as gTTS spells it."""
+    assert engine.generate("ni hao", {"language": "zh-cn"}) == b"MP3:zh-CN:False:ni hao"
+
+
+def test_list_languages_are_lowercased_gtts_tags(engine, gtts_langs):
+    """list_languages() declares gTTS's own table, lowercased and sorted, without the tags gTTS folds."""
+    assert engine.list_languages() == ["en", "fr", "pt", "zh-cn"]
+
+
+def test_generate_sends_folded_tags_as_their_language_part(engine, gtts_langs):
+    """fr-ca and pt-pt reach gTTS as 'fr' and 'pt', which gTTS would fold them into with a warning."""
+    assert engine.generate("salut", {"language": "fr-ca"}) == b"MP3:fr:False:salut"
+    assert engine.generate("ola", {"language": "pt-pt"}) == b"MP3:pt:False:ola"
+
+
+def test_folded_tags_still_pass_the_strict_check(engine, gtts_langs):
+    """Leaving fr-ca and pt-pt out of the list does not refuse them: their language part is listed."""
+    from libs.languages import language_supported
+
+    languages = engine.list_languages()
+    assert language_supported("fr-ca", languages)
+    assert language_supported("pt-pt", languages)
+
+
+def test_list_languages_leaves_out_tags_no_request_can_carry(engine, monkeypatch):
+    """A 3-letter code such as 'yue' is not declared: the request schema refuses it, so it cannot be asked for."""
+    fake_lang = types.ModuleType("gtts.lang")
+    fake_lang.tts_langs = lambda: {"en": "English", "yue": "Cantonese", "zh-TW": "Chinese (Mandarin/Taiwan)"}
+    monkeypatch.setitem(sys.modules, "gtts.lang", fake_lang)
+    assert engine.list_languages() == ["en", "zh-tw"]
+
+
+def test_list_languages_none_without_language_table(engine, monkeypatch):
+    """Without a readable gtts.lang the engine declares nothing and passes codes through unchanged."""
+    monkeypatch.setitem(sys.modules, "gtts.lang", None)
+    assert engine.list_languages() is None
+    assert engine.gtts_language("zh-cn") == "zh-cn"
+
+
 def test_generate_raises_engine_not_available_when_flag_off(engine, monkeypatch):
     """Synthesis refuses to run while the engine reports itself unavailable."""
     monkeypatch.setattr(engine, "AVAILABLE", False)

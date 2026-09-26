@@ -345,6 +345,136 @@ def test_list_voices_unknown_language_lists_english(engine, kokoro_dir):
     assert engine.list_voices("xx") == engine.list_voices("en")
 
 
+def test_list_voices_tag_uses_primary_subtag(engine, kokoro_dir):
+    """A tag such as 'ja-jp' lists the voices of its primary subtag."""
+    assert engine.list_voices("ja-jp")["voices"] == ["jf_alpha"]
+
+
+@pytest.mark.parametrize(
+    "language,voice,expected",
+    [
+        ("en-gb", "af_bella", "en-gb"),
+        ("en_GB", "af_bella", "en-gb"),
+        ("en-us", "af_bella", "en-us"),
+        ("ja-jp", "jf_alpha", "ja"),
+    ],
+)
+def test_generate_tag_picks_the_kokoro_lang(engine, kokoro_dir, language, voice, expected):
+    """'en-gb' asks for the British phonemizer; other tags use the lang code of their primary subtag."""
+    engine.generate("hi", {"language": language, "voice": voice})
+    assert sys.modules["kokoro_onnx"].Kokoro.created[-1]["lang"] == expected
+
+
+def test_list_languages_are_the_mapped_languages(engine):
+    """list_languages() declares the languages of LANGUAGE_MAP without opening the model."""
+    assert engine.list_languages() == sorted(engine.LANGUAGE_MAP)
+    assert engine.list_languages("kokoro-v1.0.int8.onnx") == sorted(engine.LANGUAGE_MAP)
+    assert engine.KOKORO_CACHE == {}
+
+
+# Model selection
+
+
+def test_get_model_paths_pairs_a_named_model_with_its_release_voices(engine, kokoro_dir, monkeypatch):
+    """A named model gets voices-<release>.bin from the same directory, not KOKOROTTS_VOICES."""
+    monkeypatch.setenv("KOKOROTTS_VOICES", "custom-voices.bin")
+    model, voices = engine.get_model_paths("kokoro-v1.0.int8.onnx")
+    assert model == str(kokoro_dir / "kokoro-v1.0.int8.onnx")
+    assert voices == str(kokoro_dir / "voices-v1.0.bin")
+
+
+def test_get_model_paths_named_model_without_release_voices_uses_env(engine, kokoro_dir, monkeypatch):
+    """Without a voices file for the model's release, KOKOROTTS_VOICES is used."""
+    monkeypatch.setenv("KOKOROTTS_VOICES", "custom-voices.bin")
+    unused_model, voices = engine.get_model_paths("kokoro-v2.0.onnx")
+    assert voices == str(kokoro_dir / "custom-voices.bin")
+    unused_model, voices = engine.get_model_paths("my-model.onnx")
+    assert voices == str(kokoro_dir / "custom-voices.bin")
+
+
+def test_get_model_paths_without_model_is_unchanged(engine, kokoro_dir, monkeypatch):
+    """No model keeps KOKOROTTS_MODEL with KOKOROTTS_VOICES, as before models were selectable."""
+    monkeypatch.setenv("KOKOROTTS_MODEL", "custom.onnx")
+    monkeypatch.setenv("KOKOROTTS_VOICES", "custom-voices.bin")
+    assert engine.get_model_paths(None) == (str(kokoro_dir / "custom.onnx"), str(kokoro_dir / "custom-voices.bin"))
+
+
+@pytest.mark.parametrize("model", ["../kokoro-v1.0.onnx", "sub/kokoro-v1.0.onnx", "..", "/etc/passwd"])
+def test_get_model_paths_rejects_a_path(engine, kokoro_dir, model):
+    """A model is a file name in the models directory; anything with a separator is refused."""
+    with pytest.raises(ValidationError, match="Unknown kokorotts model"):
+        engine.get_model_paths(model)
+
+
+def test_get_model_paths_serves_a_default_with_a_directory(engine, kokoro_dir, monkeypatch):
+    """KOKOROTTS_MODEL with a directory part is listed, so naming it back resolves to the file it names."""
+    (kokoro_dir / "v1").mkdir()
+    (kokoro_dir / "v1" / "kokoro-v1.0.onnx").write_bytes(b"x")
+    write_fake_voices(kokoro_dir / "v1")
+    monkeypatch.setenv("KOKOROTTS_MODEL", "v1/kokoro-v1.0.onnx")
+    assert "v1/kokoro-v1.0.onnx" in [model["id"] for model in engine.list_models()]
+    assert engine.get_model_paths("v1/kokoro-v1.0.onnx") == (
+        str(kokoro_dir / "v1" / "kokoro-v1.0.onnx"),
+        str(kokoro_dir / "v1" / "voices-v1.0.bin"),
+    )
+    with pytest.raises(ValidationError, match="Unknown kokorotts model"):
+        engine.get_model_paths("v1/kokoro-v1.0.int8.onnx")
+
+
+def test_generate_keeps_at_most_the_cache_size_models(engine, kokoro_dir, monkeypatch):
+    """With TTS_MODEL_CACHE_SIZE=1 a request for another model drops the loaded one first."""
+    (kokoro_dir / "kokoro-v1.0.int8.onnx").write_bytes(b"x")
+    monkeypatch.setenv("TTS_MODEL_CACHE_SIZE", "1")
+    engine.generate("hi", {"language": "en"})
+    engine.generate("hi", {"language": "en", "model": "kokoro-v1.0.int8.onnx"})
+    assert set(engine.KOKORO_CACHE) == {(str(kokoro_dir / "kokoro-v1.0.int8.onnx"), str(kokoro_dir / "voices-v1.0.bin"))}
+
+
+def test_list_models_lists_onnx_files_and_the_default(engine, kokoro_dir, monkeypatch):
+    """Every *.onnx in the directory is a model; KOKOROTTS_MODEL is listed even when its file is missing."""
+    (kokoro_dir / "kokoro-v1.0.int8.onnx").write_bytes(b"x")
+    monkeypatch.setenv("KOKOROTTS_MODEL", "kokoro-v2.onnx")
+    models = engine.list_models()
+    assert [model["id"] for model in models] == ["kokoro-v1.0.int8.onnx", "kokoro-v1.0.onnx", "kokoro-v2.onnx"]
+    assert [model["installed"] for model in models] == [True, True, False]
+    assert models[0]["languages"] == sorted(engine.LANGUAGE_MAP)
+    assert engine.KOKORO_CACHE == {}
+
+
+def test_list_models_finds_a_default_with_a_directory_part(engine, kokoro_dir, monkeypatch):
+    """KOKOROTTS_MODEL=v1/kokoro-v1.0.onnx is installed when that file exists below the models directory."""
+    (kokoro_dir / "v1").mkdir()
+    (kokoro_dir / "v1" / "kokoro-v1.0.onnx").write_bytes(b"x")
+    monkeypatch.setenv("KOKOROTTS_MODEL", "v1/kokoro-v1.0.onnx")
+    models = {model["id"]: model for model in engine.list_models()}
+    assert models["v1/kokoro-v1.0.onnx"]["installed"] is True
+
+
+def test_default_model_is_the_configured_model(engine, kokoro_dir, monkeypatch):
+    """default_model() is KOKOROTTS_MODEL for any language, the v1.0 file without it."""
+    assert engine.default_model() == "kokoro-v1.0.onnx"
+    monkeypatch.setenv("KOKOROTTS_MODEL", "kokoro-v1.0.int8.onnx")
+    assert engine.default_model("ja") == "kokoro-v1.0.int8.onnx"
+
+
+def test_generate_loads_the_model_named_in_config(engine, kokoro_dir):
+    """config['model'] loads that file with its release voices, cached apart from the default pair."""
+    (kokoro_dir / "kokoro-v1.0.int8.onnx").write_bytes(b"x")
+    engine.generate("hi", {"language": "en"})
+    engine.generate("hi", {"language": "en", "model": "kokoro-v1.0.int8.onnx"})
+    assert set(engine.KOKORO_CACHE) == {
+        (str(kokoro_dir / "kokoro-v1.0.onnx"), str(kokoro_dir / "voices-v1.0.bin")),
+        (str(kokoro_dir / "kokoro-v1.0.int8.onnx"), str(kokoro_dir / "voices-v1.0.bin")),
+    }
+
+
+def test_list_voices_reads_the_voices_file_of_the_model(engine, kokoro_dir, monkeypatch):
+    """list_voices(language, model) reads the voices file paired with the model."""
+    monkeypatch.setenv("KOKOROTTS_VOICES", "missing.bin")
+    assert engine.list_voices("en")["voices"] == []
+    assert engine.list_voices("en", "kokoro-v1.0.onnx")["voices"] == ["af_bella", "af_sky", "am_adam", "bf_emma"]
+
+
 def test_list_voices_default_is_language_map_voice_when_present(engine, kokoro_dir):
     """The LANGUAGE_MAP default is reported when the voices file has it."""
     assert engine.list_voices("ja")["default"] == "jf_alpha"

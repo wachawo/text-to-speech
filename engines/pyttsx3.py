@@ -7,8 +7,10 @@ import os
 import tempfile
 import threading
 import time
+from typing import Any
 
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
+from libs.languages import primary_language
 from libs.tempfiles import safe_unlink
 
 # Offline espeak; fast but text >10k chars stalls audio threads.
@@ -55,7 +57,7 @@ def language_tags(voice) -> list:
 
 
 def voice_matches_language(voice, language: str) -> bool:
-    """Report whether a voice serves `language` (a lowercase 2-letter code).
+    """Report whether a voice serves `language` (a lowercase 2-letter code or tag such as 'zh-cn').
 
     A language tag matches when the code is its prefix ('en' matches 'en-us');
     an id matches when the code equals it or its last path segment, or starts
@@ -71,7 +73,7 @@ def voice_matches_language(voice, language: str) -> bool:
 
 
 def select_voice(voices: list, config: dict):
-    """Pick the voice to use: config['voice'] by id or name, else by language, else the first.
+    """Pick the voice to use: config['voice'] by id or name, else by language or its language part, else the first.
 
     Returns:
         The chosen voice object, or None when the driver reports no voices.
@@ -87,10 +89,28 @@ def select_voice(voices: list, config: dict):
         logger.warning(f"pyttsx3 voice '{wanted}' not found, selecting by language")
     language = str(config.get("language") or "").strip().lower()
     if language:
-        for voice in voices:
-            if voice_matches_language(voice, language):
-                return voice
+        voice = find_voice_for_language(voices, language)
+        if voice is not None:
+            return voice
     return voices[0]
+
+
+def find_voice_for_language(voices: list, language: str) -> Any | None:
+    """Return the first voice that serves `language`, else the first that serves its primary subtag.
+
+    espeak lists a region voice only for some tags (en-gb, es-419), so a tag
+    such as 'zh-cn' or 'pt-br' falls back to the 'zh' or 'pt' voice instead
+    of the first voice, which is usually English. None when neither matches.
+    """
+    candidates = [language]
+    primary = primary_language(language)
+    if primary != language:
+        candidates.append(primary)
+    for code in candidates:
+        for voice in voices:
+            if voice_matches_language(voice, code):
+                return voice
+    return None
 
 
 def generate(text: str, config: dict) -> bytes:

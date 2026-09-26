@@ -92,6 +92,7 @@ def save_item(history_dir: str, audio_bytes: bytes, meta: dict, now: datetime, m
         "engine": meta.get("engine"),
         "language": meta.get("language"),
         "voice": meta.get("voice"),
+        "model": meta.get("model"),
         "format": fmt,
         "bytes": len(audio_bytes),
         "seconds": audio_seconds(audio_bytes, fmt),
