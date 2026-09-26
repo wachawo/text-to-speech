@@ -22,6 +22,7 @@ from datetime import datetime
 # Re-exported on purpose: ttssrv.app1 and the tests still reach the sniffer as
 # history.is_mp3 / history.audio_format.
 from libs.audio import audio_format, is_mp3  # noqa: F401
+from libs.tempfiles import safe_unlink
 
 logger = logging.getLogger(__name__)
 
@@ -73,11 +74,16 @@ def json_path(history_dir: str, item_id: str) -> str:
 
 
 def write_atomic(path: str, data: bytes) -> None:
-    """Write `data` to `path` through a `.tmp` neighbour and `os.replace`."""
+    """Write `data` to `path` through a `.tmp` neighbour and `os.replace`; a failed write leaves no `.tmp`."""
     tmp_path = f"{path}.tmp"
-    with open(tmp_path, "wb") as handle:
-        handle.write(data)
-    os.replace(tmp_path, path)
+    try:
+        with open(tmp_path, "wb") as handle:
+            handle.write(data)
+        os.replace(tmp_path, path)
+    finally:
+        # A no-op after os.replace; after a failed write it removes the partial
+        # file, which no listing (and so no pruning) would ever see.
+        safe_unlink(tmp_path)
 
 
 def save_item(history_dir: str, audio_bytes: bytes, meta: dict, now: datetime, max_items: int) -> dict:

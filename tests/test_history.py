@@ -205,3 +205,19 @@ def test_audio_written_before_json(tmp_path, make_wav, monkeypatch):
     monkeypatch.setattr(history, "write_atomic", tracking_write)
     history.save_item(str(tmp_path), make_wav(), meta(), NOW, 0)
     assert order == [".wav", ".json"]
+
+
+def test_write_atomic_leaves_no_tmp_file_when_the_write_fails(tmp_path):
+    """A failed write removes its .tmp neighbour: no listing sees it, so nothing would ever prune it."""
+    target = tmp_path / "item.wav"
+    with pytest.raises(TypeError):
+        history.write_atomic(str(target), "not bytes")  # type: ignore[arg-type]
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_write_atomic_replaces_the_target(tmp_path):
+    """The data lands at the target and the .tmp neighbour is gone."""
+    target = tmp_path / "item.wav"
+    history.write_atomic(str(target), b"RIFF")
+    assert target.read_bytes() == b"RIFF"
+    assert list(tmp_path.iterdir()) == [target]

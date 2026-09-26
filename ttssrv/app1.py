@@ -544,10 +544,7 @@ def voices_upload():
         raise ValidationError(f"Sample limit reached ({TTS_MAX_SAMPLES}); delete one first")
     os.makedirs(get_samples_dir(), exist_ok=True)
     # Written through a .tmp neighbour so a half-written sample never shows up in list_voices().
-    tmp_path = f"{target}.tmp"
-    with open(tmp_path, "wb") as handle:
-        handle.write(audio_bytes)
-    os.replace(tmp_path, target)
+    history.write_atomic(target, audio_bytes)
 
     logger.info(f"[{get_req_id()}] Voice '{form['name']}' saved: {len(audio_bytes)} bytes {rate} Hz {channels} ch {seconds}s")
     return (
