@@ -261,6 +261,10 @@ def test_voices_list_returns_engine_voices(client, installed, monkeypatch, app_m
     assert resp.status_code == 200
     assert asked[-1] == ("gtts", "en")
 
+    resp = client.get("/v1/audio/voices?model=silerotts&language=RU")
+    assert resp.status_code == 200
+    assert asked[-1] == ("silerotts", "ru")
+
 
 def test_atempo_chain_stays_within_stage_limits():
     """Speeds outside 0.5..2.0 are split into stages that each stay inside the atempo range."""

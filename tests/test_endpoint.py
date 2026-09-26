@@ -144,3 +144,37 @@ def test_voices_endpoint_lists_voices(client, monkeypatch, app_module):
     assert body["language"] == "ru"
     assert body["voices"] == ["aidar", "baya", "kseniya"]
     assert body["default"] == "aidar"
+
+
+def test_voices_endpoint_lowercases_the_language_like_synthesis(client, monkeypatch, app_module):
+    """language=RU lists the ru voices, the same ones /api/tts accepts for RU, not the English fallback."""
+    asked = []
+
+    def fake_voices(engine, language):
+        """Record the language the engine is asked for."""
+        asked.append(language)
+        return {"voices": ["baya"], "default": "baya"}
+
+    monkeypatch.setattr(app_module, "get_engine_voices", fake_voices)
+    resp = client.get("/api/voices?engine=silerotts&language=RU")
+    assert resp.status_code == 200
+    assert asked == ["ru"]
+    assert resp.get_json()["language"] == "ru"
+
+
+def test_voices_endpoint_validates_the_query(client, monkeypatch, app_module):
+    """The listing takes its query through VoicesQuerySchema: a 3-letter language is a 400, an empty one the default."""
+    monkeypatch.setattr(app_module, "get_engine_voices", lambda engine, language: {"voices": [], "default": None})
+    assert client.get("/api/voices?engine=silerotts&language=rus").status_code == 400
+    resp = client.get("/api/voices?engine=silerotts&language=")
+    assert resp.status_code == 200
+    assert resp.get_json()["language"] == app_module.TTS_LANGUAGE_DEFAULT
+
+
+def test_voices_endpoint_answers_503_for_an_engine_that_cannot_import(client, monkeypatch):
+    """An engine module whose top-level import fails is unavailable (503), not a 500 with a traceback."""
+    import engines
+
+    monkeypatch.setattr(engines, "get_engine_module_path", lambda name: engines.Path(f"{name}.py"))
+    resp = client.get("/api/voices?engine=nosuchdep")
+    assert resp.status_code == 503

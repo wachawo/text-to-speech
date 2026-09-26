@@ -59,6 +59,7 @@ from libs.sample_resolver import (  # noqa: E402
     list_sample_files,
     sample_path_for_voice,
 )
+from libs.tools import validate_language  # noqa: E402
 from ttssrv import history, metrics  # noqa: E402
 from ttssrv.openai_compat import (  # noqa: E402
     OpenAIRequestError,
@@ -74,6 +75,7 @@ from ttssrv.validators import (  # noqa: E402
     HistoryListSchema,
     SpeechRequestSchema,
     TtsRequestSchema,
+    VoicesQuerySchema,
     VoiceUploadSchema,
 )
 
@@ -244,6 +246,16 @@ def parse_tts_payload() -> dict:
     if errors:
         raise MarshmallowValidationError(errors)
     return schema.load(payload)
+
+
+def load_voices_query() -> dict:
+    """Validate the query string of the voice listings; an empty parameter counts as absent.
+
+    The language is lowercased later by validate_language(), as the synthesis
+    path does, so `language=RU` lists the voices /api/tts will accept for it.
+    """
+    args = {key: value for key, value in request.args.items() if value}
+    return VoicesQuerySchema().load(args)
 
 
 def acquire_slot() -> int | None:
@@ -467,8 +479,9 @@ def models_list():
 @token_required
 def voices_list():
     """List selectable voices for an engine + language (e.g. Silero ru speakers)."""
-    engine = request.args.get("engine") or TTS_ENGINE_DEFAULT
-    language = request.args.get("language") or TTS_LANGUAGE_DEFAULT
+    query = load_voices_query()
+    engine = query["engine"] or TTS_ENGINE_DEFAULT
+    language = validate_language(query["language"] or TTS_LANGUAGE_DEFAULT)
     info = get_engine_voices(engine, language)
     # Only the sample-cloning engine has files behind its voices; the web UI
     # shows their size, rate and length in the samples table.
@@ -808,8 +821,9 @@ def openai_models():
 @token_required
 def openai_voices():
     """List the voices of the engine behind ?model= (default engine when omitted), as {"voices": [...]}."""
-    engine = map_model_name(request.args.get("model"), TTS_ENGINE_DEFAULT)
-    language = request.args.get("language") or TTS_LANGUAGE_DEFAULT
+    query = load_voices_query()
+    engine = map_model_name(query["model"], TTS_ENGINE_DEFAULT)
+    language = validate_language(query["language"] or TTS_LANGUAGE_DEFAULT)
     info = get_engine_voices(engine, language)
     return jsonify({"voices": info.get("voices", [])}), 200
 
