@@ -392,43 +392,45 @@ def main() -> int:
             args=(audio_queue, output_formats, collected_paths, play_audio, failures),
             daemon=True,
         )
-        rec_thread.start()
-        play_thread.start()
-        rec_thread.join()
-        play_thread.join()
+        try:
+            rec_thread.start()
+            play_thread.start()
+            rec_thread.join()
+            play_thread.join()
 
-        if failures:
-            for idx, err in failures:
-                logger.error(f"Chunk {idx} failed: {type(err).__name__}: {err}")
-            logger.error(f"{len(failures)}/{len(chunks)} chunk(s) failed; aborting with exit code 3.")
-            return 3
-        if not collected_paths:
-            logger.error("No audio was generated: the text holds nothing to synthesize.")
-            return 1
-
-        if out_is_file and output_target is not None:
-            extension = chunk_extension(collected_paths)
-            output_filename = output_path_for(output_target, target_is_dir, config["filename_prefix"], extension)
-            try:
-                save_audio_file(collected_paths, output_filename)
-            except OSError as exc:
-                logger.error(f"Failed to save {output_filename}: {type(exc).__name__}: {exc}\n{traceback.format_exc()}")
+            if failures:
+                for idx, err in failures:
+                    logger.error(f"Chunk {idx} failed: {type(err).__name__}: {err}")
+                logger.error(f"{len(failures)}/{len(chunks)} chunk(s) failed; aborting with exit code 3.")
+                return 3
+            if not collected_paths:
+                logger.error("No audio was generated: the text holds nothing to synthesize.")
                 return 1
+
+            if out_is_file and output_target is not None:
+                extension = chunk_extension(collected_paths)
+                output_filename = output_path_for(output_target, target_is_dir, config["filename_prefix"], extension)
+                try:
+                    save_audio_file(collected_paths, output_filename)
+                except OSError as exc:
+                    logger.error(f"Failed to save {output_filename}: {type(exc).__name__}: {exc}\n{traceback.format_exc()}")
+                    return 1
+                if out_is_stdout:
+                    # stdout carries the audio stream, so the filename goes to the log instead.
+                    logger.info(output_filename)
+                else:
+                    # Written to stdout so shells can capture it: FILE=$(ttsgen "Hi" --file).
+                    print(output_filename, file=sys.stdout)
+
             if out_is_stdout:
-                # stdout carries the audio stream, so the filename goes to the log instead.
-                logger.info(output_filename)
-            else:
-                # Written to stdout so shells can capture it: FILE=$(ttsgen "Hi" --file).
-                print(output_filename, file=sys.stdout)
+                write_audio(collected_paths, sys.stdout.buffer)
+                sys.stdout.buffer.flush()
 
-        if out_is_stdout:
-            write_audio(collected_paths, sys.stdout.buffer)
-            sys.stdout.buffer.flush()
-
-        for tmp_path in collected_paths:
-            safe_unlink(tmp_path)
-
-        return 0
+            return 0
+        finally:
+            # Every exit, a failed chunk or a failed save included, removes the chunk files.
+            for tmp_path in collected_paths:
+                safe_unlink(tmp_path)
 
     except ValidationError as exc:
         logger.error(f"Validation error: {exc}")

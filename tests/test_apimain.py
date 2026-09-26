@@ -51,7 +51,7 @@ def run_main(monkeypatch, argv):
 
 def test_main_list_flag_returns_list_engines_exit_code(monkeypatch, quiet_main):
     """`--list` short-circuits synthesis and exits with the listing status."""
-    monkeypatch.setattr(ttsapi, "fetch_engines", lambda: {"engines": ["gtts"], "default": "gtts"})
+    monkeypatch.setattr(ttsapi, "fetch_engines", lambda: {"available": ["gtts"], "default": "gtts"})
     rc = run_main(monkeypatch, ["--list", "--quiet"])
     assert rc == 0
 
@@ -114,6 +114,24 @@ def test_main_engine_failure_returns_exit_code_3(monkeypatch, quiet_main):
     monkeypatch.setattr(ttsapi, "fetch_audio", boom)
     rc = run_main(monkeypatch, ["hello", "-e", "coquitts", "-f", str(quiet_main / "x.wav"), "--quiet"])
     assert rc == 3
+
+
+def test_main_partial_failure_leaves_no_chunk_files(monkeypatch, quiet_main):
+    """Exit 3 still removes the chunks that did succeed; they sit next to the requested file."""
+
+    def second_fails(text, engine, language):
+        """Answer the first chunk and fail the one that mentions the last sentence."""
+        if "last" in text:
+            raise RuntimeError("Server returned 500: boom")
+        return make_wav_bytes()
+
+    monkeypatch.setattr(ttsapi, "fetch_audio", second_fails)
+    out_dir = quiet_main / "out"
+    out_dir.mkdir()
+    text = "first " * 40 + ". This is the last sentence."
+    rc = run_main(monkeypatch, [text, "-e", "coquitts", "-f", str(out_dir / "x.wav"), "--quiet"])
+    assert rc == 3
+    assert list(out_dir.iterdir()) == []
 
 
 def test_main_input_file_synthesizes_text(monkeypatch, quiet_main):
