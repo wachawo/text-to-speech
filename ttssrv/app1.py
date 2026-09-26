@@ -201,7 +201,9 @@ class JSONProvider(DefaultJSONProvider):
         return super().default(o)
 
 
-app = Flask(__name__)
+# No static folder: Flask would otherwise register /static/<path:filename>,
+# the one route without @token_required, on the port compose publishes.
+app = Flask(__name__, static_folder=None)
 app.json = JSONProvider(app)
 app.url_map.strict_slashes = False
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_host=1)

@@ -30,6 +30,17 @@ def test_every_api_route_requires_a_token(client, monkeypatch, app_module):
     assert ("/metrics", "GET") in api_rules(app_module)
 
 
+def test_no_route_lives_outside_the_guarded_prefixes(app_module):
+    """Every URL rule is /api/*, /v1/* or /metrics, so the token check above covers all of them (no /static)."""
+    # "/__test" rules are added by other test modules to reach the error handlers.
+    outside = [
+        rule.rule
+        for rule in app_module.app.url_map.iter_rules()
+        if not (rule.rule.startswith(("/api/", "/v1/", "/__test")) or rule.rule == "/metrics")
+    ]
+    assert outside == []
+
+
 def test_health_stays_open(client, monkeypatch, app_module):
     """The health probe is the one route a docker healthcheck reaches without a token."""
     monkeypatch.setattr(app_module, "TTS_TOKENS", {"secret"}, raising=False)
