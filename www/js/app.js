@@ -170,6 +170,14 @@ Vue.prototype.$knownVoice = function (value, voices, mix) {
   });
 };
 
+/* The one voice of an engine that lists exactly one, when it is also the
+   engine default: a voice select then offers only "default", and that voice
+   reads as it. '' otherwise, and for an engine that mixes. */
+Vue.prototype.$soleVoice = function (entry) {
+  if (!entry || entry.mix || !entry.voices || entry.voices.length !== 1) return '';
+  return entry.voices[0] === entry['default'] ? entry.voices[0] : '';
+};
+
 /* Where the engine guides live; the models screen links a missing engine to
    its guide under this. */
 const DOCS_URL = 'https://github.com/wachawo/text-to-speech/blob/main/docs/';
