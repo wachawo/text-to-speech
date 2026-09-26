@@ -1,5 +1,5 @@
-# Used when build context = repo root. The active build context is ./ttssrv,
-# so ttssrv/.dockerignore is the primary one — this file is a safety net.
+# Every image builds with the repo root as its context (docker-compose*.yml),
+# so this file decides what reaches the Docker daemon.
 
 # Python caches and build artifacts
 __pycache__/
