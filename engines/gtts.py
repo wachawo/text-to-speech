@@ -4,6 +4,7 @@
 
 import io
 import logging
+import threading
 
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
 
@@ -12,6 +13,10 @@ from libs.exceptions import EngineNotAvailableError, TTSException, ValidationErr
 MAX_TEXT_LENGTH = 5_000
 
 logger = logging.getLogger(__name__)
+
+# One request to Google at a time per process: the rate limit above is per
+# client, and parallel chunks from several server threads reach it sooner.
+INFERENCE_LOCK = threading.Lock()
 
 # Optional dependency: absence only disables this engine, it must not break import.
 try:
@@ -55,7 +60,8 @@ def generate(text: str, config: dict) -> bytes:
 
         tts = gTTS(text=text, lang=language, slow=slow)
         audio_buffer = io.BytesIO()
-        tts.write_to_fp(audio_buffer)
+        with INFERENCE_LOCK:
+            tts.write_to_fp(audio_buffer)
         audio_buffer.seek(0)
 
         return audio_buffer.getvalue()

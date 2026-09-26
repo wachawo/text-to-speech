@@ -35,6 +35,9 @@ except ImportError:
 # dwarfs the synthesis itself (issue #11). Safe to share across requests.
 VOICE_CACHE: dict = {}
 VOICE_CACHE_LOCK = threading.Lock()
+# One cached PiperVoice serves every request, and its per-call settings fall
+# back to the shared voice.config, so one synthesis at a time per process.
+INFERENCE_LOCK = threading.Lock()
 
 
 def get_voice(voice_path: str):
@@ -205,7 +208,7 @@ def generate(text: str, config: dict) -> bytes:
 
         # Generate audio to BytesIO
         audio_buffer = io.BytesIO()
-        with wave.open(audio_buffer, "wb") as wav_file:
+        with INFERENCE_LOCK, wave.open(audio_buffer, "wb") as wav_file:
             voice.synthesize_wav(text, wav_file)
 
         audio_buffer.seek(0)

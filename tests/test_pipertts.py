@@ -258,6 +258,24 @@ def test_generate_returns_valid_wav_bytes(engine, monkeypatch, tmp_path):
         assert w.getframerate() == 22050
 
 
+def test_generate_holds_the_inference_lock_around_synthesis(engine, monkeypatch, tmp_path):
+    """The shared PiperVoice synthesizes under INFERENCE_LOCK, one request at a time."""
+    seen = []
+    monkeypatch.setattr(engine, "get_voice_path", lambda lang: str(tmp_path / "v.onnx"))
+    voice = engine.get_voice(str(tmp_path / "v.onnx"))
+    original = voice.synthesize_wav
+
+    def probe(text, wav_file):
+        """Note the lock state, then synthesize as the fake does."""
+        seen.append(engine.INFERENCE_LOCK.locked())
+        original(text, wav_file)
+
+    monkeypatch.setattr(voice, "synthesize_wav", probe)
+    engine.generate("hi", {"language": "en"})
+    assert seen == [True]
+    assert engine.INFERENCE_LOCK.locked() is False
+
+
 # get_voice — module-level cache (issue #11)
 
 
