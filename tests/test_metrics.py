@@ -217,3 +217,17 @@ def test_warmup_outcome_sets_warm(app_module, registry, monkeypatch, make_wav):
     assert engine["calls"] == 1
     assert engine["failures"] == 1
     assert engine["last_error"] == "RuntimeError"
+
+
+def test_warmup_counts_a_validation_error_like_a_request(app_module, registry, monkeypatch, caplog):
+    """A warmup text the engine refuses (Silero and ".") is not an engine failure in /metrics, as for a request."""
+
+    def refuse(text, engine=None, language=None, voice=None):
+        """Refuse the text the way Silero refuses a lone dot."""
+        raise ValidationError("nothing to say")
+
+    with caplog.at_level("INFO"):
+        engine = warm_up(app_module, monkeypatch, refuse)
+    assert engine["warm"] is False
+    assert engine["failures"] == 0
+    assert any("Synthesis warmup: engine=fakeengine" in record.getMessage() for record in caplog.records)

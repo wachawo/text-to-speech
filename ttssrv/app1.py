@@ -174,16 +174,17 @@ def init_engine_pool(size: int = TTS_POOL_SIZE) -> None:
         logger.info(f"Warming up {engine}...")
         start_time = time.monotonic()
         try:
-            text_to_speech_bytes(text=".", engine=engine, language=TTS_LANGUAGE_DEFAULT)
-            elapsed_ms = int((time.monotonic() - start_time) * 1000)
-            metrics.record(engine, elapsed_ms, True)
+            # Through synthesize(), so the warmup logs its Synthesis line and
+            # counts in /metrics by the same rules as a request: a
+            # ValidationError (Silero has nothing to say for ".") is not an
+            # engine failure. The app context gives synthesize() its `g`.
+            with app.app_context():
+                synthesize(".", engine, TTS_LANGUAGE_DEFAULT, label="warmup")
             metrics.set_warm(engine, True)
             logger.info(f"Warmup OK {engine} ({time.monotonic() - start_time:.2f}s)")
         except Exception as exc:
-            elapsed_ms = int((time.monotonic() - start_time) * 1000)
-            metrics.record(engine, elapsed_ms, False, type(exc).__name__)
             metrics.set_warm(engine, False)
-            logger.warning(f"Warmup failed for {engine}: {type(exc).__name__}: {exc} — will retry on first request")
+            logger.warning(f"Warmup failed for {engine}: {type(exc).__name__}: {exc} - will retry on first request")
 
     for slot_index in range(size):
         ENGINE_POOL.put(slot_index)
