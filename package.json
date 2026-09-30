@@ -9,7 +9,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.0",
     "eslint": "^10.11.0",
-    "eslint-plugin-vue": "^10.11.0",
+    "eslint-plugin-vue": "^10.11.1",
     "globals": "^17.0.0",
     "vue": "2.7.16",
     "vue-template-compiler": "2.7.16"
