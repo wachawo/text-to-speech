@@ -22,5 +22,5 @@ types-requests>=2.33.0.20260906,<2.33.0.20260907
 Flask>=3.1,<4
 flask-cors>=6.0,<7
 marshmallow>=4.3.1,<5
-uvicorn>=0.53,<1
+uvicorn>=0.54.0,<1
 pytz>=2026.3.post1
