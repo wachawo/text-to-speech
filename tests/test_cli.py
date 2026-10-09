@@ -77,6 +77,27 @@ def test_chunk_text_no_punctuation():
         assert len(c) <= 50
 
 
+def test_chunk_text_keeps_punctuation_inside_tokens():
+    """Numbers, domains and versions reach the engine as written, not as '3. 50' or '1, 000'."""
+    text = "3.50 dollars, 1,000 rubles, example.com, 1.0.7"
+    assert chunk_text(text, max_len=200) == [text]
+
+
+def test_chunk_text_splits_after_punctuation_and_whitespace():
+    """A boundary is punctuation followed by whitespace, or a line break."""
+    chunks = chunk_text("Price 3.50, total 1,000. Next line\nthird", max_len=12)
+    assert chunks == ["Price 3.50,", "total 1,000.", "Next line", "third"]
+
+
+def test_chunk_text_long_fragment_is_cut_between_words():
+    """A fragment without boundaries is cut at spaces, so no word is split in two."""
+    text = " ".join(["speech"] * 40)
+    chunks = chunk_text(text, max_len=50)
+    assert all(len(c) <= 50 for c in chunks)
+    assert all(word == "speech" for chunk in chunks for word in chunk.split(" "))
+    assert " ".join(chunks) == text
+
+
 # concat_wav_files
 
 

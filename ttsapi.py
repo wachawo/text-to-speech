@@ -82,7 +82,7 @@ def fetch_audio(text: str, engine: str, language: str) -> bytes:
     Args:
         text: Text to synthesize (one chunk).
         engine: Remote engine name; empty string lets the server pick its default.
-        language: Two-letter language code.
+        language: Two-letter language code; empty string lets the server use its TTS_LANGUAGE.
 
     Returns:
         Raw audio bytes (MP3 or WAV, depending on the server-side engine).
@@ -91,7 +91,9 @@ def fetch_audio(text: str, engine: str, language: str) -> bytes:
         RuntimeError: The server answered with an HTTP status of 400 or above.
     """
     url = f"{get_url()}/api/tts"
-    payload = {"text": text, "engine": engine, "language": language}
+    payload = {"text": text, "engine": engine}
+    if language:
+        payload["language"] = language
     resp = requests.post(url, json=payload, headers=get_headers(), timeout=DEFAULT_TIMEOUT)
     if resp.status_code >= 400:
         raise RuntimeError(f"Server returned {resp.status_code}: {resp.text[:500]}")
@@ -161,7 +163,7 @@ Configuration (read from process env, ./ttsgen.conf, ~/.config/ttsgen.conf, .env
     parser.add_argument("-s", "--stdout", action="store_true", help="Output audio bytes to stdout")
     parser.add_argument("-o", "--output", metavar="FORMATS", help="Comma-separated: play, file, stdout")
     parser.add_argument("-e", "--engine", help="Remote engine name (server's TTS_ENGINE if omitted)")
-    parser.add_argument("-l", "--language", help="Language code (default: en)")
+    parser.add_argument("-l", "--language", help="Language code (default: the server's TTS_LANGUAGE)")
     parser.add_argument("-d", "--audio-dir", metavar="DIR", help="Directory for saved files (default: audio/)")
 
     parser.add_argument("-v", "--verbose", action="store_true")
@@ -226,7 +228,7 @@ def main() -> int:
         text = args.text
 
     engine = args.engine or os.getenv("TTS_ENGINE", "")  # empty: the server picks its default
-    language = args.language or os.getenv("TTS_LANGUAGE", "en")
+    language = args.language or os.getenv("TTS_LANGUAGE", "")  # empty: the server picks its default
     audio_dir = args.audio_dir or os.getenv("AUDIO_DIRECTORY", "audio")
 
     output_formats: list[str] = []
@@ -258,7 +260,7 @@ def main() -> int:
 
     if not args.quiet and not out_is_stdout:
         logger.info(f"TTS API client: {get_url()}")
-        logger.info(f"Engine: {engine or '(server default)'}  Language: {language}")
+        logger.info(f"Engine: {engine or '(server default)'}  Language: {language or '(server default)'}")
         logger.info(f"Formats: {', '.join(output_formats)}")
         if output_target:
             logger.info(f"Output: {output_target}")

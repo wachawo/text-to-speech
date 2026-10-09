@@ -139,7 +139,9 @@ def load_model(language: str) -> tuple:
         result = torch.hub.load(
             repo_or_dir="snakers4/silero-models",
             model="silero_tts",
-            language=(language if language in ["ru", "en", "de", "es", "fr", "ua"] else "en"),
+            # The hub's language key is the suffix of the model id ('v3_ua' -> 'ua'),
+            # so the 'uk' alias asks for the Ukrainian model under the hub's name.
+            language=model_id.rsplit("_", 1)[-1],
             speaker=model_id,
             verbose=False,
             trust_repo=True,

@@ -3,6 +3,7 @@
 """Unit tests for chunked streaming responses from /api/tts?stream=true."""
 
 import io
+import queue
 import wave
 
 from ttssrv.streaming import streaming_wav_header, wav_data, wav_params
@@ -66,3 +67,38 @@ def test_wav_helpers_roundtrip():
     wav = buf.getvalue()
     assert wav_params(wav) == (16000, 1, 2)
     assert len(wav_data(wav)) == 800 * 2
+
+
+def use_one_slot_pool(monkeypatch, app_module) -> queue.Queue:
+    """Give the server a pool of one free slot and return it."""
+    pool: queue.Queue = queue.Queue()
+    pool.put(0)
+    monkeypatch.setattr(app_module, "ENGINE_POOL", pool)
+    monkeypatch.setattr(app_module, "TTS_POOL_SIZE", 1)
+    return pool
+
+
+def test_stream_head_releases_slot(client, monkeypatch, app_module):
+    """HEAD closes the stream before its generator starts, and the slot still comes back."""
+    pool = use_one_slot_pool(monkeypatch, app_module)
+    resp = client.head("/api/tts?text=hi&stream=true")
+    resp.close()
+    assert resp.status_code == 200
+    assert pool.qsize() == 1
+
+
+def test_stream_closed_unread_releases_slot(client, monkeypatch, app_module):
+    """A client that leaves before reading any chunk does not keep the slot."""
+    pool = use_one_slot_pool(monkeypatch, app_module)
+    resp = client.get("/api/tts?text=hi&stream=true", buffered=False)
+    resp.close()
+    assert pool.qsize() == 1
+
+
+def test_stream_read_to_end_releases_slot_once(client, monkeypatch, app_module):
+    """A stream read to the end gives the slot back exactly once."""
+    pool = use_one_slot_pool(monkeypatch, app_module)
+    resp = client.post("/api/tts", json={"text": "One. Two. Three.", "stream": True})
+    resp.close()
+    assert resp.status_code == 200
+    assert pool.qsize() == 1

@@ -107,7 +107,7 @@ def test_parser_file_flag_without_path_yields_empty_string():
 
 
 def test_parser_default_language_is_unset():
-    """Omitting `--language` leaves None, so main() can fall back to TTS_LANGUAGE and then en."""
+    """Omitting `--language` leaves None, so main() can fall back to TTS_LANGUAGE and then the server default."""
     parser = ttsapi.parse_arguments()
     args = parser.parse_args(["hello"])
     assert args.language is None
@@ -231,6 +231,28 @@ def test_fetch_audio_records_content_type(monkeypatch):
     monkeypatch.setattr(requests, "post", lambda *a, **kw: FakeResp())
     ttsapi.fetch_audio("hi", "gtts", "en")
     assert ttsapi.LAST_RESPONSE["content_type"] == "audio/mpeg"
+
+
+@pytest.mark.parametrize(("language", "expected"), [("", None), ("ru", "ru")])
+def test_fetch_audio_sends_language_only_when_set(monkeypatch, language, expected):
+    """An empty language is left out of the body, so the server answers in its own TTS_LANGUAGE."""
+    sent = {}
+
+    class FakeResp:
+        """Canned 200 response carrying WAV bytes."""
+
+        status_code = 200
+        content = b"RIFFdata"
+        text = ""
+
+    def fake_post(url, json=None, **kwargs):
+        """Record the JSON body and answer with audio."""
+        sent.update(json)
+        return FakeResp()
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    ttsapi.fetch_audio("hi", "", language)
+    assert sent.get("language") == expected
 
 
 def test_response_extension_prefers_content_type_then_sniffs(tmp_path):

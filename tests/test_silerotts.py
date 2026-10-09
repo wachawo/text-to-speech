@@ -167,6 +167,25 @@ def test_generate_translates_model_not_found_to_tts_exception(engine, monkeypatc
         engine.generate("hi", {"language": "en"})
 
 
+@pytest.mark.parametrize(
+    ("language", "hub_language", "model_id"),
+    [("uk", "ua", "v3_ua"), ("ua", "ua", "v3_ua"), ("ru", "ru", "v3_1_ru"), ("de", "de", "v3_de"), ("xx", "en", "v3_en")],
+)
+def test_load_model_asks_the_hub_for_the_model_language(engine, monkeypatch, language, hub_language, model_id):
+    """torch.hub gets the language the model is filed under, so 'uk' loads v3_ua as 'ua', not as 'en'."""
+    calls = []
+
+    def record(**kw):
+        """Record the hub arguments, then stop the load."""
+        calls.append((kw["language"], kw["speaker"]))
+        return "stop"
+
+    monkeypatch.setattr(engine.torch.hub, "load", record)
+    with pytest.raises(TTSException):
+        engine.load_model(language)
+    assert calls == [(hub_language, model_id)]
+
+
 def test_generate_unexpected_hub_result_shape_raises(engine, monkeypatch):
     """A non-tuple return from torch.hub.load raises TTSException instead of an unpacking error."""
     monkeypatch.setattr(engine, "AVAILABLE", True)

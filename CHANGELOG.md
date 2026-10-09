@@ -40,6 +40,24 @@
   refused; the listings now validate and lowercase their query like synthesis,
   and an engine that cannot be imported answers 503 instead of 500.
 - `ttsapi --list` printed no engines against any server since 1.0.3.
+- A `HEAD` request to `/api/tts` with `stream=true` kept its pool slot for
+  good, so with the default `TTS_POOL_SIZE=1` every later synthesis waited and
+  got a 503; the slot now also comes back when the response is closed.
+- Text was changed before synthesis: `3.50`, `1,000`, `example.com` and
+  `1.0.7` reached the engine as `3. 50`, `1, 000`, `example. com` and
+  `1. 0. 7`, and a long run without punctuation was cut inside a word. A chunk
+  boundary is now punctuation followed by whitespace, or a line break, and a
+  long fragment is cut between words.
+- `ttsapi` without `-l` and `TTS_LANGUAGE` sent `language: en`, overriding
+  the server's `TTS_LANGUAGE`; it now leaves the language to the server.
+- An installer download cut off half way (a restart, a dropped connection)
+  left a partial model file that every later run skipped as installed; files
+  are downloaded to `<name>.part` and renamed once complete.
+- `.dockerignore` did not leave out `data/` and `node_modules/`, so every
+  image build sent the pip cache, the history and the TLS key in
+  `data/certs/` to the Docker daemon.
+- `silerotts` with `language=uk` asked torch hub for the Ukrainian model under
+  the English language key and failed with a cold cache.
 
 ### [1.0.7] - 2026-09-23
 

@@ -41,6 +41,12 @@ ttsgen.wav
 cache/
 .backup/
 
+# Runtime state: user site-packages, pip cache, history and the TLS key
+data/
+
+# Node tooling for the web UI tests and lint
+node_modules/
+
 # Generated audio
 audio/
 *.wav
