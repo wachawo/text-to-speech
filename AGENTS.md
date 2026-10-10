@@ -59,8 +59,9 @@ docker compose -f docker-compose-cpu.yml up --build -d   # server on :5000, UI o
 CI runs `lint` (pre-commit and mypy), `test` (pytest) and `www` (npm) on every
 pull request. A version tag without a `v` (`1.0.7`) triggers `release.yml`,
 which publishes the GitHub Release with the `### [1.0.7]` section of
-`CHANGELOG.md` and the built wheel and sdist. Bump `version` in
-`pyproject.toml` first: nothing checks it against the tag.
+`CHANGELOG.md` and the built wheel and sdist, after it has run pytest and
+checked that `version` in `pyproject.toml` equals the tag. Bump the version
+first, or the release fails.
 
 ## Architecture rules
 

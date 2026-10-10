@@ -6,7 +6,7 @@
     <div class="form-check-inline m-1 d-flex flex-wrap row-gap-1 align-items-center">
       <div style="margin-left:auto"></div>
       <div>
-        <button type="button" class="btn btn-sm btn-secondary fw-bold" style="min-width:100px"
+        <button type="button" class="btn btn-sm btn-secondary fw-bold btn-w100"
                 title="Ask the server again what is installed"
                 :disabled="wait.length > 0" @click="reload">
           <i class="fa fa-rotate"></i> RELOAD

@@ -9,7 +9,6 @@ Companion to `ttsgen --stdout`, so audio can be piped between processes:
 """
 
 import logging
-import os
 import sys
 import traceback
 
@@ -25,10 +24,6 @@ LOGGING = {
 }
 logging.basicConfig(**LOGGING)  # type: ignore
 logger = logging.getLogger(__name__)
-
-# Source-checkout fallback: put the bundled libs/ directory on sys.path before the
-# libs.* import below, so the script also runs from a clone without installation.
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "libs"))
 
 # Local imports
 try:

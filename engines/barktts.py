@@ -36,14 +36,12 @@ except ImportError:
 
 # PRELOAD_LOCK guards the first preload_models() so concurrent first requests
 # do not load the 10GB of weights twice; PRELOAD_CACHE holds a single "models"
-# entry once they are in, and MODELS_PRELOADED mirrors it for callers that
-# read a flag. INFERENCE_LOCK serialises generate_audio: Bark keeps its models
+# entry once they are in. INFERENCE_LOCK serialises generate_audio: Bark keeps its models
 # in module globals and is not safe to drive from several threads at once.
 # The engine pool bounds synthesis across engines; this lock bounds this
 # engine to one synthesis at a time.
 PRELOAD_LOCK = threading.Lock()
 PRELOAD_CACHE: dict = {}
-MODELS_PRELOADED = False
 INFERENCE_LOCK = threading.Lock()
 
 
@@ -109,7 +107,6 @@ def ensure_models_loaded() -> None:
 
     def preload() -> bool:
         """Allow-list the numpy globals Bark checkpoints need, then preload."""
-        global MODELS_PRELOADED
         models_dir = get_models_directory()
         if models_dir != os.path.expanduser("~/.cache/suno/bark_v0"):
             logger.info(f"BARKTTS_MODELS is {models_dir}, but Bark loads its weights from ~/.cache/suno/bark_v0")
@@ -127,7 +124,6 @@ def ensure_models_loaded() -> None:
 
         # First run downloads the weights; later runs load them from cache.
         preload_models()
-        MODELS_PRELOADED = True
         return True
 
     load_cached(PRELOAD_CACHE, PRELOAD_LOCK, "models", preload)
@@ -154,7 +150,7 @@ def generate(text: str, config: dict) -> bytes:
         config: Configuration dict with language
 
     Returns:
-        Audio bytes in WAV format (24000 Hz, mono, 32-bit float)
+        Audio bytes in WAV format (24000 Hz, mono, 16-bit PCM)
 
     Raises:
         EngineNotAvailableError: Bark or one of its dependencies is missing.

@@ -64,7 +64,7 @@
 
       <div class="d-flex justify-content-end align-items-center gap-2 mt-1">
         <small v-if="note" class="text-end" :class="noteError ? 'tts-state-off' : 'text-secondary'">{{ note }}</small>
-        <button type="button" class="btn btn-sm btn-success fw-bold" style="min-width:100px"
+        <button type="button" class="btn btn-sm btn-success fw-bold btn-w100"
                 @click="upload" :disabled="wait.length > 0 || !(file || take) || !nameValid"
                 title="Store the WAV above as a coquitts voice sample">
           <i class="fa fa-upload"></i> UPLOAD
