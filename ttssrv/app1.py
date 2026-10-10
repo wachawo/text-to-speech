@@ -201,6 +201,10 @@ def init_engine_pool(size: int = TTS_POOL_SIZE) -> None:
 class JSONProvider(DefaultJSONProvider):
     """Custom JSON provider — datetime/date as 'YYYY-MM-DD HH:MM:SS'."""
 
+    # Keys keep the order the route builds them in. JSON_SORT_KEYS stopped
+    # working in Flask 3.0; the provider attribute works on 2.3 and 3.x alike.
+    sort_keys = False
+
     def default(self, o):
         """Serialize datetime/date values with DATETIME_FMT, delegate the rest."""
         if isinstance(o, datetime | date):
@@ -216,8 +220,6 @@ app.url_map.strict_slashes = False
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_host=1)
 app.config.update(
     dict(
-        JSON_DATETIME_FORMAT=DATETIME_FMT,
-        JSON_SORT_KEYS=False,
         MAX_CONTENT_LENGTH=MAX_CONTENT_LENGTH,
     )
 )

@@ -62,7 +62,7 @@
       </div>
 
       <div>
-        <button type="button" class="btn btn-primary btn-sm fw-bold" style="min-width:100px"
+        <button type="button" class="btn btn-primary btn-sm fw-bold btn-w100"
                 @click="generate" :disabled="!canGenerate">
           <i class="fa fa-play"></i> GENERATE
         </button>

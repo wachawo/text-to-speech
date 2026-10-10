@@ -66,6 +66,10 @@ for (const name of views) {
     assert.ok(shape, 'module.exports has none of name, data, methods, props, computed');
     if (component.data) assert.equal(typeof component.data, 'function', 'data must be a function');
   });
+
+  test(`${name}: button widths come from .btn-w85 / .btn-w100, not inline styles`, () => {
+    assert.doesNotMatch(templateOf(source), /style="[^"]*min-width/);
+  });
 }
 
 for (const name of scripts) {

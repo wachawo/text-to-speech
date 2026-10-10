@@ -310,7 +310,7 @@ def test_concurrent_first_load_preloads_once(engine, monkeypatch):
     monkeypatch.setattr(engine, "preload_models", slow_preload)
     run_threads(lambda: engine.generate("hi", {"language": "en"}))
     assert len(preloads) == 1
-    assert engine.MODELS_PRELOADED is True
+    assert "models" in engine.PRELOAD_CACHE
 
 
 def test_inference_is_serialised(engine, monkeypatch):

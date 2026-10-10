@@ -5,7 +5,6 @@
 import io
 import logging
 import os
-import sys
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -17,10 +16,6 @@ from engines import get_engine_function, get_supported_engines, is_engine_availa
 from .audio import extension_for
 from .exceptions import EngineNotAvailableError, TTSException, ValidationError
 from .tempfiles import safe_unlink
-
-# Makes the repository root importable when libs/ is used straight from a source
-# checkout rather than from an installed wheel.
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 logger = logging.getLogger(__name__)
 

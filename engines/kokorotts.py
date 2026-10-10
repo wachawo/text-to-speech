@@ -84,8 +84,7 @@ VOICE_NAMES_LOCK = threading.Lock()
 # costs ~1-3s on CPU; reuse across calls within one process.
 KOKORO_CACHE: dict = {}
 # Guards the first load only: two concurrent first requests must not both
-# build the ONNX session. Inference needs no lock, onnxruntime's run() is
-# thread-safe, so the engine pool alone bounds parallel synthesis.
+# build the ONNX session. Synthesis has its own lock below.
 KOKORO_CACHE_LOCK = threading.Lock()
 # onnxruntime itself is thread-safe, but Kokoro phonemizes through espeak-ng,
 # a C library with global state, so one synthesis at a time per process.

@@ -17,14 +17,14 @@
           <div class="fw-bold text-primary text-uppercase border-bottom mt-2 mb-1">Studio defaults</div>
           <div class="set-grid">
             <label for="set-engine">Engine</label>
-            <select id="set-engine" class="form-select form-select-sm set-select" style="width: 220px"
+            <select id="set-engine" class="form-select form-select-sm set-select"
                     v-model="form.engine" :disabled="wait.length > 0">
               <option value="">default ({{ serverEngine || '-' }})</option>
               <option v-for="name in engines" :key="name" :value="name">{{ name }}</option>
             </select>
 
             <label for="set-language">Language</label>
-            <select id="set-language" class="form-select form-select-sm set-select" style="width: 220px"
+            <select id="set-language" class="form-select form-select-sm set-select"
                     v-model="form.language" :disabled="wait.length > 0">
               <option value="">default ({{ serverLanguage || '-' }})</option>
               <option v-for="lang in $languages" :key="lang.code" :value="lang.code">
@@ -36,7 +36,7 @@
             <!-- An engine that mixes takes free text with the list as
                  suggestions, as in the Studio. -->
             <template v-if="voiceMix">
-              <input id="set-voice" type="text" class="form-control form-control-sm set-select" style="width: 220px"
+              <input id="set-voice" type="text" class="form-control form-control-sm set-select"
                      list="set-voices" :placeholder="'default (' + (serverVoice || '-') + ')'"
                      autocomplete="off" spellcheck="false" title="Voice or mix, e.g. af_bella(2)+af_sky(1)"
                      maxlength="128" v-model="form.voice" :disabled="wait.length > 0">
@@ -44,7 +44,7 @@
                 <option v-for="name in voices" :key="name" :value="name"></option>
               </datalist>
             </template>
-            <select id="set-voice" class="form-select form-select-sm set-select" style="width: 220px"
+            <select id="set-voice" class="form-select form-select-sm set-select"
                     v-model="voicePick" :disabled="wait.length > 0 || voices.length === 0" v-else>
               <option value="">default ({{ serverVoice || '-' }})</option>
               <option v-for="name in voiceChoices" :key="name" :value="name">{{ name }}</option>
@@ -66,9 +66,9 @@
                  :title="noteTitle || null">{{ note }}</small>
           <span v-else></span>
           <div class="d-flex gap-1">
-            <button type="button" class="btn btn-sm btn-success fw-bold" style="min-width:100px"
+            <button type="button" class="btn btn-sm btn-success fw-bold btn-w100"
                     @click="saveStudio" :disabled="wait.length > 0">SAVE</button>
-            <button type="button" class="btn btn-sm btn-secondary fw-bold" style="min-width:100px"
+            <button type="button" class="btn btn-sm btn-secondary fw-bold btn-w100"
                     data-bs-dismiss="modal">CLOSE</button>
           </div>
         </div>

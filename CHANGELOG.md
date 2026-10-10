@@ -36,6 +36,10 @@
   `it_IT-riccardo-medium` does not exist upstream.
 - The web UI says "Setting not stored", "No samples", "Copy failed" and
   similar short labels, with the reason in the tooltip.
+- JSON responses keep the key order the route builds (`JSON_SORT_KEYS` has
+  had no effect since Flask 3.0, so they were sorted outside the stand).
+- `release.yml` runs pytest and checks that `version` in `pyproject.toml`
+  equals the tag before it builds and publishes.
 
 #### Fixed
 - `ttsgen.conf.example` no longer sets `TTS_TOKENS=` and `TTS_TOKEN=` to empty

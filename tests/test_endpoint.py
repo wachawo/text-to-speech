@@ -2,6 +2,8 @@
 # -*- coding: utf-8 -*-
 """Tests for the /api/tts and /api/voices endpoints, success and error paths."""
 
+import json
+
 from libs.exceptions import EngineNotAvailableError, TTSException
 
 INTERNAL_MARKER = "INTERNAL-MARKER-9876"
@@ -178,3 +180,9 @@ def test_voices_endpoint_answers_503_for_an_engine_that_cannot_import(client, mo
     monkeypatch.setattr(engines, "get_engine_module_path", lambda name: engines.Path(f"{name}.py"))
     resp = client.get("/api/voices?engine=nosuchdep")
     assert resp.status_code == 503
+
+
+def test_json_keeps_the_key_order_of_the_route(app_module):
+    """Responses list keys in the order the route builds them, on Flask 2.3 and 3.x alike."""
+    body = app_module.app.json.dumps({"status": "ok", "engine": "gtts", "available": 1})
+    assert list(json.loads(body)) == ["status", "engine", "available"]

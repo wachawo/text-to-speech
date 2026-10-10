@@ -4,8 +4,6 @@
 
 import io
 import logging
-import sys
-from pathlib import Path
 from typing import cast
 
 # Local imports
@@ -29,10 +27,6 @@ from .tools import (
     validate_language,
     validate_text,
 )
-
-# Makes the repository root importable when libs/ is used straight from a source
-# checkout rather than from an installed wheel.
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Module logger only — a library must not call logging.basicConfig(), which would
 # grab the root logger and turn the entrypoint's own basicConfig(**LOGGING) into a

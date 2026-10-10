@@ -19,9 +19,9 @@
 
         <div class="modal-footer p-1 d-flex justify-content-end gap-1">
           <button type="button" ref="cancelEl"
-                  class="btn btn-sm btn-secondary fw-bold" style="min-width:100px"
+                  class="btn btn-sm btn-secondary fw-bold btn-w100"
                   data-bs-dismiss="modal">CANCEL</button>
-          <button type="button" class="btn btn-sm fw-bold" style="min-width:100px"
+          <button type="button" class="btn btn-sm fw-bold btn-w100"
                   :class="danger ? 'btn-danger' : 'btn-primary'"
                   @click="confirm">{{ label }}</button>
         </div>
