@@ -12,8 +12,9 @@ import sys
 import types
 
 import pytest
+from gtts.tts import gTTS as RealGTTS
 
-from libs.exceptions import EngineNotAvailableError, TTSException
+from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
 
 
 @pytest.fixture
@@ -114,6 +115,18 @@ def test_generate_wraps_underlying_failure_as_tts_exception(engine, monkeypatch)
     monkeypatch.setattr(engine, "gTTS", BoomGTTS)
     with pytest.raises(TTSException, match="gTTS generation failed"):
         engine.generate("hi", {"language": "en"})
+
+
+def test_generate_unsupported_language_is_validation_error(engine, monkeypatch):
+    """A language gTTS does not speak is a bad request (400), not a synthesis failure (500).
+
+    The real gTTS class is used: its constructor checks the language against the
+    static gtts.lang table, so the refusal comes before any network request.
+    """
+    monkeypatch.setattr(engine, "gTTS", RealGTTS)
+    with pytest.raises(ValidationError) as excinfo:
+        engine.generate("hi", {"language": "xx"})
+    assert str(excinfo.value) == "Language 'xx' is not supported by gtts"
 
 
 def test_generate_holds_the_inference_lock_around_the_request(engine, monkeypatch):

@@ -14,7 +14,9 @@ from typing import Any, cast
 # Local imports
 from engines import get_engine_function, get_supported_engines, is_engine_available
 
+from .audio import extension_for
 from .exceptions import EngineNotAvailableError, TTSException, ValidationError
+from .tempfiles import safe_unlink
 
 # Makes the repository root importable when libs/ is used straight from a source
 # checkout rather than from an installed wheel.
@@ -224,7 +226,10 @@ def batch_tts(
     language: str = "en",
     output_dir: str = "audio",
 ) -> list[str]:
-    """Synthesize several texts into timestamped MP3 files under output_dir.
+    """Synthesize several texts into new timestamped files under output_dir.
+
+    Each file is named after the container its bytes hold (.wav or .mp3) and
+    never replaces an existing file, even when several finish in one second.
 
     Args:
         texts: Non-empty list of texts, synthesized sequentially.
@@ -248,13 +253,17 @@ def batch_tts(
     generated_files = []
 
     for i, text in enumerate(texts):
+        filename = None
         try:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = os.path.join(output_dir, f"{timestamp}.mp3")
-
-            result_filename = pipeline(text, "file", filename)
-            generated_files.append(result_filename)
+            audio_bytes = cast(bytes, pipeline(text, "bytes"))
+            filename = claim_timestamp_path(output_dir, extension=extension_for(audio_bytes))
+            with open(filename, "wb") as handle:
+                handle.write(audio_bytes)
+            generated_files.append(filename)
         except Exception as exc:
+            if filename is not None and filename not in generated_files:
+                # The name was claimed empty for this item and holds no audio.
+                safe_unlink(filename)
             logger.error(f"Failed to process text {i}: {exc}")
             raise TTSException(f"Batch processing failed at item {i}: {exc}") from exc
 
@@ -268,6 +277,28 @@ def generate_timestamp_filename(prefix: str = "", extension: str = "mp3") -> str
         return f"{prefix}_{timestamp}.{extension}"
     else:
         return f"{timestamp}.{extension}"
+
+
+def claim_timestamp_path(directory: str, prefix: str = "", extension: str = "mp3") -> str:
+    """Create a new, empty `[prefix_]YYYYmmdd_HHMMSS[_N].<extension>` file in directory and return its path.
+
+    The name is claimed with an exclusive create, so two runs in the same second,
+    or two processes at once, get a numeric suffix instead of overwriting each
+    other. The file mode follows the umask, as a plain open() would.
+    """
+    base_name = generate_timestamp_filename(prefix, extension)
+    stem, extension_dot, suffix = base_name.rpartition(".")
+    attempt = 1
+    while True:
+        name = base_name if attempt == 1 else f"{stem}_{attempt}{extension_dot}{suffix}"
+        path = os.path.join(directory, name)
+        try:
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+        except FileExistsError:
+            attempt += 1
+            continue
+        os.close(fd)
+        return path
 
 
 def ensure_audio_directory(directory: str = "audio") -> str:

@@ -1,7 +1,7 @@
 <template>
   <div class="tts-toaster">
     <div v-for="t in $store.state.toasts" :key="t.id"
-         class="tts-toast" :class="'tts-toast-' + t.level"
+         class="tts-toast" :class="'tts-toast-' + t.level" :title="t.title"
          @click="$store.dispatch('dismiss_toast', t.id)">
       <i class="fa me-2" :class="icon(t.level)"></i>
       <span class="tts-toast-msg">{{ t.message }}</span>
@@ -13,7 +13,8 @@
 <script>
 /* The stack of toasts in the top right corner, fed by the store: any screen
    pushes one with `this.$store.dispatch('push_toast', {level, message, ttl})`
-   and a click dismisses it early. Levels are danger, warning, success and
+   and a click dismisses it early. An optional `title` is the reason behind a
+   short message, shown on hover. Levels are danger, warning, success and
    info; anything else is drawn as info. */
 module.exports = {
   methods: {

@@ -13,9 +13,10 @@ That command:
 1. Installs `piper-tts` (CPU-friendly, no torch dependency).
 2. Asks where to store the models (see [Models Storage](#models-storage)).
 3. Lets you pick the languages to download (English, Russian, Spanish, German,
-   French; medium quality) and verifies each file against the upstream checksum.
+   French, Italian, Ukrainian, Chinese; medium quality) and verifies each file
+   against the upstream checksum.
 
-Use `--non-interactive` to accept defaults - installs all five voices into
+Use `--non-interactive` to accept defaults - installs all eight voices into
 `~/.local/share/ttsgen/pipertts/` without prompts.
 
 ## Manual install
@@ -109,11 +110,12 @@ echo "PIPERTTS_MODELS=$HOME/my-piper-voices" >> ~/.config/ttsgen.conf
 | `es` | `es_ES-davefx-medium` | 4/5 | yes |
 | `de` | `de_DE-thorsten-medium` | 5/5 | yes |
 | `fr` | `fr_FR-siwis-medium` | 4/5 | yes |
-| `it` | `it_IT-riccardo-medium` | 4/5 | manual download |
-| `uk` | `uk_UA-ukrainian_tts-medium` | 4/5 | manual download |
-| `zh` | `zh_CN-huayan-medium` | 4/5 | manual download |
+| `it` | `it_IT-paola-medium` | 4/5 | yes |
+| `uk` | `uk_UA-ukrainian_tts-medium` | 4/5 | yes |
+| `zh` | `zh_CN-huayan-medium` | 4/5 | yes |
 
-These are the voices `engines/pipertts.py` maps to a `--language` code; any
+These are the voices `engines/pipertts.py` maps to a `--language` code (its
+`VOICES` table, which the installer offers as well); any
 other code falls back to the English voice. Other voices from the catalogue
 (for example `en_GB-alba-medium`) can be downloaded, but the engine does not
 select them by language.

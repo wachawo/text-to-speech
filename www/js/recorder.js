@@ -148,6 +148,25 @@
       }
     };
 
+    /* The context and the microphone source in it. Firefox accepts the
+       requested rate and then refuses to connect a microphone at the device
+       rate to that context, with NotSupportedError - so that refusal is
+       answered with a second context at the default rate, and the resample
+       on stop does the rest. */
+    var openSource = function () {
+      context = openContext();
+      try {
+        source = context.createMediaStreamSource(stream);
+      } catch (err) {
+        if (!err || err.name !== 'NotSupportedError') throw err;
+        try { context.close(); } catch (closeErr) { /* already closed */ }
+        var Context = window.AudioContext || window.webkitAudioContext;
+        context = new Context();
+        source = context.createMediaStreamSource(stream);
+      }
+      captureRate = context.sampleRate;
+    };
+
     var onAudio = function (event) {
       var input = event.inputBuffer.getChannelData(0);
       var copy = new Float32Array(input.length);
@@ -197,9 +216,7 @@
         // handle to close it with.
         try {
           stream = granted;
-          context = openContext();
-          captureRate = context.sampleRate;
-          source = context.createMediaStreamSource(stream);
+          openSource();
           stream.getAudioTracks()[0].addEventListener('ended', onTrackEnded);
           // Deprecated in favour of AudioWorklet, and used anyway: a worklet is a
           // separate file the page has to serve and load, and this is a

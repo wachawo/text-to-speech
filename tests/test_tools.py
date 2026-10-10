@@ -230,3 +230,81 @@ def test_ensure_audio_directory_is_idempotent(tmp_path):
     ensure_audio_directory(str(target))
     ensure_audio_directory(str(target))  # second call must not raise
     assert target.is_dir()
+
+
+# Auto-generated names never overwrite: claim_timestamp_path, batch_tts, text_to_speech_file
+
+
+class FrozenClock:
+    """Stand-in for datetime whose now() never moves, so every name lands in the same second."""
+
+    @staticmethod
+    def now():
+        """Return one fixed moment."""
+        from datetime import datetime
+
+        return datetime(2026, 10, 10, 12, 0, 0)
+
+
+def load_real_api():
+    """Import the real libs/api.py; conftest keeps a stub under sys.modules["libs.api"]."""
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location("libs.api_real", Path(tools_mod.__file__).parent / "api.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_claim_timestamp_path_adds_a_suffix_when_the_name_is_taken(tmp_path, monkeypatch):
+    """Two names claimed in the same second are different files, the second one numbered."""
+    monkeypatch.setattr(tools_mod, "datetime", FrozenClock)
+    first = tools_mod.claim_timestamp_path(str(tmp_path), "voice", "wav")
+    second = tools_mod.claim_timestamp_path(str(tmp_path), "voice", "wav")
+    assert first == str(tmp_path / "voice_20261010_120000.wav")
+    assert second == str(tmp_path / "voice_20261010_120000_2.wav")
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["voice_20261010_120000.wav", "voice_20261010_120000_2.wav"]
+
+
+def test_batch_tts_names_files_by_their_format_and_keeps_every_one(tmp_path, monkeypatch):
+    """WAV output is named .wav, and two items finished in one second are two files."""
+    monkeypatch.setattr(tools_mod, "datetime", FrozenClock)
+    files = tools_mod.batch_tts(["one", "two"], output_dir=str(tmp_path))
+    assert len(set(files)) == 2
+    for name in files:
+        assert name.endswith(".wav")
+        with open(name, "rb") as handle:
+            assert handle.read(4) == b"RIFF"
+    assert len(list(tmp_path.iterdir())) == 2
+
+
+def test_text_to_speech_file_failed_write_leaves_no_empty_file(tmp_path, monkeypatch, make_wav):
+    """A write that fails removes the auto-generated name it claimed."""
+    monkeypatch.chdir(tmp_path)
+    real_api = load_real_api()
+    monkeypatch.setattr(real_api, "text_to_speech_bytes", lambda text, engine, language: make_wav())
+    real_open = open
+
+    def failing_open(path, mode="r", *args, **kwargs):
+        """Refuse the audio write, let every other open through."""
+        if mode == "wb":
+            raise OSError(28, "No space left on device")
+        return real_open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", failing_open)
+    with pytest.raises(OSError):
+        real_api.text_to_speech_file("one", filename=None)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_text_to_speech_file_auto_name_never_overwrites(tmp_path, monkeypatch, make_wav):
+    """Two auto-named files written in the same second both survive."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(tools_mod, "datetime", FrozenClock)
+    real_api = load_real_api()
+    monkeypatch.setattr(real_api, "text_to_speech_bytes", lambda text, engine, language: make_wav())
+    first = real_api.text_to_speech_file("one", filename=None)
+    second = real_api.text_to_speech_file("two", filename=None)
+    assert first != second
+    assert (tmp_path / first).exists() and (tmp_path / second).exists()

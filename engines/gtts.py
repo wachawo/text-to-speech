@@ -45,7 +45,7 @@ def generate(text: str, config: dict) -> bytes:
 
     Raises:
         EngineNotAvailableError: gTTS is not installed.
-        ValidationError: Text exceeds MAX_TEXT_LENGTH.
+        ValidationError: Text exceeds MAX_TEXT_LENGTH, or gTTS does not speak the language.
         TTSException: The remote synthesis call failed.
     """
     if not AVAILABLE:
@@ -54,11 +54,19 @@ def generate(text: str, config: dict) -> bytes:
     if len(text) > MAX_TEXT_LENGTH:
         raise ValidationError(f"Text too long for gtts: {len(text)} > {MAX_TEXT_LENGTH}")
 
+    language = config.get("language", "en")
+    slow = config.get("slow", False)
     try:
-        language = config.get("language", "en")
-        slow = config.get("slow", False)
-
         tts = gTTS(text=text, lang=language, slow=slow)
+    except ValueError as exc:
+        # gTTS checks the language against its built-in table (gtts.lang.tts_langs,
+        # no network) in the constructor, and documents ValueError as the one
+        # answer to a language it does not speak.
+        raise ValidationError(f"Language '{language}' is not supported by gtts") from exc
+    except Exception as exc:
+        raise TTSException(f"gTTS generation failed: {exc}") from exc
+
+    try:
         audio_buffer = io.BytesIO()
         with INFERENCE_LOCK:
             tts.write_to_fp(audio_buffer)

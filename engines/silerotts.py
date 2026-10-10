@@ -17,6 +17,7 @@ import numpy as np
 # Local imports
 from libs.cached_loader import load_cached
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
+from libs.models import models_directory
 
 logger = logging.getLogger(__name__)
 
@@ -81,30 +82,16 @@ def get_models_directory() -> str:
     """
     Get the directory for storing Silero models.
 
-    Priority:
-    1. Environment variable SILEROTTS_MODELS (from .env or export)
+    Priority (libs.models.models_directory):
+    1. Environment variable SILEROTTS_MODELS (from .env or export); a relative
+       value is anchored on the project root, not the cwd
     2. cache/silerotts directory in project root (if exists)
     3. Default: ~/.cache/torch/hub/
 
     Returns:
         Path to models directory
     """
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-    env_var = os.environ.get("SILEROTTS_MODELS")
-    if env_var:
-        models_path = env_var.strip()
-        # A relative override is anchored to the project root, not the cwd,
-        # so `ttsgen` finds the same models from any working directory.
-        if not os.path.isabs(models_path):
-            models_path = os.path.join(project_root, models_path)
-        return os.path.expanduser(models_path)
-
-    silerotts_dir = os.path.join(project_root, "cache", "silerotts")
-    if os.path.exists(silerotts_dir) and os.path.isdir(silerotts_dir):
-        return silerotts_dir
-
-    return os.path.expanduser("~/.cache/torch/hub")
+    return models_directory("silerotts")
 
 
 def load_model(language: str) -> tuple:
@@ -202,7 +189,7 @@ def generate(text: str, config: dict) -> bytes:
     Note:
         First run will download the model from torch hub.
         Models are cached in:
-        - SILERO_MODELS_DIR env variable (highest priority), or
+        - SILEROTTS_MODELS env variable (highest priority), or
         - cache/silerotts/ directory (if exists), or
         - ~/.cache/torch/hub/ (default fallback)
     """

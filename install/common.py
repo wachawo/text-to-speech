@@ -13,6 +13,9 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+# Local imports
+from libs.models import project_path
+
 logger = logging.getLogger(__name__)
 
 # ANSI colors
@@ -288,7 +291,8 @@ def resolve_models_dir(
     """Ask the user where to store model files and persist the answer.
 
     Priority:
-        1. If `env_key` already set in env (CLI flag, .env, ttsgen.conf) → use that, no prompt.
+        1. If `env_key` already set in env (CLI flag, .env, ttsgen.conf) → use that, no prompt;
+           a relative value is taken from the project root, as the engines take it.
         2. Non-interactive mode → use `default_dir` silently.
         3. Interactive 3-way prompt (default / project-local / custom path).
 
@@ -307,7 +311,9 @@ def resolve_models_dir(
     """
     existing = os.environ.get(env_key, "").strip()
     if existing:
-        target = Path(os.path.expanduser(existing)).resolve()
+        # Anchored like the engines anchor it (on the project root, not the
+        # cwd), so the models land where synthesis will look for them.
+        target = Path(project_path(existing)).resolve()
         target.mkdir(parents=True, exist_ok=True)
         info(f"{engine_label} models: {target} (from {env_key})")
         return target

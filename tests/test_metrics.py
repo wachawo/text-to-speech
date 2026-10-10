@@ -2,8 +2,6 @@
 # -*- coding: utf-8 -*-
 """Tests for ttssrv.metrics: registry math, thread safety, the two metrics routes and the warmup flag."""
 
-import threading
-
 import pytest
 
 from libs.exceptions import ValidationError
@@ -62,22 +60,31 @@ def test_latency_window_is_capped(registry):
     assert snapshot_of()["engines"]["gtts"]["calls"] == 2000
 
 
-def test_record_is_thread_safe(registry):
-    """8 threads recording 200 calls each end with exactly 1600 calls and 800 failures."""
+def test_record_updates_under_the_lock(registry):
+    """Every field record() writes is written while LOCK is held, so concurrent calls cannot lose an update.
 
-    def work():
-        """Record 200 calls, every other one failing."""
-        for index in range(200):
-            registry.record("gtts", index, index % 2 == 0, None if index % 2 == 0 else "Boom")
+    Racing threads against the counters proves nothing: an 8-thread version of
+    this test passed with LOCK replaced by a nullcontext, because the
+    interpreter seldom switches threads inside `+= 1`. The record reports the
+    lock state at each write instead, which is deterministic.
+    """
+    held = []
 
-    threads = [threading.Thread(target=work) for unused_index in range(8)]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join()
-    engine = snapshot_of()["engines"]["gtts"]
-    assert engine["calls"] == 1600
-    assert engine["failures"] == 800
+    class Watched(dict):
+        """An engine record that notes, at every write, whether LOCK is held."""
+
+        def __setitem__(self, key, value):
+            """Note the lock state, then store the value."""
+            locked = getattr(registry.LOCK, "locked", None)
+            held.append((key, bool(locked and locked())))
+            super().__setitem__(key, value)
+
+    registry.ENGINES["gtts"] = Watched(registry.new_engine_stats())
+    registry.record("gtts", 10, True)
+    registry.record("gtts", 20, False, "Boom")
+    assert {key for key, unused_locked in held} == {"calls", "sum_ms", "failures", "last_error", "last_error_at"}
+    assert all(locked for unused_key, locked in held), held
+    assert snapshot_of()["engines"]["gtts"]["calls"] == 2
 
 
 def test_wait_end_returns_counter_to_zero(registry):

@@ -124,9 +124,8 @@ def record_wav(output: Path, duration: int, rate: int) -> None:
         wav_file.writeframes(audio.tobytes())
 
 
-def main() -> int:
+def run_cli() -> int:
     """Record a sample to the resolved path and return a shell exit code."""
-    logging.basicConfig(**LOGGING)  # type: ignore[arg-type]
     args = parse_args()
 
     # Config files fill the env after the CLI flags; recording to an explicit
@@ -172,6 +171,19 @@ def main() -> int:
         logger.warning(f"Could not persist COQUITTS_SAMPLE: {type(exc).__name__}: {exc}")
 
     return 0
+
+
+def main() -> int:
+    """Console-script entry point: run the CLI, turning Ctrl+C and stray errors into exit code 1."""
+    logging.basicConfig(**LOGGING)  # type: ignore[arg-type]
+    try:
+        return run_cli()
+    except KeyboardInterrupt:
+        logger.warning("Interrupted.")
+        return 1
+    except Exception as exc:
+        logger.error(f"{type(exc).__name__}: {str(exc)}\n{traceback.format_exc()}")
+        return 1
 
 
 if __name__ == "__main__":

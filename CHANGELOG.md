@@ -23,6 +23,19 @@
   no longer counts as a failed call in `/metrics`.
 - `ttssrv` has no `/static/<path>` route any more; every route is under
   `/api/`, `/v1/` or `/metrics`.
+- Every error under `/v1/` (engine failures, 401, 404, 405, 413) uses the
+  OpenAI error envelope `{"error": {"message", "type", "param", "code"}}`;
+  `/api/` errors keep their shape.
+- `ttsgen` and `ttsapi` stop at the first failed chunk: one error line
+  instead of a traceback per chunk, nothing further synthesized or played,
+  and a bad `-l`/`-e` exits 1.
+- `ttsapi` exits 1, like `ttsgen`, for a missing `-i` file or an invalid
+  `-o`, and `--stdout` disables `--file` in both.
+- `ttsgen --install pipertts -n` downloads all 8 voices the engine can select
+  (it/uk/zh/pl/pt included), not 5; Italian uses `it_IT-paola-medium`, since
+  `it_IT-riccardo-medium` does not exist upstream.
+- The web UI says "Setting not stored", "No samples", "Copy failed" and
+  similar short labels, with the reason in the tooltip.
 
 #### Fixed
 - `ttsgen.conf.example` no longer sets `TTS_TOKENS=` and `TTS_TOKEN=` to empty
@@ -58,6 +71,30 @@
   `data/certs/` to the Docker daemon.
 - `silerotts` with `language=uk` asked torch hub for the Ukrainian model under
   the English language key and failed with a cold cache.
+- `TTS_MAX_BODY_BYTES` had no effect (every route took up to 16 MiB); only
+  the voice sample upload takes `TTS_MAX_SAMPLE_BYTES` now.
+- A stream kept synthesizing every chunk, holding its pool slot, after the
+  client had gone; it stops before the next chunk.
+- `TTS_DEBUG` loaded every model twice (the reloader parent and child).
+- Model directories resolve the same way everywhere: `ttsgen --list` from
+  another directory found no models, and coquitts run elsewhere downloaded
+  XTTS again into the current directory.
+- The Piper voice table existed three times and had drifted: for it/uk/zh the
+  installer offered nothing and the error suggested an English voice.
+- The voice samples list offered names (`Anna.WAV`, `my voice.wav`) that
+  synthesis then refused.
+- An unsupported language on gtts or xtts was a 500; it is a 400.
+- An auto-named output file could overwrite another run's file written in
+  the same second; Ctrl+C in `ttsgen`/`ttsapi` left `.part` chunk files.
+- The installed `ttsapi`, `ttsgen` and `ttsrec` commands printed raw
+  tracebacks on Ctrl+C; `batch_tts` named WAV files `.mp3`; a WAV join hid
+  its real error behind `# channels not specified`.
+- `DEFAULT_OUTPUT_FORMAT` and `AUTO_PLAY`, which nothing reads, are gone from
+  `ttsgen --help`, `env.example`, `ttsgen.conf.example` and the docs.
+- Web UI: recording failed in Firefox; the Studio flashed "warming up" on
+  every visit and could lose the sign-out button; switching sample rows kept
+  the old one playing; the settings dialog fetched voices while closed; a
+  server language without an option blanked the Studio language after SAVE.
 
 ### [1.0.7] - 2026-09-23
 

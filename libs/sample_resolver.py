@@ -55,16 +55,28 @@ def resolve_sample_path(value: str) -> str:
 def list_sample_files() -> list[str]:
     """List the voice names (`*.wav` stems) directly inside the samples directory, sorted.
 
+    Only names that sample_path_for_voice accepts and resolves to an existing
+    file are listed, so every listed voice can be selected: `my voice.wav` is
+    left out (not a valid name), and so is `Anna.WAV` where the file system
+    tells it apart from the `Anna.wav` the name resolves to.
+
     Returns:
         Sorted list of file stems; empty when the directory does not exist.
     """
     samples_dir = get_samples_dir()
     if not os.path.isdir(samples_dir):
         return []
-    names = []
+    names = set()
     for entry in os.listdir(samples_dir):
-        if entry.lower().endswith(".wav") and os.path.isfile(os.path.join(samples_dir, entry)):
-            names.append(entry[: -len(".wav")])
+        if not entry.lower().endswith(".wav"):
+            continue
+        name = entry[: -len(".wav")]
+        try:
+            path = sample_path_for_voice(name)
+        except ValidationError:
+            continue
+        if os.path.isfile(path):
+            names.add(name)
     return sorted(names)
 
 

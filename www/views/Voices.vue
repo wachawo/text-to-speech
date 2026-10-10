@@ -54,7 +54,8 @@
 
       <div v-if="take" class="tts-player mt-1">
         <audio controls :src="takeUrl"></audio>
-        <small :class="takeSilent ? 'tts-state-off' : 'text-secondary'">{{ takeNote }}</small>
+        <small :class="takeSilent ? 'tts-state-off' : 'text-secondary'"
+               :title="takeSilent ? 'The microphone is muted or the browser is listening to the wrong input device' : null">{{ takeNote }}</small>
         <button type="button" class="btn btn-sm btn-secondary fw-bold btn-w85"
                 title="Discard the recording" :disabled="wait.length > 0" @click="discardTake">
           <i class="fa fa-times"></i> DISCARD
@@ -141,7 +142,7 @@
               </td>
             </tr>
             <tr v-if="samples.length === 0 && wait.length === 0">
-              <td colspan="7" class="text-center text-secondary">No samples yet - upload a WAV above</td>
+              <td colspan="7" class="text-center text-secondary" title="Upload a WAV above">No samples</td>
             </tr>
           </tbody>
         </table>
@@ -284,15 +285,13 @@ module.exports = {
       return !!this.take && this.takePeak < SILENT_PEAK;
     },
 
-    /* "Recorded 7.3 s, 22050 Hz mono, 320 KB", and the one thing worth
-       saying about a silent take: what usually caused it. */
+    /* "Recorded 7.3 s, 22050 Hz mono, 320 KB", and a silent take says so;
+       what usually caused it is the note's title. */
     takeNote: function () {
       if (!this.take) return '';
       var text = 'Recorded ' + this.$fmtSeconds(this.takeSeconds) + ', ' + SAMPLE_RATE + ' Hz mono, ' +
         this.$fmtBytes(this.take.size);
-      if (this.takeSilent) {
-        text += ' - the take is silent: the microphone is muted or the browser is listening to the wrong input device';
-      }
+      if (this.takeSilent) text += ' - silent';
       return text;
     },
   },
@@ -458,7 +457,9 @@ module.exports = {
     /* One sample sounds at a time. A second click on the same row pauses it;
        a click on another row switches to that one, with no pause step. The
        glyph flips as soon as the row is clicked; the audio follows once the
-       Blob is here, unless the row was clicked off again meanwhile. */
+       Blob is here, unless the row was clicked off again meanwhile. The old
+       sample stops at the click, not when the new one arrives: a fetch that
+       fails would otherwise leave it sounding with no glyph left to stop it. */
     togglePlay: function (name) {
       var self = this;
       if (!this.player) return;
@@ -467,6 +468,7 @@ module.exports = {
         this.playing = null;
         return;
       }
+      this.player.pause();
       this.playing = name;
       this.fetchSample(name)
         .then(function (blob) {

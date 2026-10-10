@@ -8,10 +8,73 @@ from pathlib import Path
 
 ENGINES_DIR = Path(__file__).resolve().parent.parent / "engines"
 
+# The directory holding engines/, libs/ and install/. Relative model
+# directories are anchored here, never on the current working directory, so
+# every entry point finds the same models wherever it is started from.
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Where each engine keeps its models: the environment key that overrides the
+# location, the project-local directory used when it exists, and the fallback
+# used otherwise. Relative entries are taken from the project root.
+MODEL_DIRECTORIES = {
+    "pipertts": ("PIPERTTS_MODELS", "cache/pipertts", ".piper/voices"),
+    "silerotts": ("SILEROTTS_MODELS", "cache/silerotts", "~/.cache/torch/hub"),
+    "coquitts": ("COQUITTS_MODELS", "cache/coquitts", "cache/coquitts"),
+    "barktts": ("BARKTTS_MODELS", "cache/barktts", "~/.cache/suno/bark_v0"),
+    "kokorotts": ("KOKOROTTS_MODELS", "cache/kokorotts", "~/.local/share/ttsgen/kokorotts"),
+}
+
+# The glob patterns that find an engine's models inside its directory.
+MODEL_PATTERNS = {
+    "pipertts": ["*.onnx"],
+    "silerotts": ["**/*.pt", "**/*.jit"],
+    "coquitts": ["tts/*"],
+    "barktts": ["**/*.pt"],
+    "kokorotts": ["*.onnx", "*.bin"],
+}
+
 ENGINE_NOTES = {
     "gtts": "cloud - no local models",
     "pyttsx3": "uses system espeak voices",
 }
+
+
+def project_path(value: str) -> str:
+    """Expand `~` in a path and anchor it on the project root when it is relative.
+
+    Args:
+        value: A path from the environment, a config file or a default.
+
+    Returns:
+        The path itself when it is absolute, else the path under PROJECT_ROOT.
+    """
+    path = os.path.expanduser(value.strip())
+    if os.path.isabs(path):
+        return path
+    return os.path.join(PROJECT_ROOT, path)
+
+
+def models_directory(engine: str) -> str:
+    """Resolve the model directory of an engine, the same way for every caller.
+
+    The engines, `ttsgen --list` and the installers all come here, so they
+    agree on one directory whatever the working directory is.
+
+    Args:
+        engine: A key of MODEL_DIRECTORIES.
+
+    Returns:
+        The configured directory when its environment key is set, else the
+        project-local directory when it exists, else the engine's fallback.
+    """
+    env_key, project_dir, fallback = MODEL_DIRECTORIES[engine]
+    configured = os.environ.get(env_key, "").strip()
+    if configured:
+        return project_path(configured)
+    local_dir = project_path(project_dir)
+    if os.path.isdir(local_dir):
+        return local_dir
+    return project_path(fallback)
 
 
 def engine_model_sources() -> dict[str, tuple[str, list[str]]]:
@@ -20,13 +83,7 @@ def engine_model_sources() -> dict[str, tuple[str, list[str]]]:
     Environment is read here, at call time, so config files loaded after import
     (ttsgen.conf, .env) are honoured.
     """
-    return {
-        "pipertts": (os.getenv("PIPERTTS_MODELS", "cache/pipertts"), ["*.onnx"]),
-        "silerotts": (os.getenv("SILEROTTS_MODELS", "cache/silerotts"), ["**/*.pt", "**/*.jit"]),
-        "coquitts": (os.getenv("COQUITTS_MODELS", "cache/coquitts"), ["tts/*"]),
-        "barktts": (os.getenv("BARKTTS_MODELS", "cache/barktts"), ["**/*.pt"]),
-        "kokorotts": (os.getenv("KOKOROTTS_MODELS", "cache/kokorotts"), ["*.onnx", "*.bin"]),
-    }
+    return {engine: (models_directory(engine), MODEL_PATTERNS[engine]) for engine in MODEL_DIRECTORIES}
 
 
 def model_display_name(engine: str, rel: Path) -> str:

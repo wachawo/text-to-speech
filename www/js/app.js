@@ -384,8 +384,8 @@ const state = {
   // ready.
   health: null,
   // Whether the server wants a token (null until /api/health has answered)
-  // and the token this browser holds. Replaced whole by $saveToken and by
-  // auth_check, never edited in place.
+  // and the token this browser holds. Replaced whole by $saveToken, by
+  // auth_check and by the studio's health poll, never edited in place.
   auth: { required: null, token: readToken() },
   // The two preference groups, already validated. Screens read these and
   // never localStorage: the store is the copy that holds for the session in

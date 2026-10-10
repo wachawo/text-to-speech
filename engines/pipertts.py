@@ -15,11 +15,29 @@ import wave
 # Local imports
 from libs.cached_loader import load_cached
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
+from libs.models import models_directory
 
 logger = logging.getLogger(__name__)
 
 # Offline ONNX, ~300x realtime — large texts are fine but bound memory.
 MAX_TEXT_LENGTH = 50_000
+
+# Where the voices are published, pinned to one tag of rhasspy/piper-voices.
+VOICES_BASE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0"
+
+# The one voice per language, and the only table of them: the engine selects
+# by it, the download instructions name it and install/pipertts.py offers it.
+# language -> (path under VOICES_BASE_URL, file basename, installer label)
+VOICES = {
+    "en": ("en/en_US/lessac/medium", "en_US-lessac-medium", "English (lessac, female)"),
+    "ru": ("ru/ru_RU/ruslan/medium", "ru_RU-ruslan-medium", "Russian (ruslan, male)"),
+    "es": ("es/es_ES/davefx/medium", "es_ES-davefx-medium", "Spanish (davefx)"),
+    "de": ("de/de_DE/thorsten/medium", "de_DE-thorsten-medium", "German (thorsten)"),
+    "fr": ("fr/fr_FR/siwis/medium", "fr_FR-siwis-medium", "French (siwis)"),
+    "it": ("it/it_IT/paola/medium", "it_IT-paola-medium", "Italian (paola)"),
+    "uk": ("uk/uk_UA/ukrainian_tts/medium", "uk_UA-ukrainian_tts-medium", "Ukrainian (ukrainian_tts)"),
+    "zh": ("zh/zh_CN/huayan/medium", "zh_CN-huayan-medium", "Chinese (huayan)"),
+}
 
 # Try to import Piper
 try:
@@ -61,30 +79,16 @@ def get_models_directory() -> str:
     """
     Get the directory for storing Piper TTS models.
 
-    Priority:
-    1. Environment variable PIPERTTS_MODELS (from .env or export)
+    Priority (libs.models.models_directory):
+    1. Environment variable PIPERTTS_MODELS (from .env or export); a relative
+       value is anchored on the project root, not the cwd
     2. cache/pipertts directory in project root (if exists)
     3. Default: .piper/voices in project root
 
     Returns:
         Path to models directory
     """
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-    env_var = os.environ.get("PIPERTTS_MODELS")
-    if env_var:
-        models_path = env_var.strip()
-        # A relative override is anchored to the project root, not the cwd,
-        # so `ttsgen` finds the same voices from any working directory.
-        if not os.path.isabs(models_path):
-            models_path = os.path.join(project_root, models_path)
-        return os.path.expanduser(models_path)
-
-    pipertts_dir = os.path.join(project_root, "cache", "pipertts")
-    if os.path.exists(pipertts_dir) and os.path.isdir(pipertts_dir):
-        return pipertts_dir
-
-    return os.path.join(project_root, ".piper", "voices")
+    return models_directory("pipertts")
 
 
 def get_voice_path(language: str = "en") -> str:
@@ -98,18 +102,7 @@ def get_voice_path(language: str = "en") -> str:
         returned even when no file exists there, so callers can report a precise
         FileNotFoundError with download instructions.
     """
-    voice_models = {
-        "en": "en_US-lessac-medium",
-        "ru": "ru_RU-ruslan-medium",
-        "es": "es_ES-davefx-medium",
-        "de": "de_DE-thorsten-medium",
-        "fr": "fr_FR-siwis-medium",
-        "it": "it_IT-riccardo-medium",
-        "uk": "uk_UA-ukrainian_tts-medium",
-        "zh": "zh_CN-huayan-medium",
-    }
-
-    voice_name = voice_models.get(language, voice_models["en"])
+    voice_name = VOICES.get(language, VOICES["en"])[1]
 
     models_dir = get_models_directory()
 
@@ -146,16 +139,9 @@ def get_download_instructions(language: str) -> str:
     Returns:
         Human-readable instructions covering the installer, wget and curl.
     """
-    voice_models = {
-        "en": ("en_US-lessac-medium", "en/en_US/lessac/medium"),
-        "ru": ("ru_RU-ruslan-medium", "ru/ru_RU/ruslan/medium"),
-        "es": ("es_ES-davefx-medium", "es/es_ES/davefx/medium"),
-        "de": ("de_DE-thorsten-medium", "de/de_DE/thorsten/medium"),
-        "fr": ("fr_FR-siwis-medium", "fr/fr_FR/siwis/medium"),
-    }
-    model_name, model_path = voice_models.get(language, ("en_US-lessac-medium", "en/en_US/lessac/medium"))
+    model_path, model_name, unused_label = VOICES.get(language, VOICES["en"])
 
-    base_url = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0"
+    base_url = VOICES_BASE_URL
 
     voice_dir = get_models_directory()
 

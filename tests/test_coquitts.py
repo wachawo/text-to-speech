@@ -9,6 +9,7 @@ manager (it's already in the dev venv).
 """
 
 import importlib
+import os
 import sys
 import types
 
@@ -164,6 +165,18 @@ def test_get_models_directory_expanduser(engine, monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("COQUITTS_MODELS", "~/coquitts_home")
     assert engine.get_models_directory() == str(tmp_path / "coquitts_home")
+
+
+@pytest.mark.parametrize("configured", [None, "", "cache/coquitts"])
+def test_get_models_directory_is_project_cache_from_any_cwd(engine, monkeypatch, tmp_path, configured):
+    """Unset, empty or relative COQUITTS_MODELS all mean <project>/cache/coquitts, wherever the process runs."""
+    monkeypatch.chdir(tmp_path)
+    if configured is None:
+        monkeypatch.delenv("COQUITTS_MODELS", raising=False)
+    else:
+        monkeypatch.setenv("COQUITTS_MODELS", configured)
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(engine.__file__)))
+    assert engine.get_models_directory() == os.path.join(project_root, "cache", "coquitts")
 
 
 # generate — early returns
@@ -322,8 +335,11 @@ def test_generate_translates_model_not_found_to_tts_exception(engine, monkeypatc
 
     monkeypatch.setattr(engine, "TTS", BoomTTS)
     engine.TTS_CACHE.clear()
-    with pytest.raises(TTSException, match="model not found"):
+    with pytest.raises(TTSException) as excinfo:
         engine.generate("hi", {"language": "en"})
+    # The exact text of the model-not-found branch, which the generic
+    # "generation failed" wrapper would not produce.
+    assert str(excinfo.value) == "Coqui TTS model not found.\nError: Requested model not found in registry"
 
 
 def test_generate_other_failure_wrapped_as_tts_exception(engine, monkeypatch):
@@ -359,8 +375,28 @@ def test_generate_raises_tts_exception_when_output_file_empty(engine, monkeypatc
 
     monkeypatch.setattr(engine, "TTS", EmptyTTS)
     engine.TTS_CACHE.clear()
-    with pytest.raises(TTSException, match="generation failed|failed to generate"):
+    with pytest.raises(TTSException) as excinfo:
         engine.generate("hi", {"language": "en"})
+    # Raised once, not wrapped again by the generic handler around it.
+    assert str(excinfo.value) == "Coqui TTS failed to generate audio"
+
+
+@pytest.mark.parametrize("language", ["xx", "sv"])
+def test_generate_unsupported_language_is_validation_error(engine, monkeypatch, language):
+    """A language outside the xtts_v2 list is a bad request, refused before any model load and without a path."""
+    monkeypatch.setenv("COQUITTS_MODEL", "tts_models/multilingual/multi-dataset/xtts_v2")
+    with pytest.raises(ValidationError) as excinfo:
+        engine.generate("hi", {"language": language})
+    assert str(excinfo.value) == f"Language '{language}' is not supported by coquitts"
+    assert FakeTTS.instances == []
+
+
+@pytest.mark.parametrize("language", ["en", "ru", "zh", "hi"])
+def test_generate_xtts_language_reaches_the_model(engine, monkeypatch, language):
+    """Every two-letter code of the xtts_v2 list is accepted and passed on unchanged."""
+    monkeypatch.setenv("COQUITTS_MODEL", "tts_models/multilingual/multi-dataset/xtts_v2")
+    engine.generate("hi", {"language": language})
+    assert FakeTTS.instances[-1].calls[-1]["language"] == language
 
 
 # Import-time side effects, TTS_HOME handling and concurrency

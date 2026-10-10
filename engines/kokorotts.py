@@ -30,6 +30,7 @@ import numpy as np
 # Local imports
 from libs.cached_loader import load_cached
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
+from libs.models import models_directory
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,6 @@ logger = logging.getLogger(__name__)
 # input doesn't blow memory; chunking remains the CLI's job.
 MAX_TEXT_LENGTH = 50_000
 
-DEFAULT_KOKOROTTS_MODELS = "cache/kokorotts"
 DEFAULT_KOKOROTTS_MODEL = "kokoro-v1.0.onnx"
 DEFAULT_KOKOROTTS_VOICES = "voices-v1.0.bin"
 DEFAULT_KOKOROTTS_SPEED = 1.0
@@ -113,25 +113,13 @@ def get_models_directory() -> str:
     """
     Resolve directory containing kokoro-v1.0.onnx and voices-v1.0.bin.
 
-    Priority:
-    1. KOKOROTTS_MODELS env (from CLI flag, ttsgen.conf, .env)
+    Priority (libs.models.models_directory):
+    1. KOKOROTTS_MODELS env (from CLI flag, ttsgen.conf, .env); a relative
+       value is anchored on the project root, not the cwd
     2. cache/kokorotts/ in project root (if exists)
     3. ~/.local/share/ttsgen/kokorotts (default)
     """
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-    env_var = os.environ.get("KOKOROTTS_MODELS", "").strip()
-    if env_var:
-        models_path = env_var
-        if not os.path.isabs(models_path):
-            models_path = os.path.join(project_root, models_path)
-        return os.path.expanduser(models_path)
-
-    project_dir = os.path.join(project_root, DEFAULT_KOKOROTTS_MODELS)
-    if os.path.isdir(project_dir):
-        return project_dir
-
-    return os.path.expanduser("~/.local/share/ttsgen/kokorotts")
+    return models_directory("kokorotts")
 
 
 def get_model_paths() -> tuple[str, str]:

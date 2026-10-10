@@ -42,8 +42,8 @@ except ImportError as e:
 
 def main():
     """Read audio bytes from stdin, play them, and return a shell exit code."""
-    load_config()
     try:
+        load_config()
         # Refuse to block on an interactive terminal: without a pipe there is nothing to play.
         if sys.stdin.isatty():
             logger.error("No input data")

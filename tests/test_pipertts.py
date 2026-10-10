@@ -19,6 +19,7 @@ import wave
 
 import pytest
 
+import libs.models
 from install.pipertts import VOICES, VOICES_JSON_URL, expected_hash
 from libs.exceptions import EngineNotAvailableError, TTSException
 
@@ -123,8 +124,9 @@ def test_models_dir_uses_env_var_absolute(engine, monkeypatch, tmp_path):
     assert engine.get_models_directory() == str(tmp_path / "abs_models")
 
 
-def test_models_dir_resolves_relative_env_against_project_root(engine, monkeypatch):
+def test_models_dir_resolves_relative_env_against_project_root(engine, monkeypatch, tmp_path):
     """A relative PIPERTTS_MODELS value resolves under the project root, not the cwd."""
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PIPERTTS_MODELS", "custom_voices")
     result = engine.get_models_directory()
     # Relative env var must resolve under project root, NOT cwd.
@@ -135,33 +137,18 @@ def test_models_dir_resolves_relative_env_against_project_root(engine, monkeypat
 def test_models_dir_falls_back_to_cache_pipertts_in_project(engine, monkeypatch, tmp_path):
     """With the env var unset, an existing cache/pipertts in the project root wins over the default."""
     monkeypatch.delenv("PIPERTTS_MODELS", raising=False)
-    # Stub the project-root path lookup by patching the module attribute.
     fake_project = tmp_path / "fake_project"
     pipertts_dir = fake_project / "cache" / "pipertts"
     pipertts_dir.mkdir(parents=True)
-
-    real_dirname = os.path.dirname
-
-    def stubbed_dirname(p):
-        """Redirect the engines/ parent lookup to the fake project root."""
-        # First call returns engines/, second engines/.. — i.e. project root.
-        if p.endswith("engines"):
-            return str(fake_project)
-        return real_dirname(p)
-
-    monkeypatch.setattr(os.path, "dirname", stubbed_dirname)
+    monkeypatch.setattr(libs.models, "PROJECT_ROOT", str(fake_project))
     assert engine.get_models_directory() == str(pipertts_dir)
 
 
 def test_models_dir_default_when_nothing_configured(engine, monkeypatch, tmp_path):
     """With neither the env var nor cache/pipertts present, the <project>/.piper/voices default applies."""
     monkeypatch.delenv("PIPERTTS_MODELS", raising=False)
-    # Move CWD somewhere that has no cache/pipertts so the project-root one wins —
-    # but the project DOES contain it in real life. We only assert the path
-    # ends with .piper/voices when we force-skip the cache/pipertts branch.
-    monkeypatch.setattr(engine.os.path, "exists", lambda p: False)
-    result = engine.get_models_directory()
-    assert result.endswith(".piper/voices")
+    monkeypatch.setattr(libs.models, "PROJECT_ROOT", str(tmp_path))
+    assert engine.get_models_directory() == str(tmp_path / ".piper" / "voices")
 
 
 # get_voice_path — language → file mapping
@@ -205,6 +192,37 @@ def test_download_instructions_unknown_language_falls_back_to_en(engine):
     """Instructions for an unmapped language point at the English voice."""
     out = engine.get_download_instructions("xx")
     assert "en_US-lessac-medium.onnx" in out
+
+
+# One voice table for the engine, its instructions and the installer
+
+# Every language the engine selects a voice for (docs/PIPERTTS.md).
+ENGINE_LANGUAGES = ("en", "ru", "es", "de", "fr", "it", "uk", "zh")
+
+
+def test_download_instructions_name_the_voice_the_engine_selects(engine, monkeypatch, tmp_path):
+    """For every mapped language the instructions download the very file get_voice_path looks for."""
+    monkeypatch.setattr(engine, "get_models_directory", lambda: str(tmp_path))
+    for language in ENGINE_LANGUAGES:
+        voice_file = os.path.basename(engine.get_voice_path(language))
+        assert f"/{voice_file}\n" in engine.get_download_instructions(language), language
+
+
+def test_installer_downloads_every_voice_the_engine_selects(engine, monkeypatch, tmp_path):
+    """The non-interactive install fetches exactly the .onnx and .onnx.json of each voice the engine maps."""
+    import install.pipertts as installer
+
+    urls: list[str] = []
+    monkeypatch.setattr(installer, "download_file", lambda url, dest, label="": urls.append(url))
+    for code in installer.select_voices(non_interactive=True):
+        assert installer.download_voice(code, tmp_path, None)
+
+    monkeypatch.setattr(engine, "get_models_directory", lambda: str(tmp_path))
+    expected = set()
+    for language in ENGINE_LANGUAGES:
+        voice_file = os.path.basename(engine.get_voice_path(language))
+        expected.update({voice_file, voice_file + ".json"})
+    assert sorted(url.rsplit("/", 1)[1] for url in urls) == sorted(expected)
 
 
 # generate — error paths

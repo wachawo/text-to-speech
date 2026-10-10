@@ -18,6 +18,7 @@ import wave
 import numpy as np
 import pytest
 
+import libs.models
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
 
 # Voices of the fake voices file, each a tiny style array with its own values.
@@ -127,22 +128,20 @@ def test_models_dir_env_var_absolute(engine, monkeypatch, tmp_path):
     assert engine.get_models_directory() == str(target)
 
 
-def test_models_dir_env_var_relative_resolved_against_project(engine, monkeypatch):
+def test_models_dir_env_var_relative_resolved_against_project(engine, monkeypatch, tmp_path):
     """A relative KOKOROTTS_MODELS path is anchored on the project root, not cwd."""
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("KOKOROTTS_MODELS", "custom_kokoro")
-    result = engine.get_models_directory()
-    assert result.endswith("custom_kokoro")
-    # Must be anchored on the project root, not cwd.
-    assert os.path.isabs(result)
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(engine.__file__)))
+    assert engine.get_models_directory() == os.path.join(project_root, "custom_kokoro")
 
 
-def test_models_dir_falls_back_to_default_when_unset(engine, monkeypatch):
+def test_models_dir_falls_back_to_default_when_unset(engine, monkeypatch, tmp_path):
     """With no env var and no local cache directory, the XDG default path is used."""
     monkeypatch.delenv("KOKOROTTS_MODELS", raising=False)
-    # Force-skip the cache/kokorotts branch.
-    monkeypatch.setattr(engine.os.path, "isdir", lambda p: False)
-    result = engine.get_models_directory()
-    assert result.endswith(".local/share/ttsgen/kokorotts")
+    monkeypatch.setattr(libs.models, "PROJECT_ROOT", str(tmp_path / "project"))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    assert engine.get_models_directory() == str(tmp_path / "home" / ".local" / "share" / "ttsgen" / "kokorotts")
 
 
 # get_model_paths
