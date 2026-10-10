@@ -29,9 +29,10 @@ logger = logging.getLogger(__name__)
 # Scratch files hold one chunk each; the container is sniffed, never read off the name.
 CHUNK_SUFFIX = ".part"
 
-# Zero-width split after sentence-ish punctuation, so each fragment keeps its own
-# terminator and can be regrouped into chunks without re-parsing.
-SPLIT_REGEX = re.compile(r"(?<=[.!?]|,|\n)")
+# Split at the whitespace after sentence-ish punctuation, or at a line break, so
+# each fragment keeps its own terminator. Punctuation inside a token ("3.50",
+# "1,000", "example.com") is not a boundary.
+SPLIT_REGEX = re.compile(r"(?<=[.!?,])\s+|\s*\n\s*")
 
 # Producer: (text) -> audio bytes. Engine/language are bound at call site.
 GeneratorFn = Callable[[str], bytes]
@@ -55,11 +56,27 @@ class ChunkResult(NamedTuple):
 QueueItem = ChunkResult | None
 
 
+def slice_long_fragment(fragment: str, max_len: int) -> list[str]:
+    """Cut a single-spaced fragment into pieces of <= max_len chars at spaces; a word longer than max_len is cut."""
+    pieces: list[str] = []
+    rest = fragment
+    while len(rest) > max_len:
+        cut = rest.rfind(" ", 0, max_len + 1)
+        if cut <= 0:
+            cut = max_len
+        pieces.append(rest[:cut].rstrip())
+        rest = rest[cut:].lstrip()
+    if rest:
+        pieces.append(rest)
+    return pieces
+
+
 def chunk_text(text: str, max_len: int = 5000) -> list[str]:
     """Split text at sentence-ish boundaries and regroup it into chunks of <= max_len chars.
 
     Fragments are packed greedily so each chunk is as full as possible. A single
-    fragment longer than max_len is hard-sliced at max_len.
+    fragment longer than max_len is cut at its last space that fits, and only a
+    word longer than max_len is cut inside the word.
 
     Args:
         text: Source text of any length.
@@ -68,7 +85,7 @@ def chunk_text(text: str, max_len: int = 5000) -> list[str]:
     Returns:
         Non-empty chunks in source order; an empty list for blank input.
     """
-    parts = [p.strip() for p in SPLIT_REGEX.split(text) if p and p.strip()]
+    parts = [" ".join(p.split()) for p in SPLIT_REGEX.split(text) if p and p.strip()]
     chunks: list[str] = []
     buf: list[str] = []
     cur_len = 0
@@ -77,8 +94,7 @@ def chunk_text(text: str, max_len: int = 5000) -> list[str]:
             if cur_len:
                 chunks.append(" ".join(buf))
                 buf, cur_len = [], 0
-            for i in range(0, len(p), max_len):
-                chunks.append(p[i : i + max_len])
+            chunks.extend(slice_long_fragment(p, max_len))
             continue
         add_len = (1 if buf else 0) + len(p)
         if cur_len + add_len <= max_len:

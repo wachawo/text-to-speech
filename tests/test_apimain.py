@@ -152,6 +152,22 @@ def test_main_input_file_synthesizes_text(monkeypatch, quiet_main):
     assert captured == ["text from file"]
 
 
+def test_main_leaves_language_to_the_server(monkeypatch, quiet_main):
+    """Without -l and TTS_LANGUAGE the request names no language, rather than forcing English."""
+    monkeypatch.delenv("TTS_LANGUAGE", raising=False)
+    languages = []
+
+    def capture(text, engine, language):
+        """Record the language handed to the client and return canned audio."""
+        languages.append(language)
+        return make_wav_bytes()
+
+    monkeypatch.setattr(ttsapi, "fetch_audio", capture)
+    rc = run_main(monkeypatch, ["hi", "-f", str(quiet_main / "out.wav"), "--quiet"])
+    assert rc == 0
+    assert languages == [""]
+
+
 def test_main_default_output_format_is_play(monkeypatch, quiet_main):
     """No --file, --stdout, --play, --output → defaults to play (no file written)."""
     libs_api = sys.modules["libs.api"]

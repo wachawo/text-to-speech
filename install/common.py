@@ -120,7 +120,12 @@ def prompt_text(question: str, default: str = "", non_interactive: bool = False)
 
 
 def download_file(url: str, dest: Path, *, label: str | None = None) -> None:
-    """Download `url` to `dest`, reporting progress. Skips if `dest` already has content."""
+    """Download `url` to `dest`, reporting progress. Skips if `dest` already has content.
+
+    The bytes land in `<dest>.part` and are renamed into place only once the
+    download is complete, so an interrupted run leaves no `dest` behind for the
+    next run to skip as installed.
+    """
     dest = Path(dest)
     if dest.exists() and dest.stat().st_size > 0:
         info(f"  exists: {dest.name} (skip)")
@@ -147,7 +152,12 @@ def download_file(url: str, dest: Path, *, label: str | None = None) -> None:
             sys.stdout.flush()
             last_pct = pct
 
-    urllib.request.urlretrieve(url, dest, reporthook=reporthook)
+    part = dest.with_name(f"{dest.name}.part")
+    try:
+        urllib.request.urlretrieve(url, part, reporthook=reporthook)
+        os.replace(part, dest)
+    finally:
+        part.unlink(missing_ok=True)
     # Terminate the carriage-return progress line written above.
     sys.stdout.write("\n")
     sys.stdout.flush()

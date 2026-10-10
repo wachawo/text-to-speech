@@ -602,7 +602,7 @@ def stream_tts(text: str, engine: str, language: str, voice: str | None = None):
 
     WAV engines emit one streaming WAV (single header + concatenated PCM); MP3
     (gtts) concatenates per-chunk bytes. One pool slot is held for the whole
-    stream and released when the generator is exhausted or closed.
+    stream and released when the generator ends or the response is closed.
 
     Args:
         text: Full utterance; split into chunks of TTS_STREAM_MAX_CHARS.
@@ -626,6 +626,14 @@ def stream_tts(text: str, engine: str, language: str, voice: str | None = None):
 
     mimetype, unused_ext = detect_audio_mime(first)
     is_wav = mimetype == "audio/wav"
+    held_slots = [slot]
+
+    def release_held_slot() -> None:
+        """Give the slot back once, whichever comes first: the end of the stream or the response close."""
+        try:
+            release_slot(held_slots.pop())
+        except IndexError:
+            pass
 
     def generate():
         """Yield the first chunk, then each remaining chunk as it is synthesized."""
@@ -644,9 +652,13 @@ def stream_tts(text: str, engine: str, language: str, voice: str | None = None):
         except Exception as exc:
             logger.error(f"[{get_req_id()}] stream aborted: {type(exc).__name__}: {exc}\n{traceback.format_exc()}")
         finally:
-            release_slot(slot)
+            release_held_slot()
 
-    return Response(stream_with_context(generate()), mimetype=mimetype)
+    response = Response(stream_with_context(generate()), mimetype=mimetype)
+    # A HEAD request, or a client gone before the first chunk, closes the
+    # response without ever starting generate(), so its finally never runs.
+    response.call_on_close(release_held_slot)
+    return response
 
 
 @app.route("/api/tts", methods=["GET", "POST"])
