@@ -13,9 +13,7 @@ Reads `TTS_URL` and `TTS_TOKEN` from the same config chain as ttsgen
 import argparse
 import logging
 import os
-import queue
 import sys
-import threading
 import traceback
 from typing import Any, cast
 
@@ -23,18 +21,19 @@ import requests
 
 # Local imports
 from libs.cli import (
-    CHUNK_SUFFIX,
-    QueueItem,
+    DEFAULT_CHUNK_CHARS,
     chunk_extension,
     chunk_text,
     output_path_for,
-    play_worker,
-    rec_worker,
+    read_text_file,
+    resolve_output_formats,
     resolve_output_target,
+    run_pipeline,
     save_audio_file,
     scratch_dir,
     write_audio,
 )
+from libs.exceptions import ValidationError
 from libs.tempfiles import safe_unlink
 
 LOGGING = {
@@ -160,7 +159,7 @@ Configuration (read from process env, ./ttsgen.conf, ~/.config/ttsgen.conf, .env
         "-f", "--file", nargs="?", const="", metavar="PATH", help="Save server response to file (auto-name if no PATH)"
     )
     parser.add_argument("-p", "--play", action="store_true", help="Play audio (default)")
-    parser.add_argument("-s", "--stdout", action="store_true", help="Output audio bytes to stdout")
+    parser.add_argument("-s", "--stdout", action="store_true", help="Output audio bytes to stdout (disables --file)")
     parser.add_argument("-o", "--output", metavar="FORMATS", help="Comma-separated: play, file, stdout")
     parser.add_argument("-e", "--engine", help="Remote engine name (server's TTS_ENGINE if omitted)")
     parser.add_argument("-l", "--language", help="Language code (default: the server's TTS_LANGUAGE)")
@@ -181,23 +180,7 @@ def setup_logging(verbose: bool, quiet: bool) -> None:
         logging.getLogger().setLevel(logging.INFO)
 
 
-def read_text_file(path: str) -> str:
-    """Read and strip the text to synthesize from `path`.
-
-    Raises:
-        FileNotFoundError: `path` is missing or is not a regular file.
-        ValueError: The file contains only whitespace.
-    """
-    if not os.path.isfile(path):
-        raise FileNotFoundError(f"Not a file: {path}")
-    with open(path, encoding="utf-8") as f:
-        content = f.read().strip()
-    if not content:
-        raise ValueError(f"File is empty: {path}")
-    return content
-
-
-def main() -> int:
+def run_cli() -> int:
     """Run the remote-synthesis CLI and return a shell exit code."""
     parser = parse_arguments()
     args = parser.parse_args()
@@ -217,36 +200,17 @@ def main() -> int:
 
     LAST_RESPONSE["content_type"] = ""
 
-    # Resolve inputs
-    if args.text_file:
-        try:
-            text = read_text_file(args.text_file)
-        except (FileNotFoundError, ValueError) as exc:
-            logger.error(str(exc))
-            return 2
-    else:
-        text = args.text
+    # Resolve inputs; a bad -i file or -o value exits 1, as in ttsgen.
+    try:
+        text = read_text_file(args.text_file) if args.text_file else args.text
+        output_formats = resolve_output_formats(args.output, args.file, args.play, args.stdout)
+    except ValidationError as exc:
+        logger.error(f"Validation error: {exc}")
+        return 1
 
     engine = args.engine or os.getenv("TTS_ENGINE", "")  # empty: the server picks its default
     language = args.language or os.getenv("TTS_LANGUAGE", "")  # empty: the server picks its default
     audio_dir = args.audio_dir or os.getenv("AUDIO_DIRECTORY", "audio")
-
-    output_formats: list[str] = []
-    if args.output:
-        for fmt in [f.strip() for f in args.output.split(",")]:
-            if fmt not in ("play", "file", "stdout"):
-                logger.error(f"Invalid output format: {fmt}")
-                return 2
-            if fmt not in output_formats:
-                output_formats.append(fmt)
-    if args.file is not None and "file" not in output_formats:
-        output_formats.append("file")
-    if args.play and "play" not in output_formats:
-        output_formats.append("play")
-    if args.stdout and "stdout" not in output_formats:
-        output_formats.append("stdout")
-    if not output_formats:
-        output_formats = ["play"]
 
     out_is_stdout = "stdout" in output_formats
     out_is_file = "file" in output_formats
@@ -265,11 +229,10 @@ def main() -> int:
         if output_target:
             logger.info(f"Output: {output_target}")
 
-    # Chunking and pipeline (matches ttsgen: 200-char chunks, producer/consumer threads)
-    MAX_LEN = 200
-    chunks = chunk_text(text, MAX_LEN)
+    # Chunking and pipeline, shared with ttsgen
+    chunks = chunk_text(text, DEFAULT_CHUNK_CHARS)
     if not args.quiet and not out_is_stdout:
-        logger.info(f"Chunks: {len(chunks)} (<= {MAX_LEN} chars each)")
+        logger.info(f"Chunks: {len(chunks)} (<= {DEFAULT_CHUNK_CHARS} chars each)")
 
     # Keep scratch files next to the destination in file mode, in the system temp dir otherwise.
     tmp_dir = scratch_dir(output_target, target_is_dir)
@@ -278,25 +241,17 @@ def main() -> int:
         """Synthesize one chunk remotely, binding the resolved engine and language."""
         return fetch_audio(text_chunk, engine or "", language)
 
-    q: queue.Queue[QueueItem] = queue.Queue(maxsize=2)
-    collected_paths: list[str] = []
-    failures: list[tuple[int, BaseException]] = []
+    created_paths: list[str] = []
 
     # Imported lazily: playback pulls in pygame, which is useless for --file/--stdout runs.
     from libs.api import play_audio
 
-    rec = threading.Thread(target=rec_worker, args=(chunks, generator, q, CHUNK_SUFFIX, tmp_dir), daemon=True)
-    play = threading.Thread(target=play_worker, args=(q, output_formats, collected_paths, play_audio, failures), daemon=True)
     try:
-        rec.start()
-        play.start()
-        rec.join()
-        play.join()
+        collected_paths, failure = run_pipeline(chunks, generator, output_formats, play_audio, tmp_dir, created_paths)
 
-        if failures:
-            for idx, err in failures:
-                logger.error(f"Chunk {idx} failed: {type(err).__name__}: {err}")
-            logger.error(f"{len(failures)}/{len(chunks)} chunk(s) failed; aborting with exit code 3.")
+        if failure is not None:
+            idx, err = failure
+            logger.error(f"Chunk {idx} of {len(chunks)} failed, nothing saved: {type(err).__name__}: {err}")
             return 3
         if not collected_paths:
             logger.error("No audio was generated: the text holds nothing to synthesize.")
@@ -309,6 +264,9 @@ def main() -> int:
                 save_audio_file(collected_paths, output_filename)
             except OSError as exc:
                 logger.error(f"Failed to save {output_filename}: {type(exc).__name__}: {exc}\n{traceback.format_exc()}")
+                if target_is_dir:
+                    # The auto-generated name was claimed empty for this run.
+                    safe_unlink(output_filename)
                 return 1
             if out_is_stdout:
                 # stdout carries the audio stream, so the filename goes to the log instead.
@@ -323,17 +281,23 @@ def main() -> int:
 
         return 0
     finally:
-        # Every exit, a failed chunk or a failed save included, removes the chunk files.
-        for chunk_path in collected_paths:
+        # Every exit, a failed chunk, a failed save or Ctrl+C included, removes
+        # every chunk file the run created, queued or not.
+        for chunk_path in created_paths:
             safe_unlink(chunk_path)
 
 
-if __name__ == "__main__":
+def main() -> int:
+    """Console-script entry point: run the CLI, turning Ctrl+C and stray errors into exit code 1."""
     try:
-        sys.exit(main())
+        return run_cli()
     except KeyboardInterrupt:
         logger.warning("Interrupted")
-        sys.exit(1)
+        return 1
     except Exception as exc:
         logger.error(f"{type(exc).__name__}: {str(exc)}\n{traceback.format_exc()}")
-        sys.exit(1)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

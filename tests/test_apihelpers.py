@@ -21,6 +21,8 @@ if str(ROOT) not in sys.path:
 
 # Local imports
 import ttsapi  # noqa: E402
+from libs import cli  # noqa: E402
+from libs.exceptions import ValidationError  # noqa: E402
 
 # read_text_file
 
@@ -33,23 +35,36 @@ def test_read_text_file_reads_and_strips(tmp_path):
 
 
 def test_read_text_file_raises_on_missing(tmp_path):
-    """A non-existent path fails with FileNotFoundError instead of an empty read."""
-    with pytest.raises(FileNotFoundError, match="Not a file"):
-        ttsapi.read_text_file(str(tmp_path / "nope.txt"))
+    """A non-existent path fails with a plain "File not found", not a wrapped double message."""
+    missing = tmp_path / "nope.txt"
+    with pytest.raises(ValidationError) as caught:
+        ttsapi.read_text_file(str(missing))
+    assert str(caught.value) == f"File not found: {missing}"
 
 
 def test_read_text_file_raises_on_empty(tmp_path):
     """A file holding only whitespace is rejected as empty input."""
     f = tmp_path / "empty.txt"
     f.write_text("   \n\n  ")
-    with pytest.raises(ValueError, match="empty"):
+    with pytest.raises(ValidationError, match="empty"):
         ttsapi.read_text_file(str(f))
 
 
 def test_read_text_file_rejects_directory(tmp_path):
     """A directory passes os.path.exists but not os.path.isfile."""
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(ValidationError, match="Path is not a file"):
         ttsapi.read_text_file(str(tmp_path))
+
+
+def test_both_clis_share_one_reader_and_the_pipeline_constants():
+    """ttsapi and ttsgen read -i files and size chunks and the queue from libs.cli, not local copies."""
+    import ttsgen
+
+    assert ttsapi.read_text_file is cli.read_text_file
+    assert ttsapi.DEFAULT_CHUNK_CHARS is cli.DEFAULT_CHUNK_CHARS
+    assert ttsgen.DEFAULT_CHUNK_CHARS is cli.DEFAULT_CHUNK_CHARS
+    assert ttsapi.resolve_output_formats is ttsgen.resolve_output_formats is cli.resolve_output_formats
+    assert ttsapi.run_pipeline is ttsgen.run_pipeline is cli.run_pipeline
 
 
 # parse_arguments — argparse contract

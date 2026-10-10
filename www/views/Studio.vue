@@ -204,13 +204,18 @@ module.exports = {
   mixins: [TtsWait],
 
   data: function () {
+    // A server the store has already seen ok is taken at its word: the
+    // warm-up bar and a disabled GENERATE on every visit would claim a wait
+    // that is over. The poll still asks once and says so if it is not.
+    var health = this.$store.state.health;
+    var healthy = !!(health && health.status === 'ok');
     return {
       wait: [],
       error: '',
       // What the health poll has to say while the server does not answer.
       healthError: '',
       // Up until the first ok from /api/health; see pollHealth.
-      info: WARMUP_INFO,
+      info: healthy ? '' : WARMUP_INFO,
       success: '',
       form: { engine: '', language: 'en', voice: '', text: '' },
       items: [],
@@ -220,7 +225,7 @@ module.exports = {
       // gives it; '' while the Blob is on its way.
       audioUrl: '',
       audioName: '',
-      ready: false,
+      ready: healthy,
       elapsed: 0,
     };
   },
@@ -372,6 +377,9 @@ module.exports = {
       var self = this;
       var engine = this.engines.indexOf(prefs.engine) !== -1 ? prefs.engine : this.serverEngine;
       var language = this.$knownLanguage(prefs.language) ? prefs.language : this.serverLanguage;
+      // A server default the select has no option for (TTS_LANGUAGE=uk) would
+      // blank the select; the language in force stays, as on a fresh open.
+      if (!this.$knownLanguage(language)) language = '';
       var moved = false;
       if (engine && this.engines.indexOf(engine) !== -1 && engine !== this.form.engine) {
         this.form.engine = engine;
@@ -395,12 +403,17 @@ module.exports = {
        the engines take minutes to warm on CPU, and a button that fails with
        502 for the first five minutes reads as a broken deploy rather than a
        server that is not ready yet. The bar is cleared on the first ok, and so
-       is the poll's own warning. */
+       is the poll's own warning. The answer also says whether the server
+       wants a token, which the guard could not learn while the server was
+       starting; the CURL card and the sign-out glyph read it from the store. */
     pollHealth: function () {
       var self = this;
       this.$http.get('/api/health')
         .then(function (resp) {
+          var auth = self.$store.state.auth;
+          var required = !!(resp.data && resp.data.auth);
           self.$store.state.health = resp.data;
+          if (auth.required !== required) self.$store.state.auth = { required: required, token: auth.token };
           if (!resp.data || resp.data.status !== 'ok') return;
           self.ready = true;
           if (self.info === WARMUP_INFO) self.info = '';
@@ -642,7 +655,8 @@ module.exports = {
         if (copyByTextarea(text)) return done();
         self.$store.dispatch('push_toast', {
           level: 'danger',
-          message: 'This browser would not copy - select the command and copy it by hand.',
+          message: 'Copy failed',
+          title: 'This browser would not copy: select the command and copy it by hand',
         });
       };
       if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {

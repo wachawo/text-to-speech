@@ -84,3 +84,67 @@ test('resample with equal rates answers the same samples', () => {
   const samples = new Float32Array([0.1, 0.2, 0.3]);
   assert.equal(resample(samples, 22050, 22050), samples);
 });
+
+/* A browser stood in for the way Firefox behaves: the context takes the
+   requested rate, and then refuses to connect a microphone at the device
+   rate to it. */
+const loadRecorderIn = function (deviceRate) {
+  const contexts = [];
+  class FakeContext {
+    constructor(options) {
+      this.sampleRate = (options && options.sampleRate) || deviceRate;
+      this.closed = false;
+      this.destination = {};
+      contexts.push(this);
+    }
+    createMediaStreamSource() {
+      if (this.sampleRate !== deviceRate) {
+        const err = new Error('Connecting AudioNodes from AudioContexts with different sample-rate is not supported');
+        err.name = 'NotSupportedError';
+        throw err;
+      }
+      return { connect() {}, disconnect() {} };
+    }
+    createScriptProcessor() {
+      this.processor = { onaudioprocess: null, connect() {}, disconnect() {} };
+      return this.processor;
+    }
+    close() {
+      this.closed = true;
+      return Promise.resolve();
+    }
+  }
+  const track = { stop() {}, addEventListener() {} };
+  const stream = { getTracks: () => [track], getAudioTracks: () => [track] };
+  const sandbox = {
+    window: { AudioContext: FakeContext },
+    navigator: { mediaDevices: { getUserMedia: () => Promise.resolve(stream) } },
+    setInterval, clearInterval, Blob,
+  };
+  vm.runInNewContext(fs.readFileSync(SOURCE, 'utf8'), sandbox, { filename: SOURCE });
+  return { recorder: sandbox.window.TtsRecorder, contexts };
+};
+
+test('a context the microphone is refused by is replaced by one at the device rate', async () => {
+  const { recorder, contexts } = loadRecorderIn(48000);
+  const take = recorder.create({ sampleRate: 22050 });
+  await take.start();
+  assert.equal(contexts.length, 2, 'the 22050 context, then one at the default rate');
+  assert.equal(contexts[0].closed, true, 'the refused context is closed');
+  const live = contexts[1];
+  assert.equal(live.sampleRate, 48000);
+  // One second of buffers at the rate they really arrive at.
+  const second = new Float32Array(48000).fill(0.25);
+  live.processor.onaudioprocess({ inputBuffer: { getChannelData: () => second } });
+  const blob = take.stop();
+  assert.equal(take.seconds, 1, 'resampled from the device rate, not taken as 22050');
+  assert.equal(blob.size, 44 + 22050 * 2);
+});
+
+test('a context that takes the requested rate is the only one opened', async () => {
+  const { recorder, contexts } = loadRecorderIn(22050);
+  const take = recorder.create({ sampleRate: 22050 });
+  await take.start();
+  assert.equal(contexts.length, 1);
+  take.release();
+});

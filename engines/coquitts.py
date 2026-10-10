@@ -14,6 +14,7 @@ import threading
 
 from libs.cached_loader import load_cached
 from libs.exceptions import CustomError, EngineNotAvailableError, TTSException, ValidationError
+from libs.models import models_directory
 from libs.sample_resolver import list_sample_files, resolve_sample_path, sample_path_for_voice
 from libs.tempfiles import safe_unlink
 
@@ -23,8 +24,12 @@ MAX_TEXT_LENGTH = 1_000_000
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_COQUITTS_MODELS = "cache/coquitts"
 DEFAULT_COQUITTS_MODEL = "tts_models/multilingual/multi-dataset/xtts_v2"
+# The languages XTTS speaks: the `languages` list of the xtts_v2 config.json,
+# in the two-letter form callers send (XTTS itself maps `zh` onto `zh-cn`).
+XTTS_LANGUAGES = frozenset(
+    {"en", "es", "fr", "de", "it", "pt", "pl", "tr", "ru", "nl", "cs", "ar", "zh", "hu", "ko", "ja", "hi"}
+)
 # Single source of truth shared with `ttsrec`. A fresh `ttsrec` writes here,
 # `ttsgen --engine coquitts` reads from here. Override via COQUITTS_SAMPLE.
 DEFAULT_COQUITTS_SAMPLE = str(os.path.expanduser("~/.config/ttsgen.wav"))
@@ -65,17 +70,14 @@ def is_available() -> bool:
 def get_models_directory() -> str:
     """Resolve the absolute directory holding the Coqui model checkpoints.
 
+    Resolved by libs.models.models_directory, like every other engine.
+
     Returns:
-        COQUITTS_MODELS when set, else a project-local `cache/coquitts` if it
-        exists, else the Coqui default `~/.local/share/tts`.
+        COQUITTS_MODELS when set (a relative value is anchored on the project
+        root, not the cwd), else `cache/coquitts` in the project root, where
+        Coqui downloads the checkpoint when it is not there yet.
     """
-    coquitts_path = os.getenv("COQUITTS_MODELS", DEFAULT_COQUITTS_MODELS)
-    if coquitts_path:
-        return os.path.abspath(os.path.expanduser(coquitts_path))
-    local_dir = os.path.join(os.getcwd(), "cache", "coquitts")
-    if os.path.isdir(local_dir):
-        return os.path.abspath(local_dir)
-    return os.path.abspath(os.path.expanduser("~/.local/share/tts"))
+    return models_directory("coquitts")
 
 
 def get_tts(model_name: str, device: str):
@@ -123,7 +125,8 @@ def generate(text: str, config: dict) -> bytes:
 
     Raises:
         EngineNotAvailableError: Coqui TTS is not installed.
-        ValidationError: Text exceeds MAX_TEXT_LENGTH, or the voice name is invalid or has no sample.
+        ValidationError: Text exceeds MAX_TEXT_LENGTH, xtts_v2 does not speak
+            the language, or the voice name is invalid or has no sample.
         CustomError: The default voice sample WAV (COQUITTS_SAMPLE) is missing.
         TTSException: Model lookup or synthesis failed.
     """
@@ -133,6 +136,12 @@ def generate(text: str, config: dict) -> bytes:
         )
     if len(text) > MAX_TEXT_LENGTH:
         raise ValidationError(f"Text too long for coquitts: {len(text)} > {MAX_TEXT_LENGTH}")
+    language = config.get("language", "en")
+    model_name = os.getenv("COQUITTS_MODEL", DEFAULT_COQUITTS_MODEL)
+    # XTTS refuses an unknown language only after the checkpoint is loaded, and
+    # with an assertion; its list is fixed, so the caller is told up front.
+    if "xtts_v2" in model_name and language not in XTTS_LANGUAGES:
+        raise ValidationError(f"Language '{language}' is not supported by coquitts")
     voice = config.get("voice")
     if voice:
         sample_wav = sample_path_for_voice(voice)
@@ -160,8 +169,6 @@ def generate(text: str, config: dict) -> bytes:
                 }
             )
     try:
-        language = config.get("language", "en")
-        model_name = os.getenv("COQUITTS_MODEL", DEFAULT_COQUITTS_MODEL)
         device = "cuda" if torch.cuda.is_available() else "cpu"
         tts = get_tts(model_name, device)
         # Coqui TTS can only write to a path, so synthesis goes through a scratch file.
@@ -184,6 +191,9 @@ def generate(text: str, config: dict) -> bytes:
                 return wav_file.read()
         finally:
             safe_unlink(temp_filename)
+    except TTSException:
+        # Already says what went wrong; wrapping it again would repeat it.
+        raise
     except Exception as exc:
         if "model" in str(exc).lower() and "not found" in str(exc).lower():
             raise TTSException(f"Coqui TTS model not found.\nError: {exc}") from exc

@@ -62,7 +62,8 @@
         <!-- SAVE lives in the footer with CLOSE, the house layout for every
              dialog; the report of the last save sits at its left. -->
         <div class="modal-footer p-1 d-flex justify-content-between align-items-center">
-          <small v-if="note" class="ms-2" :class="noteFailed ? 'tts-state-off' : 'text-secondary'">{{ note }}</small>
+          <small v-if="note" class="ms-2" :class="noteFailed ? 'tts-state-off' : 'text-secondary'"
+                 :title="noteTitle || null">{{ note }}</small>
           <span v-else></span>
           <div class="d-flex gap-1">
             <button type="button" class="btn btn-sm btn-success fw-bold" style="min-width:100px"
@@ -99,7 +100,10 @@
    cleared at once and nothing opens.
 */
 
-var NOT_KEPT = 'This browser would not store the setting, so it holds until the page is reloaded.';
+/* A storage refusal as a label, and the reason on hover: the dialog footer
+   and a toast are no place for a sentence. */
+var NOT_KEPT = 'Setting not stored';
+var NOT_KEPT_TITLE = 'This browser would not store the setting, so it holds until the page is reloaded';
 
 module.exports = {
   mixins: [TtsWait],
@@ -112,6 +116,7 @@ module.exports = {
       curl: true,
       note: '',
       noteFailed: false,
+      noteTitle: '',
     };
   },
 
@@ -198,8 +203,12 @@ module.exports = {
       if (asked) this.open();
     },
 
+    /* Only while the dialog is open. It is mounted for the whole session,
+       and the key moves with the catalogue as other screens load it; a
+       fetch then would repeat the screen's own request and file its failure
+       in a dialog nobody sees. open() asks for the pair it shows. */
     voiceKey: function () {
-      this.fetchVoices();
+      if (this.$store.state.settingsOpen) this.fetchVoices();
     },
   },
 
@@ -220,6 +229,7 @@ module.exports = {
       this.curl = this.$store.state.view.curl;
       this.note = '';
       this.noteFailed = false;
+      this.noteTitle = '';
       this.error = '';
       if (!this.modal) {
         this.$store.state.settingsOpen = false;
@@ -287,6 +297,7 @@ module.exports = {
       });
       this.noteFailed = !kept;
       this.note = kept ? 'Saved.' : NOT_KEPT;
+      this.noteTitle = kept ? '' : NOT_KEPT_TITLE;
     },
 
     /* The switch, reported the way the theme toggle reports: a toast, because
@@ -295,7 +306,7 @@ module.exports = {
     saveView: function () {
       var kept = this.$savePrefs('view', { curl: this.curl });
       if (kept) return;
-      this.$store.dispatch('push_toast', { level: 'warning', message: NOT_KEPT, ttl: 12000 });
+      this.$store.dispatch('push_toast', { level: 'warning', message: NOT_KEPT, title: NOT_KEPT_TITLE, ttl: 12000 });
     },
   },
 };

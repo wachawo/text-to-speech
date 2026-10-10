@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Unit tests for install.common.download_file."""
+"""Unit tests for install.common: download_file and resolve_models_dir."""
 
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 import pytest
 
-from install.common import download_file
+# Local imports
+import libs.models
+from install.common import download_file, resolve_models_dir
 
 
 def test_interrupted_download_leaves_nothing_to_skip(monkeypatch, tmp_path):
@@ -53,3 +56,20 @@ def test_existing_file_is_skipped(monkeypatch, tmp_path):
     dest.write_bytes(b"model")
     download_file("https://example.invalid/model.onnx", dest)
     assert dest.read_bytes() == b"model"
+
+
+def test_relative_models_dir_lands_where_the_engine_looks(monkeypatch, tmp_path):
+    """A relative *_MODELS value is anchored on the project root, so an install run elsewhere fills the engine's directory."""
+    project = tmp_path / "project"
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.setattr(libs.models, "PROJECT_ROOT", str(project))
+    monkeypatch.chdir(elsewhere)
+    monkeypatch.setenv("PIPERTTS_MODELS", "cache/pipertts")
+
+    target = resolve_models_dir("Piper TTS", "PIPERTTS_MODELS", tmp_path / "default", project / "cache" / "pipertts")
+
+    assert target == (project / "cache" / "pipertts").resolve()
+    assert target.is_dir()
+    assert target == Path(libs.models.models_directory("pipertts")).resolve()
+    assert list(elsewhere.iterdir()) == []

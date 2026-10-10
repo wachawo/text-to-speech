@@ -13,6 +13,7 @@ import threading
 # Local imports
 from libs.cached_loader import load_cached
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
+from libs.models import models_directory
 from libs.tempfiles import safe_unlink
 
 logger = logging.getLogger(__name__)
@@ -55,30 +56,16 @@ def get_models_directory() -> str:
     """
     Get the directory for storing Bark TTS models.
 
-    Priority:
-    1. Environment variable BARKTTS_MODELS (from .env or export)
+    Priority (libs.models.models_directory):
+    1. Environment variable BARKTTS_MODELS (from .env or export); a relative
+       value is anchored on the project root, not the cwd
     2. cache/barktts directory in project root (if exists)
     3. Default: ~/.cache/suno/bark_v0
 
     Returns:
         Path to models directory
     """
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-    env_var = os.environ.get("BARKTTS_MODELS")
-    if env_var:
-        models_path = env_var.strip()
-        # A relative override is anchored to the project root, not the cwd,
-        # so `ttsgen` finds the same models from any working directory.
-        if not os.path.isabs(models_path):
-            models_path = os.path.join(project_root, models_path)
-        return os.path.expanduser(models_path)
-
-    barktts_dir = os.path.join(project_root, "cache", "barktts")
-    if os.path.exists(barktts_dir) and os.path.isdir(barktts_dir):
-        return barktts_dir
-
-    return os.path.expanduser("~/.cache/suno/bark_v0")
+    return models_directory("barktts")
 
 
 def get_speaker_for_language(language: str) -> str:

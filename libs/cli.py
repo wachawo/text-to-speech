@@ -7,6 +7,7 @@ Used by both `ttsgen` (offline, calls `libs.api.text_to_speech_bytes`) and `ttsa
 pipeline supports both backends.
 """
 
+import contextlib
 import io
 import logging
 import os
@@ -14,6 +15,7 @@ import queue
 import re
 import shutil
 import tempfile
+import threading
 import traceback
 import wave
 from collections.abc import Callable
@@ -21,13 +23,22 @@ from typing import IO, NamedTuple
 
 # Local imports
 from .audio import extension_for, is_wav
+from .exceptions import ValidationError
 from .tempfiles import safe_unlink
-from .tools import ensure_audio_directory, generate_timestamp_filename
+from .tools import claim_timestamp_path, ensure_audio_directory
 
 logger = logging.getLogger(__name__)
 
 # Scratch files hold one chunk each; the container is sniffed, never read off the name.
 CHUNK_SUFFIX = ".part"
+
+# Long input is split into chunks so playback can start before synthesis finishes.
+DEFAULT_CHUNK_CHARS = 200
+
+# Bounded queue between producer and consumer threads, provides backpressure.
+PIPELINE_QUEUE_SIZE = 2
+
+VALID_OUTPUT_FORMATS = ("play", "file", "stdout")
 
 # Split at the whitespace after sentence-ish punctuation, or at a line break, so
 # each fragment keeps its own terminator. Punctuation inside a token ("3.50",
@@ -54,6 +65,62 @@ class ChunkResult(NamedTuple):
 # `None` is the sentinel pushed by rec_worker after the last chunk to signal
 # play_worker to exit. Any non-None item is a ChunkResult.
 QueueItem = ChunkResult | None
+
+# The chunk that stopped the pipeline: (chunk index, exception).
+ChunkFailure = tuple[int, BaseException]
+
+
+def read_text_file(path: str) -> str:
+    """Read and strip the text to synthesize from `path`.
+
+    Raises:
+        ValidationError: The path is missing, is not a file, cannot be read or
+            decoded, or holds only whitespace.
+    """
+    path = os.path.normpath(path)
+    if not os.path.exists(path):
+        raise ValidationError(f"File not found: {path}")
+    if not os.path.isfile(path):
+        raise ValidationError(f"Path is not a file: {path}")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            content = handle.read().strip()
+    except UnicodeDecodeError as exc:
+        raise ValidationError(f"File encoding error in {path}: {exc}") from exc
+    except OSError as exc:
+        raise ValidationError(f"Could not read file {path}: {exc}") from exc
+    if not content:
+        raise ValidationError(f"File is empty: {path}")
+    return content
+
+
+def resolve_output_formats(output: str | None, file_arg: str | None, play: bool, stdout: bool) -> list[str]:
+    """Combine --output, --file, --play and --stdout into ordered output modes.
+
+    --stdout disables --file unless --output names both explicitly.
+
+    Returns:
+        Deduplicated output modes; defaults to ["play"] when nothing is requested.
+
+    Raises:
+        ValidationError: If --output names a mode other than play, file or stdout.
+    """
+    output_formats: list[str] = []
+    if output:
+        for fmt in [f.strip() for f in output.split(",")]:
+            if fmt not in VALID_OUTPUT_FORMATS:
+                raise ValidationError(f"Invalid output format: {fmt}. Valid: play, file, stdout")
+            if fmt not in output_formats:
+                output_formats.append(fmt)
+    if file_arg is not None and "file" not in output_formats:
+        output_formats.append("file")
+    if play and "play" not in output_formats:
+        output_formats.append("play")
+    if stdout and "stdout" not in output_formats:
+        output_formats.append("stdout")
+    if stdout and file_arg is not None and not output:
+        output_formats = [f for f in output_formats if f != "file"]
+    return output_formats or ["play"]
 
 
 def slice_long_fragment(fragment: str, max_len: int) -> list[str]:
@@ -138,10 +205,14 @@ def resolve_output_target(file_arg: str | None, audio_dir: str) -> tuple[str, bo
 
 
 def output_path_for(target: str, is_directory: bool, prefix: str, extension: str) -> str:
-    """Return the exact file name: the target itself, or a timestamped name inside it."""
+    """Return the exact file name: the target itself, or a new timestamped file inside it.
+
+    An exact name is the caller's choice and is overwritten; an auto-generated
+    name is claimed with an exclusive create and never replaces an existing file.
+    """
     if not is_directory:
         return target
-    return os.path.join(target, generate_timestamp_filename(prefix, extension))
+    return claim_timestamp_path(target, prefix, extension)
 
 
 def scratch_dir(target: str | None, is_directory: bool) -> str | None:
@@ -235,8 +306,13 @@ def concat_wav_files(in_paths: list[str], out_stream: IO[bytes]) -> None:
                 wout.writeframes(frames)
             finally:
                 win.close()
-    finally:
-        wout.close()
+    except BaseException:
+        # Closing a writer that never got its format raises "# channels not
+        # specified", which would replace the error that actually happened.
+        with contextlib.suppress(wave.Error):
+            wout.close()
+        raise
+    wout.close()
 
 
 def rec_worker(
@@ -245,41 +321,61 @@ def rec_worker(
     q: "queue.Queue[QueueItem]",
     tmp_suffix: str,
     tmp_dir: str | None = None,
+    stop: threading.Event | None = None,
+    created_paths: list[str] | None = None,
+    lock: "threading.Lock | None" = None,
 ) -> None:
     """Generate audio for each chunk and push a ChunkResult onto the queue.
 
-    Runs as the producer thread of the CLI pipeline. On generator failure the
-    chunk is forwarded as a ChunkResult with `error` set instead of being
-    silently replaced by empty bytes; play_worker collects those failures so
-    the CLI can exit non-zero. Exactly one ChunkResult per chunk plus a final
-    `None` sentinel is pushed — including on partial failure.
+    Runs as the producer thread of the CLI pipeline. The first chunk that fails
+    is forwarded as a ChunkResult with `error` set and ends the run: an error
+    such as a bad language or an unreachable server is the same for every chunk,
+    so the remaining chunks are not attempted. A final `None` sentinel is always
+    pushed.
 
     Args:
         text_chunks: Chunks to synthesize, in playback order.
         generator: Callable turning one chunk of text into audio bytes.
         q: Bounded queue shared with play_worker; provides backpressure.
-        tmp_suffix: Extension for the per-chunk temp files (".wav" / ".mp3").
+        tmp_suffix: Extension for the per-chunk temp files.
         tmp_dir: Directory for temp files; None uses the system temp dir.
+        stop: Set by the caller to end the run early; no chunk is synthesized
+            or written after it is set.
+        created_paths: Receives every temp file this worker creates, so the
+            caller can remove them all, queued or not.
+        lock: Held while a temp file is created and written; the caller sets
+            `stop` under it, so no file appears after the caller's cleanup.
     """
+    stop = stop or threading.Event()
+    lock = lock or threading.Lock()
     try:
         for i, chunk in enumerate(text_chunks, start=1):
+            if stop.is_set():
+                break
             try:
                 audio_bytes = generator(chunk)
             except Exception as exc:
-                logger.error(f"TTS error on chunk {i}: {type(exc).__name__}: {exc}\n{traceback.format_exc()}")
+                # The caller logs the failure once; the traceback is kept for -v.
+                logger.debug(f"TTS error on chunk {i}: {type(exc).__name__}: {exc}\n{traceback.format_exc()}")
                 q.put(ChunkResult(idx=i, tmp_path=None, audio_bytes=b"", error=exc))
-                continue
+                break
 
-            fd, tmp_path = tempfile.mkstemp(suffix=tmp_suffix, dir=tmp_dir)
-            os.close(fd)
-            try:
-                with open(tmp_path, "wb") as f:
-                    f.write(audio_bytes)
-            except Exception as exc:
-                logger.error(f"Failed to write temp audio for chunk {i}: {type(exc).__name__}: {exc}")
-                safe_unlink(tmp_path)
-                q.put(ChunkResult(idx=i, tmp_path=None, audio_bytes=audio_bytes, error=exc))
-                continue
+            with lock:
+                if stop.is_set():
+                    break
+                fd, tmp_path = tempfile.mkstemp(suffix=tmp_suffix, dir=tmp_dir)
+                if created_paths is not None:
+                    created_paths.append(tmp_path)
+                try:
+                    # Written through the descriptor, never reopened by name, so a
+                    # file removed by the caller's cleanup cannot be recreated.
+                    with os.fdopen(fd, "wb") as handle:
+                        handle.write(audio_bytes)
+                except Exception as exc:
+                    logger.debug(f"Failed to write temp audio for chunk {i}: {type(exc).__name__}: {exc}")
+                    safe_unlink(tmp_path)
+                    q.put(ChunkResult(idx=i, tmp_path=None, audio_bytes=audio_bytes, error=exc))
+                    break
 
             q.put(ChunkResult(idx=i, tmp_path=tmp_path, audio_bytes=audio_bytes, error=None))
     finally:
@@ -293,14 +389,16 @@ def play_worker(
     modes: list[str],
     collected_paths: list[str],
     play_func: Callable[[bytes], None],
-    failures: list[tuple[int, BaseException]] | None = None,
+    failures: list[ChunkFailure] | None = None,
+    stop: threading.Event | None = None,
 ) -> None:
     """Consume queue items until the sentinel, playing and collecting each chunk.
 
     Runs as the consumer thread of the CLI pipeline. Failed chunks
     (ChunkResult.error not None) are appended to `failures` when provided,
     never to `collected_paths`, and are not played. A playback error on one
-    chunk is logged and the remaining chunks still play.
+    chunk is logged and the remaining chunks still play. Once `stop` is set the
+    queue is still drained, so the producer never blocks, but nothing is played.
 
     Args:
         q: Queue fed by rec_worker; a `None` item ends the loop.
@@ -308,6 +406,7 @@ def play_worker(
         collected_paths: Populated in order with the temp paths of good chunks.
         play_func: Callable that plays one chunk of audio bytes.
         failures: Optional sink for (chunk index, exception) pairs.
+        stop: Optional event that ends playback early.
     """
     while True:
         item = q.get()
@@ -319,11 +418,66 @@ def play_worker(
             continue
         if item.tmp_path is not None:
             collected_paths.append(item.tmp_path)
-        if "play" in modes:
+        if "play" in modes and not (stop is not None and stop.is_set()):
             try:
                 play_func(item.audio_bytes)
             except Exception as exc:
                 logger.error(f"Playback error on chunk {item.idx}: {type(exc).__name__}: {exc}")
+
+
+def run_pipeline(
+    text_chunks: list[str],
+    generator: GeneratorFn,
+    modes: list[str],
+    play_func: Callable[[bytes], None],
+    tmp_dir: str | None,
+    created_paths: list[str],
+) -> tuple[list[str], ChunkFailure | None]:
+    """Synthesize the chunks on a producer thread while a consumer plays them.
+
+    The run stops at the first failed chunk. On any exit, Ctrl+C included, every
+    temp file the run created is listed in `created_paths`, which the caller
+    removes with safe_unlink() in its own `finally`, after saving the output.
+
+    Args:
+        text_chunks: Chunks to synthesize, in playback order.
+        generator: Callable turning one chunk of text into audio bytes.
+        modes: Active output modes; chunks are played only if "play" is present.
+        play_func: Callable that plays one chunk of audio bytes.
+        tmp_dir: Directory for the chunk temp files; None uses the system temp dir.
+        created_paths: Receives every temp file the run creates.
+
+    Returns:
+        The temp paths of the good chunks in playback order, and the failed
+        chunk, or None when every chunk succeeded.
+    """
+    audio_queue: queue.Queue[QueueItem] = queue.Queue(maxsize=PIPELINE_QUEUE_SIZE)
+    stop = threading.Event()
+    lock = threading.Lock()
+    collected_paths: list[str] = []
+    failures: list[ChunkFailure] = []
+    rec_thread = threading.Thread(
+        target=rec_worker,
+        args=(text_chunks, generator, audio_queue, CHUNK_SUFFIX, tmp_dir, stop, created_paths, lock),
+        daemon=True,
+    )
+    play_thread = threading.Thread(
+        target=play_worker,
+        args=(audio_queue, modes, collected_paths, play_func, failures, stop),
+        daemon=True,
+    )
+    try:
+        rec_thread.start()
+        play_thread.start()
+        rec_thread.join()
+        play_thread.join()
+    except BaseException:
+        # Ctrl+C: stop the producer before the caller removes the files, so no
+        # chunk file appears after that cleanup and nothing more is played.
+        with lock:
+            stop.set()
+        raise
+    return collected_paths, (failures[0] if failures else None)
 
 
 def main():

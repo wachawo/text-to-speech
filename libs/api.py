@@ -5,7 +5,6 @@
 import io
 import logging
 import sys
-from datetime import datetime
 from pathlib import Path
 from typing import cast
 
@@ -22,7 +21,9 @@ from .exceptions import (  # noqa: F401
     TTSException,
     ValidationError,
 )
+from .tempfiles import safe_unlink
 from .tools import (
+    claim_timestamp_path,
     get_default_config,
     validate_engine,
     validate_language,
@@ -85,7 +86,8 @@ def text_to_speech_file(
 
     Args:
         text: Text to synthesize.
-        filename: Output path; when None a timestamped name is generated and the
+        filename: Output path; when None a new timestamped file is created in the
+            current directory, never replacing an existing one, and its
             extension is inferred from the audio header (MP3 vs WAV).
         engine: Engine name.
         language: Two-letter language code.
@@ -95,12 +97,18 @@ def text_to_speech_file(
     """
     audio_bytes = text_to_speech_bytes(text, engine, language)
 
+    claimed = filename is None
     if filename is None:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{timestamp}.{extension_for(audio_bytes)}"
+        filename = claim_timestamp_path("", extension=extension_for(audio_bytes))
 
-    with open(filename, "wb") as f:
-        f.write(audio_bytes)
+    try:
+        with open(filename, "wb") as f:
+            f.write(audio_bytes)
+    except OSError:
+        if claimed:
+            # The auto-generated name was claimed empty for this call.
+            safe_unlink(filename)
+        raise
 
     return filename
 

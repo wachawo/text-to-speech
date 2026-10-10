@@ -177,7 +177,6 @@ audio = text_to_speech_bytes(
 ```bash
 TTS_ENGINE=barktts
 TTS_LANGUAGE=en
-DEFAULT_OUTPUT_FORMAT=play
 ```
 
 ## Performance

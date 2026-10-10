@@ -7,11 +7,16 @@ chunked producer/consumer pipeline that calls fetch_audio under the hood.
 """
 
 import io
+import logging
+import signal
 import sys
+import threading
+import time
 import wave
 from pathlib import Path
 
 import pytest
+import requests
 
 # The repository root must be on sys.path before `ttsapi` is imported,
 # so that import deliberately stays below this insert (E402 is expected).
@@ -56,16 +61,28 @@ def test_main_list_flag_returns_list_engines_exit_code(monkeypatch, quiet_main):
     assert rc == 0
 
 
-def test_main_missing_input_file_returns_2(monkeypatch, quiet_main, caplog):
-    """A path that does not exist must surface as exit 2, not crash."""
-    rc = run_main(monkeypatch, ["-i", str(quiet_main / "missing.txt"), "--quiet"])
-    assert rc == 2
+def test_main_missing_input_file_returns_1_like_ttsgen(monkeypatch, quiet_main, caplog):
+    """A path that does not exist exits 1, the code ttsgen uses for the same mistake."""
+    missing = quiet_main / "missing.txt"
+    with caplog.at_level("ERROR"):
+        rc = run_main(monkeypatch, ["-i", str(missing), "--quiet"])
+    assert rc == 1
+    assert [r.message for r in caplog.records if r.levelname == "ERROR"] == [f"Validation error: File not found: {missing}"]
 
 
-def test_main_invalid_output_format_returns_2(monkeypatch, quiet_main):
-    """An unknown token in `--output` is rejected with exit 2."""
+def test_main_invalid_output_format_returns_1_like_ttsgen(monkeypatch, quiet_main):
+    """An unknown token in `--output` is rejected with exit 1, as in ttsgen."""
     rc = run_main(monkeypatch, ["hello", "--output", "play,wat", "--quiet"])
-    assert rc == 2
+    assert rc == 1
+
+
+def test_main_stdout_disables_file_like_ttsgen(monkeypatch, quiet_main, capsysbinary):
+    """`--stdout --file X` without -o writes only to stdout, as `ttsgen --help` documents."""
+    out = quiet_main / "both.wav"
+    rc = run_main(monkeypatch, ["hello", "-e", "coquitts", "--stdout", "--file", str(out), "--quiet"])
+    assert rc == 0
+    assert not out.exists()
+    assert capsysbinary.readouterr().out.startswith(b"RIFF")
 
 
 def test_main_file_output_writes_audio(monkeypatch, quiet_main):
@@ -176,3 +193,68 @@ def test_main_default_output_format_is_play(monkeypatch, quiet_main):
     assert rc == 0
     # No .wav files produced anywhere because play-only mode.
     assert list(quiet_main.glob("*.wav")) == []
+
+
+MANY_CHUNKS_TEXT = ". ".join(f"sentence number {i}" for i in range(200)) + "."
+
+
+def test_main_down_server_stops_at_the_first_chunk(monkeypatch, quiet_main, caplog):
+    """An unreachable server is tried once and reported in one line, not once per chunk with tracebacks."""
+    asked: list[str] = []
+
+    def refuse(text, engine, language):
+        """Fail like a server that is not listening."""
+        asked.append(text)
+        raise requests.ConnectionError("Connection refused")
+
+    monkeypatch.setattr(ttsapi, "fetch_audio", refuse)
+    with caplog.at_level("ERROR"):
+        rc = run_main(monkeypatch, [MANY_CHUNKS_TEXT, "-f", str(quiet_main / "x.wav"), "--quiet"])
+    assert rc == 3
+    assert len(asked) == 1
+    errors = [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR]
+    assert len(errors) == 1
+    assert "Connection refused" in errors[0] and "Traceback" not in errors[0]
+
+
+def test_main_ctrl_c_removes_every_chunk_file(monkeypatch, quiet_main):
+    """Ctrl+C during playback exits 1, leaves no .part file and plays nothing more."""
+    played: list[bytes] = []
+
+    def play(data):
+        """Deliver Ctrl+C to the main thread while the first chunk plays."""
+        played.append(data)
+        if len(played) == 1:
+            signal.pthread_kill(threading.main_thread().ident, signal.SIGINT)
+        time.sleep(0.05)
+
+    monkeypatch.setattr(sys.modules["libs.api"], "play_audio", play)
+    out_dir = quiet_main / "out"
+    out_dir.mkdir()
+    try:
+        rc = run_main(monkeypatch, [MANY_CHUNKS_TEXT, "-o", "play,file", "-f", str(out_dir / "x.wav"), "--quiet"])
+    except KeyboardInterrupt:
+        pytest.fail("KeyboardInterrupt escaped main()")
+    finally:
+        for thread in threading.enumerate():
+            if "rec_worker" in thread.name or "play_worker" in thread.name:
+                thread.join(timeout=10)
+    assert rc == 1
+    assert list(out_dir.iterdir()) == []
+    assert len(played) == 1
+
+
+@pytest.mark.parametrize("raised", [KeyboardInterrupt, RuntimeError("listing broke")])
+def test_main_entry_point_turns_ctrl_c_and_stray_errors_into_exit_1(monkeypatch, quiet_main, raised):
+    """The installed `ttsapi` script calls main(), so main() itself must catch, not the __main__ block."""
+
+    def broken_listing():
+        """Fail while --list talks to the server."""
+        raise raised
+
+    monkeypatch.setattr(ttsapi, "list_remote_engines", broken_listing)
+    try:
+        rc = run_main(monkeypatch, ["--list"])
+    except BaseException as exc:
+        pytest.fail(f"{type(exc).__name__} escaped main()")
+    assert rc == 1

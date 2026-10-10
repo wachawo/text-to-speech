@@ -38,9 +38,11 @@ class OpenAIRequestError(Exception):
         self.error_type = error_type
 
 
-def error_body(message: str, param: str | None = None, error_type: str = "invalid_request_error") -> dict:
+def error_body(
+    message: str, param: str | None = None, error_type: str = "invalid_request_error", code: str | None = None
+) -> dict:
     """Build the OpenAI error envelope: {"error": {"message", "type", "param", "code"}}."""
-    return {"error": {"message": message, "type": error_type, "param": param, "code": None}}
+    return {"error": {"message": message, "type": error_type, "param": param, "code": code}}
 
 
 def validation_error_body(messages: dict | list) -> dict:

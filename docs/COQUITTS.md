@@ -84,7 +84,8 @@ pip install "coqui-tts[codec]" "transformers>=4.46,<5.0"
 Environment variable: `COQUITTS_MODELS`. Installer default:
 `~/.local/share/tts/` (Coqui's own `TTS_HOME`); the project-local choice is
 `cache/coquitts/`. Without the variable the engine falls back to
-`cache/coquitts` under the current directory. The three-way prompt and how the
+`cache/coquitts` in the project root, from whatever directory it runs; a
+relative value of the variable is anchored there too. The three-way prompt and how the
 answer is persisted are described in
 [ENGINES.md, "Where models live"](ENGINES.md#where-models-live).
 
@@ -223,7 +224,6 @@ audio = text_to_speech_bytes(
 ```bash
 TTS_ENGINE=coquitts
 TTS_LANGUAGE=en
-DEFAULT_OUTPUT_FORMAT=play
 ```
 
 ## Performance

@@ -6,10 +6,12 @@ Model directories point at tmp_path via the *_MODELS env keys, and the lazy
 `engines.is_engine_available` import is patched so no engine dependency is probed.
 """
 
+import os
 from pathlib import Path
 
 # Local imports
 import engines
+import libs.models
 from libs.models import ENGINE_NOTES, collect_engine_rows, engine_model_sources, model_display_name
 
 
@@ -24,6 +26,36 @@ def test_engine_model_sources_reads_env_at_call_time(tmp_path, monkeypatch):
     model_dir, patterns = engine_model_sources()["pipertts"]
     assert model_dir == str(tmp_path)
     assert patterns == ["*.onnx"]
+
+
+def test_engine_model_sources_anchor_relative_dirs_on_the_project_root(tmp_path, monkeypatch):
+    """A relative *_MODELS value means the same directory under the project root from any cwd."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("KOKOROTTS_MODELS", "cache/kokorotts")
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(libs.models.__file__)))
+    model_dir, patterns = engine_model_sources()["kokorotts"]
+    assert model_dir == os.path.join(project_root, "cache/kokorotts")
+
+
+def test_list_finds_project_models_from_another_cwd(tmp_path, monkeypatch):
+    """`ttsgen --list` run elsewhere still lists the models in <project>/cache, set relative or not set at all."""
+    project = tmp_path / "project"
+    (project / "cache" / "kokorotts").mkdir(parents=True)
+    (project / "cache" / "kokorotts" / "kokoro-v1.0.onnx").write_bytes(b"onnx")
+    (project / "cache" / "pipertts").mkdir(parents=True)
+    (project / "cache" / "pipertts" / "en_US-lessac-medium.onnx").write_bytes(b"onnx")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.setattr(libs.models, "PROJECT_ROOT", str(project))
+    monkeypatch.chdir(elsewhere)
+    monkeypatch.setenv("KOKOROTTS_MODELS", "cache/kokorotts")
+    monkeypatch.delenv("PIPERTTS_MODELS", raising=False)
+    monkeypatch.setattr(engines, "is_engine_available", lambda name: name in ("kokorotts", "pipertts"))
+
+    rows = collect_engine_rows()
+
+    assert rows_for("kokorotts", rows) == [("kokorotts", "installed", "kokoro-v1.0.onnx")]
+    assert rows_for("pipertts", rows) == [("pipertts", "installed", "en_US-lessac-medium.onnx")]
 
 
 def test_installed_engine_lists_one_row_per_model(tmp_path, monkeypatch):

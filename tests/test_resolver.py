@@ -154,6 +154,28 @@ def test_list_sample_files_sorted_stems(tmp_path, monkeypatch):
     assert list_sample_files() == ["Maria", "adam", "zoe"]
 
 
+def test_list_sample_files_lists_only_selectable_voices(tmp_path, monkeypatch):
+    """Every listed name resolves through sample_path_for_voice to an existing file; the rest are left out."""
+    samples = tmp_path / "samples"
+    samples.mkdir()
+    for name in ("Anna.WAV", "my voice.wav", "v1.2.wav", "x" * 49 + ".wav", "zoe.wav"):
+        (samples / name).write_bytes(b"RIFF")
+    outside = tmp_path / "outside.wav"
+    outside.write_bytes(b"RIFF")
+    (samples / "escape.wav").symlink_to(outside)
+    monkeypatch.setenv("COQUITTS_SAMPLES", str(samples))
+
+    listed = list_sample_files()
+
+    for name in listed:
+        assert os.path.isfile(sample_path_for_voice(name)), name
+    expected = ["zoe"]
+    if os.path.isfile(samples / "Anna.wav"):
+        # A case-insensitive file system finds Anna.WAV under the name Anna.
+        expected = ["Anna", "zoe"]
+    assert listed == expected
+
+
 def test_list_sample_files_missing_dir(tmp_path, monkeypatch):
     """A samples dir that does not exist yields an empty list rather than an error."""
     monkeypatch.setenv("COQUITTS_SAMPLES", str(tmp_path / "nowhere"))

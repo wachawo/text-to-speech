@@ -40,7 +40,7 @@ lives in the [README](../README.md#engines); it is not repeated here.
 
 **pipertts**
 - Pros: Fast on CPU, good quality, small models, no torch dependency
-- Cons: One voice per language; the installer ships five languages, more are in the Piper catalogue
+- Cons: One voice per language; the installer ships eight languages, more are in the Piper catalogue
 - Install: `ttsgen --install pipertts` (installs `piper-tts` and downloads the voices you pick)
 - Docs: docs/PIPERTTS.md
 

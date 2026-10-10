@@ -69,7 +69,8 @@ module.exports = {
           if (!kept) {
             self.$store.dispatch('push_toast', {
               level: 'warning',
-              message: 'This browser would not store the token, so it holds until the page is reloaded.',
+              message: 'Token not stored',
+              title: 'This browser would not store the token, so it holds until the page is reloaded',
               ttl: 12000,
             });
           }

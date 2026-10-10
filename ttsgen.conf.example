@@ -25,10 +25,6 @@ TTS_LANGUAGE=en
 TTS_ENGINES=
 
 
-# Default CLI output format(s). One or more of: play, file, stdout (comma-separated).
-DEFAULT_OUTPUT_FORMAT=play
-
-
 # Where saved audio goes for `--file` without an explicit path.
 AUDIO_DIRECTORY=audio
 

@@ -202,7 +202,6 @@ audio = text_to_speech_bytes(
 ```bash
 TTS_ENGINE=silerotts
 TTS_LANGUAGE=ru
-DEFAULT_OUTPUT_FORMAT=play
 ```
 
 ## Performance

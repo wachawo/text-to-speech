@@ -5,6 +5,8 @@
 import logging
 from pathlib import Path
 
+# Local imports
+from engines.pipertts import VOICES, VOICES_BASE_URL
 from install.common import (
     download_file,
     fetch_json,
@@ -20,19 +22,10 @@ from install.common import (
 
 logger = logging.getLogger(__name__)
 
-BASE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0"
+BASE_URL = VOICES_BASE_URL
 # Upstream-published manifest with size + hash for every voice file. Pinned to
 # the same v1.0.0 tag as BASE_URL so the manifest matches what we download.
 VOICES_JSON_URL = f"{BASE_URL}/voices.json"
-
-# code → (huggingface_path, file_basename, label)
-VOICES = {
-    "en_US": ("en/en_US/lessac/medium", "en_US-lessac-medium", "English (lessac, female)"),
-    "ru_RU": ("ru/ru_RU/ruslan/medium", "ru_RU-ruslan-medium", "Russian (ruslan, male)"),
-    "es_ES": ("es/es_ES/davefx/medium", "es_ES-davefx-medium", "Spanish (davefx)"),
-    "de_DE": ("de/de_DE/thorsten/medium", "de_DE-thorsten-medium", "German (thorsten)"),
-    "fr_FR": ("fr/fr_FR/siwis/medium", "fr_FR-siwis-medium", "French (siwis)"),
-}
 
 
 def models_dir(non_interactive: bool = False) -> Path:
@@ -56,7 +49,7 @@ def select_voices(non_interactive: bool) -> list[str]:
     codes = list(VOICES.keys())
     if non_interactive:
         return codes
-    menu = ["\nSelect languages to download (space-separated, e.g. '1 2', or 6 for all):"]
+    menu = [f"\nSelect languages to download (space-separated, e.g. '1 2', or {len(codes) + 1} for all):"]
     for i, code in enumerate(codes, start=1):
         label = VOICES[code][2]
         menu.append(f"  {i}) {label}")

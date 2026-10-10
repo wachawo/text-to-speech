@@ -310,15 +310,17 @@ def test_rec_play_worker_success_path(tmp_path):
         assert Path(p).read_bytes() == audio
 
 
-def test_rec_worker_pushes_sentinel_on_partial_failure(tmp_path):
-    """One failing chunk is recorded as a failure while the others still complete."""
+def test_rec_worker_stops_at_the_first_failed_chunk(tmp_path):
+    """The failing chunk ends the run: the chunks after it are never synthesized."""
     chunks = ["ok1", "boom", "ok2"]
     q: queue.Queue = queue.Queue(maxsize=2)
     collected: list[str] = []
     failures: list = []
+    asked: list[str] = []
 
     def gen(text: str) -> bytes:
         """Fail on the chunk literally named 'boom', succeed otherwise."""
+        asked.append(text)
         if text == "boom":
             raise RuntimeError("synthetic engine error")
         return silent_bytes()
@@ -330,7 +332,8 @@ def test_rec_worker_pushes_sentinel_on_partial_failure(tmp_path):
     rec.join(timeout=5)
     play.join(timeout=5)
 
-    assert len(collected) == 2  # ok1 and ok2
+    assert asked == ["ok1", "boom"]
+    assert len(collected) == 1  # ok1 only
     assert len(failures) == 1
     idx, err = failures[0]
     assert idx == 2
@@ -350,7 +353,7 @@ def test_rec_worker_removes_the_chunk_file_it_could_not_write(tmp_path):
 
 
 def test_rec_worker_emits_done_sentinel_even_on_total_failure(tmp_path):
-    """Every chunk fails — play_worker must still see the None sentinel and exit."""
+    """Every chunk would fail - play_worker still sees the None sentinel after the first one."""
     chunks = ["a", "b"]
     q: queue.Queue = queue.Queue(maxsize=2)
     collected: list[str] = []
@@ -369,7 +372,7 @@ def test_rec_worker_emits_done_sentinel_even_on_total_failure(tmp_path):
 
     assert play.is_alive() is False  # done sentinel reached
     assert collected == []
-    assert len(failures) == 2
+    assert len(failures) == 1
 
 
 def test_play_worker_invokes_play_func_on_play_mode(tmp_path):
@@ -413,3 +416,43 @@ def test_play_worker_swallows_play_errors(tmp_path, caplog):
         play_worker(q, ["play"], [], boom_then_ok)
     assert calls == [b"x", b"y"]
     assert any("Playback error" in r.message for r in caplog.records)
+
+
+def float_wav(path: Path) -> None:
+    """Write a one-frame IEEE float WAV (format 3), which the wave module cannot read."""
+    import struct
+
+    data = struct.pack("<f", 0.0)
+    fmt = struct.pack("<HHIIHH", 3, 1, 22050, 22050 * 4, 4, 32)
+    body = b"WAVE" + b"fmt " + struct.pack("<I", len(fmt)) + fmt + b"data" + struct.pack("<I", len(data)) + data
+    path.write_bytes(b"RIFF" + struct.pack("<I", len(body)) + body)
+
+
+def test_concat_wav_files_reports_the_real_error(tmp_path):
+    """An unreadable chunk surfaces its own error, not the writer's '# channels not specified'."""
+    a, b = tmp_path / "a.part", tmp_path / "b.part"
+    float_wav(a)
+    float_wav(b)
+    with pytest.raises(wave.Error, match="unknown format: 3"):
+        concat_wav_files([str(a), str(b)], io.BytesIO())
+
+
+def test_output_path_for_directory_never_overwrites(tmp_path, monkeypatch):
+    """Two auto-named outputs in the same second are two files; an exact name is still returned as is."""
+    from libs import tools
+
+    class FrozenClock:
+        """Stand-in for datetime whose now() never moves."""
+
+        @staticmethod
+        def now():
+            """Return one fixed moment."""
+            from datetime import datetime
+
+            return datetime(2026, 10, 10, 12, 0, 0)
+
+    monkeypatch.setattr(tools, "datetime", FrozenClock)
+    first = output_path_for(str(tmp_path), True, "", "wav")
+    second = output_path_for(str(tmp_path), True, "", "wav")
+    assert first != second
+    assert Path(first).exists() and Path(second).exists()

@@ -5,9 +5,7 @@
 import argparse
 import logging
 import os
-import queue
 import sys
-import threading
 import traceback
 from typing import Any, cast
 
@@ -40,31 +38,23 @@ except ImportError as exc:
     logger.error(f"Failed to import TTS library: {exc}")
     sys.exit(1)
 
-# Pipeline helpers (chunk_text, output resolution, rec_worker, play_worker) live in libs.cli
-# so they're shared between ttsgen (offline) and ttsapi (HTTP-based) without code duplication.
-# This import sits below the logging setup and the guarded block above on purpose, so the
-# E402 waiver is deliberate rather than an oversight.
+# Pipeline helpers (chunk_text, output resolution, the producer/consumer pipeline) live in
+# libs.cli so they're shared between ttsgen (offline) and ttsapi (HTTP-based) without code
+# duplication. This import sits below the logging setup and the guarded block above on
+# purpose, so the E402 waiver is deliberate rather than an oversight.
 from libs.cli import (  # noqa: E402
-    CHUNK_SUFFIX,
-    QueueItem,
+    DEFAULT_CHUNK_CHARS,
     chunk_extension,
     chunk_text,
     output_path_for,
-    play_worker,
-    rec_worker,
+    read_text_file,
+    resolve_output_formats,
     resolve_output_target,
+    run_pipeline,
     save_audio_file,
     scratch_dir,
     write_audio,
 )
-
-# Long input is split into chunks so playback can start before synthesis finishes.
-DEFAULT_CHUNK_CHARS = 200
-
-# Bounded queue between producer and consumer threads, provides backpressure.
-PIPELINE_QUEUE_SIZE = 2
-
-VALID_OUTPUT_FORMATS = ("play", "file", "stdout")
 
 
 def read_env_config() -> dict[str, Any]:
@@ -75,25 +65,6 @@ def read_env_config() -> dict[str, Any]:
         "audio_directory": os.getenv("AUDIO_DIRECTORY", "audio"),
         "filename_prefix": os.getenv("FILENAME_PREFIX", ""),
     }
-
-
-def read_file(file_path: str) -> str:
-    """Read text content from a file."""
-    try:
-        file_path = os.path.normpath(file_path)
-        if not os.path.exists(file_path):
-            raise ValidationError(f"File not found: {file_path}")
-        if not os.path.isfile(file_path):
-            raise ValidationError(f"Path is not a file: {file_path}")
-        with open(file_path, encoding="utf-8") as f:
-            content = f.read().strip()
-        if not content:
-            raise ValidationError(f"File is empty: {file_path}")
-        return content
-    except UnicodeDecodeError as exc:
-        raise ValidationError(f"File encoding error: {exc}") from exc
-    except Exception as exc:
-        raise ValidationError(f"Could not read file {file_path}: {exc}") from exc
 
 
 def parse_arguments() -> argparse.ArgumentParser:
@@ -125,9 +96,7 @@ Environment Configuration:
   Create a .env file to set default values:
   TTS_ENGINE=gtts
   TTS_LANGUAGE=en
-  DEFAULT_OUTPUT_FORMAT=file
   AUDIO_DIRECTORY=audio
-  AUTO_PLAY=false
         """,
     )
 
@@ -243,7 +212,7 @@ def setup_logging(verbose: bool, quiet: bool) -> None:
 def get_text(args: argparse.Namespace) -> str:
     """Determine text input from arguments."""
     if args.text_file:
-        return read_file(args.text_file)
+        return read_text_file(args.text_file)
     elif args.text:
         return cast(str, args.text)
     else:
@@ -267,36 +236,6 @@ def list_engines_and_models() -> None:
         print(f"{engine:<{name_w}}{status:<{stat_w}}{model}")
 
 
-def resolve_output_formats(args: argparse.Namespace) -> list[str]:
-    """Combine --output, --file, --play and --stdout into ordered output modes.
-
-    Args:
-        args: Parsed command-line arguments.
-
-    Returns:
-        Deduplicated output modes; defaults to ["play"] when nothing is requested.
-
-    Raises:
-        ValidationError: If --output names a mode other than play, file or stdout.
-    """
-    output_formats: list[str] = []
-    if args.output:
-        for fmt in [f.strip() for f in args.output.split(",")]:
-            if fmt not in VALID_OUTPUT_FORMATS:
-                raise ValidationError(f"Invalid output format: {fmt}. Valid: play, file, stdout")
-            if fmt not in output_formats:
-                output_formats.append(fmt)
-    if args.file is not None and "file" not in output_formats:
-        output_formats.append("file")
-    if args.play and "play" not in output_formats:
-        output_formats.append("play")
-    if args.stdout and "stdout" not in output_formats:
-        output_formats.append("stdout")
-    if args.stdout and args.file is not None and not args.output:
-        output_formats = [f for f in output_formats if f != "file"]
-    return output_formats or ["play"]
-
-
 def log_run_summary(
     text: str,
     engine: str,
@@ -316,7 +255,7 @@ def log_run_summary(
         logger.info(f"Output: {output_target}")
 
 
-def main() -> int:
+def run_cli() -> int:
     """Run the ttsgen command line and return the process exit code."""
     parser = parse_arguments()
     args = parser.parse_args()
@@ -349,7 +288,7 @@ def main() -> int:
         engine = args.engine or config["engine"]
         language = args.language or config["language"]
 
-        output_formats = resolve_output_formats(args)
+        output_formats = resolve_output_formats(args.output, args.file, args.play, args.stdout)
         out_is_stdout = "stdout" in output_formats
         out_is_file = "file" in output_formats
 
@@ -374,34 +313,22 @@ def main() -> int:
         # Otherwise use the system temp dir.
         tmp_dir = scratch_dir(output_target, target_is_dir)
 
-        audio_queue: queue.Queue[QueueItem] = queue.Queue(maxsize=PIPELINE_QUEUE_SIZE)
-        collected_paths: list[str] = []
-        failures: list[tuple[int, BaseException]] = []
+        created_paths: list[str] = []
 
         def generator(chunk: str) -> bytes:
             """Synthesize one chunk with the engine and language chosen for this run."""
             return text_to_speech_bytes(text=chunk, engine=engine, language=language)
 
-        rec_thread = threading.Thread(
-            target=rec_worker,
-            args=(chunks, generator, audio_queue, CHUNK_SUFFIX, tmp_dir),
-            daemon=True,
-        )
-        play_thread = threading.Thread(
-            target=play_worker,
-            args=(audio_queue, output_formats, collected_paths, play_audio, failures),
-            daemon=True,
-        )
         try:
-            rec_thread.start()
-            play_thread.start()
-            rec_thread.join()
-            play_thread.join()
+            collected_paths, failure = run_pipeline(chunks, generator, output_formats, play_audio, tmp_dir, created_paths)
 
-            if failures:
-                for idx, err in failures:
-                    logger.error(f"Chunk {idx} failed: {type(err).__name__}: {err}")
-                logger.error(f"{len(failures)}/{len(chunks)} chunk(s) failed; aborting with exit code 3.")
+            if failure is not None:
+                idx, err = failure
+                # A bad engine or language fails every chunk the same way: report it
+                # through the handlers below, like the same mistake caught up front.
+                if isinstance(err, (ValidationError, EngineNotAvailableError)):
+                    raise err
+                logger.error(f"Chunk {idx} of {len(chunks)} failed, nothing saved: {type(err).__name__}: {err}")
                 return 3
             if not collected_paths:
                 logger.error("No audio was generated: the text holds nothing to synthesize.")
@@ -414,6 +341,9 @@ def main() -> int:
                     save_audio_file(collected_paths, output_filename)
                 except OSError as exc:
                     logger.error(f"Failed to save {output_filename}: {type(exc).__name__}: {exc}\n{traceback.format_exc()}")
+                    if target_is_dir:
+                        # The auto-generated name was claimed empty for this run.
+                        safe_unlink(output_filename)
                     return 1
                 if out_is_stdout:
                     # stdout carries the audio stream, so the filename goes to the log instead.
@@ -428,8 +358,9 @@ def main() -> int:
 
             return 0
         finally:
-            # Every exit, a failed chunk or a failed save included, removes the chunk files.
-            for tmp_path in collected_paths:
+            # Every exit, a failed chunk, a failed save or Ctrl+C included, removes
+            # every chunk file the run created, queued or not.
+            for tmp_path in created_paths:
                 safe_unlink(tmp_path)
 
     except ValidationError as exc:
@@ -448,6 +379,18 @@ def main() -> int:
         logger.error(f"Unexpected error: {exc}")
         if args.verbose:
             logger.error(f"{type(exc).__name__}: {str(exc)}\n{traceback.format_exc()}")
+        return 1
+
+
+def main() -> int:
+    """Console-script entry point: run the CLI, turning Ctrl+C and stray errors into exit code 1."""
+    try:
+        return run_cli()
+    except KeyboardInterrupt:
+        logger.info("Operation cancelled by user")
+        return 1
+    except Exception as exc:
+        logger.error(f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}")
         return 1
 
 

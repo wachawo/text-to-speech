@@ -9,6 +9,7 @@ fake torchaudio) so no model is fetched and no network is touched.
 
 import importlib
 import io
+import os
 import sys
 import types
 import wave
@@ -16,6 +17,7 @@ import wave
 import numpy as np
 import pytest
 
+import libs.models
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
 
 
@@ -116,19 +118,20 @@ def test_models_dir_env_var_absolute(engine, monkeypatch, tmp_path):
     assert engine.get_models_directory() == str(tmp_path / "abs")
 
 
-def test_models_dir_env_var_relative_resolved_against_project(engine, monkeypatch):
-    """A relative SILEROTTS_MODELS value is resolved into an absolute project path."""
+def test_models_dir_env_var_relative_resolved_against_project(engine, monkeypatch, tmp_path):
+    """A relative SILEROTTS_MODELS value is resolved under the project root, not the cwd."""
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("SILEROTTS_MODELS", "models_subdir")
-    result = engine.get_models_directory()
-    assert result.endswith("models_subdir")
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(engine.__file__)))
+    assert engine.get_models_directory() == os.path.join(project_root, "models_subdir")
 
 
-def test_models_dir_default_when_no_env_and_no_dotdir(engine, monkeypatch):
+def test_models_dir_default_when_no_env_and_no_dotdir(engine, monkeypatch, tmp_path):
     """With no env var and no project-local cache, the torch hub default directory is used."""
     monkeypatch.delenv("SILEROTTS_MODELS", raising=False)
-    monkeypatch.setattr(engine.os.path, "exists", lambda p: False)
-    result = engine.get_models_directory()
-    assert result.endswith(".cache/torch/hub")
+    monkeypatch.setattr(libs.models, "PROJECT_ROOT", str(tmp_path / "project"))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    assert engine.get_models_directory() == str(tmp_path / "home" / ".cache" / "torch" / "hub")
 
 
 # generate — error paths

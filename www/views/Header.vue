@@ -178,7 +178,8 @@ module.exports = {
       if (kept) return;
       this.$store.dispatch('push_toast', {
         level: 'warning',
-        message: 'This browser would not store the setting, so it holds until the page is reloaded.',
+        message: 'Theme not stored',
+        title: 'This browser would not store the setting, so it holds until the page is reloaded',
         ttl: 12000,
       });
     },

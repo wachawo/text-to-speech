@@ -10,6 +10,7 @@ happens once at startup rather than per request, and this module stays a thin
 HTTP veneer over the same offline pipeline that `ttsgen` drives.
 """
 
+import asyncio
 import hmac
 import io
 import logging
@@ -104,9 +105,11 @@ TTS_MAX_BODY_BYTES = int(os.getenv("TTS_MAX_BODY_BYTES", str(2 * 1024 * 1024)))
 TTS_MAX_SAMPLE_BYTES = int(os.getenv("TTS_MAX_SAMPLE_BYTES", str(16 * 1024 * 1024)))
 # Ceiling on the number of voice samples, so an authenticated client cannot fill the disk one upload at a time.
 TTS_MAX_SAMPLES = int(os.getenv("TTS_MAX_SAMPLES", "100"))
-# Werkzeug enforces a single body cap for every route, so it is the larger of the two.
+# Werkzeug enforces a single body cap for every route, so it is the larger of the
+# two; check_body_size() holds every route but the sample upload to TTS_MAX_BODY_BYTES.
 MAX_CONTENT_LENGTH = max(TTS_MAX_BODY_BYTES, TTS_MAX_SAMPLE_BYTES)
-MAX_CONTENT_LENGTH_MB = MAX_CONTENT_LENGTH // (1024 * 1024)
+# The endpoint that takes the larger cap.
+SAMPLE_UPLOAD_ENDPOINT = "voices_upload"
 # Generation history: audio files plus JSON sidecars, pruned to TTS_HISTORY_MAX on write.
 TTS_HISTORY_DIR = os.getenv("TTS_HISTORY_DIR", "data/history")
 TTS_HISTORY_MAX = int(os.getenv("TTS_HISTORY_MAX", "200"))
@@ -148,6 +151,10 @@ ENGINE_POOL: queue.Queue = queue.Queue()
 # Permits to wait for a pool slot: bounds how many server threads a burst of
 # /api/tts requests can hold while they wait.
 WAIT_QUEUE = threading.Semaphore(TTS_QUEUE_SIZE)
+# Requests in flight behind watch_disconnects(): one Event per request, set once
+# its client has gone, found through the id the wrapper puts in DISCONNECT_HEADER.
+DISCONNECT_HEADER = "X-TTS-Disconnect-Id"
+DISCONNECT_EVENTS: dict[str, threading.Event] = {}
 
 
 def init_engine_pool(size: int = TTS_POOL_SIZE) -> None:
@@ -354,6 +361,24 @@ def synthesize(text: str, engine: str, language: str, voice: str | None = None, 
             metrics.record(engine, elapsed_ms, status == "ok", error_name)
 
 
+def is_openai_path() -> bool:
+    """Whether the current request is for the OpenAI-compatible /v1 routes, which answer errors in OpenAI's envelope."""
+    return request.path == "/v1" or request.path.startswith("/v1/")
+
+
+def openai_error(message: str, status: int, param: str | None = None, code: str | None = None):
+    """Answer `status` in the OpenAI error envelope, typed server_error for a 5xx and invalid_request_error otherwise."""
+    error_type = "server_error" if status >= 500 else "invalid_request_error"
+    return jsonify(error_body(message, param, error_type, code)), status
+
+
+def unauthorized():
+    """Answer 401 in the OpenAI envelope under /v1 and as {error, request_id} everywhere else."""
+    if is_openai_path():
+        return openai_error("Unauthorized", 401, code="invalid_api_key")
+    return jsonify({"error": "Unauthorized", "request_id": get_req_id()}), 401
+
+
 def token_required(view):
     """Require Authorization: Bearer <token> when TTS_TOKENS is non-empty."""
 
@@ -367,14 +392,14 @@ def token_required(view):
         scheme, unused_separator, token = header.partition(" ")
         if scheme != "Bearer" or not token:
             logger.warning(f"[{get_req_id()}] Auth missing/invalid scheme: {scheme!r}")
-            return jsonify({"error": "Unauthorized", "request_id": get_req_id()}), 401
+            return unauthorized()
 
         for known in TTS_TOKENS:
             if hmac.compare_digest(token, known):
                 return view(*args, **kwargs)
 
         logger.warning(f"[{get_req_id()}] Auth invalid token")
-        return jsonify({"error": "Unauthorized", "request_id": get_req_id()}), 401
+        return unauthorized()
 
     return wrapper
 
@@ -385,6 +410,23 @@ def assign_request_id():
     incoming = request.headers.get("X-Request-Id", "")
     g.request_id = incoming if REQUEST_ID_RE.match(incoming) else uuid.uuid4().hex[:12]
     g.start_time = time.monotonic()
+
+
+def body_limit() -> int:
+    """Return the body cap in bytes of the current route: the sample cap for the upload, the JSON cap elsewhere."""
+    return TTS_MAX_SAMPLE_BYTES if request.endpoint == SAMPLE_UPLOAD_ENDPOINT else TTS_MAX_BODY_BYTES
+
+
+@app.before_request
+def check_body_size():
+    """Answer 413 before the body is read when its declared length is over the cap of the route.
+
+    A body without Content-Length is never read by Werkzeug behind the WSGI
+    bridge, which does not mark its input as terminated, so the header is all
+    there is to check.
+    """
+    if request.content_length is not None and request.content_length > body_limit():
+        abort(413)
 
 
 @app.after_request
@@ -603,6 +645,8 @@ def stream_tts(text: str, engine: str, language: str, voice: str | None = None):
     WAV engines emit one streaming WAV (single header + concatenated PCM); MP3
     (gtts) concatenates per-chunk bytes. One pool slot is held for the whole
     stream and released when the generator ends or the response is closed.
+    Behind watch_disconnects() the stream stops before the next chunk once the
+    client has gone, so nobody holds a slot to synthesize audio nobody hears.
 
     Args:
         text: Full utterance; split into chunks of TTS_STREAM_MAX_CHARS.
@@ -627,6 +671,8 @@ def stream_tts(text: str, engine: str, language: str, voice: str | None = None):
     mimetype, unused_ext = detect_audio_mime(first)
     is_wav = mimetype == "audio/wav"
     held_slots = [slot]
+    # None outside watch_disconnects() (the debug server, the test client).
+    disconnected = DISCONNECT_EVENTS.get(request.headers.get(DISCONNECT_HEADER, ""))
 
     def release_held_slot() -> None:
         """Give the slot back once, whichever comes first: the end of the stream or the response close."""
@@ -645,6 +691,9 @@ def stream_tts(text: str, engine: str, language: str, voice: str | None = None):
             else:
                 yield first
             for index, chunk in enumerate(chunks[1:], start=2):
+                if disconnected is not None and disconnected.is_set():
+                    logger.info(f"[{get_req_id()}] Stream stopped: client gone before chunk {index}/{len(chunks)}")
+                    return
                 blob = synthesize(
                     text=chunk, engine=engine, language=language, voice=voice, label=f"chunk {index}/{len(chunks)}"
                 )
@@ -766,33 +815,8 @@ def history_delete(item_id: str):
     return jsonify({"result": True}), 200
 
 
-def openai_errors(view):
-    """Answer the failures of a /v1 route in the OpenAI error shape instead of the /api one."""
-
-    @wraps(view)
-    def wrapper(*args, **kwargs):
-        """Map validation errors to 400 and a busy pool to 503, both as {"error": {...}}."""
-        try:
-            return view(*args, **kwargs)
-        except MarshmallowValidationError as exc:
-            logger.warning(f"[{get_req_id()}] Validation error: {exc.messages}")
-            return jsonify(validation_error_body(exc.messages)), 400
-        except ValidationError as exc:
-            logger.warning(f"[{get_req_id()}] {type(exc).__name__}: {exc}")
-            return jsonify(error_body(str(exc))), 400
-        except OpenAIRequestError as exc:
-            logger.warning(f"[{get_req_id()}] {type(exc).__name__}: {exc.message}")
-            return jsonify(error_body(exc.message, exc.param, exc.error_type)), exc.status
-        except queue.Empty:
-            logger.warning(f"[{get_req_id()}] All engine slots busy")
-            return jsonify(error_body("All engine slots busy", error_type="server_error")), 503
-
-    return wrapper
-
-
 @app.route("/v1/audio/speech", methods=["POST"])
 @token_required
-@openai_errors
 def openai_speech():
     """Synthesize `input` the way OpenAI's POST /v1/audio/speech does and return the audio body."""
     data = SpeechRequestSchema().load(request.get_json(silent=True) or {})
@@ -840,10 +864,21 @@ def openai_voices():
     return jsonify({"voices": info.get("voices", [])}), 200
 
 
+# Every handler below answers a /v1 path in the OpenAI envelope with the same
+# status, because that envelope is the only error shape OpenAI clients parse.
+@app.errorhandler(OpenAIRequestError)
+def handle_openai_request_error(error):
+    """Answer a request a /v1 route refused with the OpenAI fields and the status it carries."""
+    logger.warning(f"[{get_req_id()}] {type(error).__name__}: {error.message}")
+    return jsonify(error_body(error.message, error.param, error.error_type)), error.status
+
+
 @app.errorhandler(queue.Empty)
 def handle_pool_busy(error):
     """Answer 503 when acquire_slot found the wait queue full or waited out its timeout."""
     logger.warning(f"[{get_req_id()}] All engine slots busy")
+    if is_openai_path():
+        return openai_error("All engine slots busy", 503)
     return jsonify({"error": "All engine slots busy"}), 503
 
 
@@ -851,6 +886,8 @@ def handle_pool_busy(error):
 def handle_marshmallow_validation_error(error):
     """Answer 400 when the request payload fails schema validation."""
     logger.warning(f"[{get_req_id()}] Validation error: {error.messages}")
+    if is_openai_path():
+        return jsonify(validation_error_body(error.messages)), 400
     return jsonify({"error": "Bad Request", "request_id": get_req_id()}), 400
 
 
@@ -864,6 +901,8 @@ def handle_tts_validation_error(error):
     are written without filesystem paths, unlike the ones logged.
     """
     logger.warning(f"[{get_req_id()}] {type(error).__name__}: {str(error)}")
+    if is_openai_path():
+        return openai_error(str(error), 400)
     return jsonify({"error": "Bad Request", "message": str(error), "request_id": get_req_id()}), 400
 
 
@@ -871,6 +910,8 @@ def handle_tts_validation_error(error):
 def handle_engine_not_available(error):
     """Answer 503 when the requested engine has no usable installation."""
     logger.warning(f"[{get_req_id()}] {type(error).__name__}: {str(error)}")
+    if is_openai_path():
+        return openai_error("Service Unavailable", 503)
     return jsonify({"error": "Service Unavailable", "request_id": get_req_id()}), 503
 
 
@@ -882,6 +923,9 @@ def handle_custom_error(error):
     body.setdefault("request_id", get_req_id())
     summary = (body.get("message") or body.get("error") or "").splitlines()[0][:200]
     logger.warning(f"[{get_req_id()}] CustomError ({body.get('error')}): {summary}")
+    if is_openai_path():
+        # The engine's error name (voice_sample_missing) is the machine-readable part, so it becomes `code`.
+        return openai_error(body.get("message") or body.get("error") or "TTS failed", error.status, code=body.get("error"))
     return jsonify(body), error.status
 
 
@@ -889,18 +933,23 @@ def handle_custom_error(error):
 def handle_tts_exception(error):
     """Answer 500 for any synthesis failure not covered by a narrower handler."""
     logger.error(f"[{get_req_id()}] {type(error).__name__}: {str(error)}\n{traceback.format_exc()}")
+    if is_openai_path():
+        return openai_error("TTS failed", 500)
     return jsonify({"error": "TTS failed", "request_id": get_req_id()}), 500
 
 
 @app.errorhandler(413)
 def payload_too_large(error):
-    """Answer 413 when the body exceeds MAX_CONTENT_LENGTH, echoing the limit."""
-    logger.warning(f"[{get_req_id()}] Payload too large (limit={MAX_CONTENT_LENGTH_MB}MB)")
+    """Answer 413 when the body exceeds the cap of its route, echoing the limit."""
+    limit_mb = body_limit() // (1024 * 1024)
+    logger.warning(f"[{get_req_id()}] Payload too large (limit={limit_mb}MB)")
+    if is_openai_path():
+        return openai_error(f"Payload Too Large (limit {limit_mb} MB)", 413)
     return (
         jsonify(
             {
                 "error": "Payload Too Large",
-                "limit_mb": MAX_CONTENT_LENGTH_MB,
+                "limit_mb": limit_mb,
                 "request_id": get_req_id(),
             }
         ),
@@ -913,8 +962,12 @@ def handle_exception(exc):
     """Map any unhandled exception to its HTTP status, or to 500 with a traceback."""
     if isinstance(exc, werkzeug.exceptions.HTTPException):
         logger.warning(f"[{get_req_id()}] HTTP {exc.code} {exc.name}")
+        if is_openai_path():
+            return openai_error(exc.name, exc.code)
         return jsonify({"error": exc.name, "request_id": get_req_id()}), exc.code
     logger.error(f"[{get_req_id()}] {type(exc).__name__}: {str(exc)}\n{traceback.format_exc()}")
+    if is_openai_path():
+        return openai_error("Internal Server Error", 500)
     return jsonify({"error": "Internal Server Error", "request_id": get_req_id()}), 500
 
 
@@ -941,6 +994,66 @@ def close_wsgi_responses(wsgi_app):
     return wrapper
 
 
+def watch_disconnects(asgi_app):
+    """Wrap an ASGI app so the WSGI request behind it learns when its client has gone.
+
+    uvicorn's WSGI bridge reads the request body and never calls receive()
+    again, so it never hears http.disconnect, and a stream keeps synthesizing
+    every chunk for nobody while it holds a pool slot. This wrapper reads the
+    body itself and replays it to the bridge, then keeps listening on the real
+    channel: http.disconnect sets a threading.Event that stream_tts checks
+    before each chunk. The Event is registered in DISCONNECT_EVENTS under a
+    fresh id sent to the app in DISCONNECT_HEADER; any copy of that header the
+    client sent is dropped, so a client cannot name another request's Event.
+    """
+    header_name = DISCONNECT_HEADER.lower().encode("latin1")
+
+    async def wrapper(scope, receive, send):
+        """Serve one scope; anything but HTTP (the lifespan scope) passes through untouched."""
+        if scope["type"] != "http":
+            await asgi_app(scope, receive, send)
+            return
+        # The whole body, as the bridge would have read it before calling the app.
+        messages = []
+        while True:
+            message = await receive()
+            messages.append(message)
+            if message["type"] != "http.request" or not message.get("more_body", False):
+                break
+        gone_already = messages[-1]["type"] == "http.disconnect"
+        request_key = uuid.uuid4().hex
+        disconnected = threading.Event()
+        gone = asyncio.Event()
+        DISCONNECT_EVENTS[request_key] = disconnected
+        headers = [(name, value) for name, value in scope.get("headers", []) if name.lower() != header_name]
+        headers.append((header_name, request_key.encode("latin1")))
+
+        async def replay():
+            """Hand the bridge the buffered body, then the disconnect once it has happened."""
+            if messages:
+                return messages.pop(0)
+            await gone.wait()
+            return {"type": "http.disconnect"}
+
+        async def listen():
+            """Wait for http.disconnect on the real channel and flag it for the WSGI thread."""
+            if not gone_already:
+                while (await receive())["type"] != "http.disconnect":
+                    pass
+            disconnected.set()
+            gone.set()
+
+        listener = asyncio.ensure_future(listen())
+        try:
+            await asgi_app(dict(scope, headers=headers), replay, send)
+        finally:
+            listener.cancel()
+            await asyncio.gather(listener, return_exceptions=True)
+            DISCONNECT_EVENTS.pop(request_key, None)
+
+    return wrapper
+
+
 def main() -> int:
     """Warm the engine pool and serve the app via Flask (debug) or uvicorn.
 
@@ -955,7 +1068,11 @@ def main() -> int:
     )
     if not TTS_TOKENS:
         logger.warning("Auth is off: TTS_TOKENS is empty, so every route answers without a token")
-    init_engine_pool()
+    # The debug reloader runs this module twice: a parent that only watches the
+    # files and a child (WERKZEUG_RUN_MAIN=true) that serves. Only the child
+    # warms the engines, or every model would load twice.
+    if not TTS_DEBUG or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        init_engine_pool()
     if TTS_DEBUG:
         app.run(host=TTS_HOST, port=TTS_PORT, debug=True)
     else:
@@ -982,7 +1099,7 @@ def main() -> int:
 
         threads = max(TTS_POOL_SIZE, 1) + TTS_QUEUE_SIZE + LIGHT_THREADS
         uvicorn.run(
-            WSGIMiddleware(close_wsgi_responses(app), workers=threads),
+            watch_disconnects(WSGIMiddleware(close_wsgi_responses(app), workers=threads)),
             host=TTS_HOST,
             port=TTS_PORT,
             log_config=None,  # always None: keep our LOGGING, never run uvicorn's own dictConfig
