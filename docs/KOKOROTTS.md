@@ -63,7 +63,7 @@ not in the voices file is refused with a 400 that names it.
 The voices of one language come from the server:
 
 ```bash
-curl "localhost:5000/api/voices?engine=kokorotts&language=en" \
+curl "localhost:5062/api/voices?engine=kokorotts&language=en" \
   -H "Authorization: Bearer $TTS_TOKEN"
 ```
 
@@ -89,14 +89,14 @@ suggestions.
 
 ```bash
 # One voice through /api/tts
-curl -X POST localhost:5000/api/tts \
+curl -X POST localhost:5062/api/tts \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"text":"Hello world","engine":"kokorotts","language":"en","voice":"bf_emma"}' \
   -o out.wav
 
 # A mix through the OpenAI-compatible route
-curl -X POST localhost:5000/v1/audio/speech \
+curl -X POST localhost:5062/v1/audio/speech \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"model":"kokorotts","input":"Hello world","voice":"af_bella(2)+af_sky(1)","response_format":"wav"}' \

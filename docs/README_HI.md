@@ -104,15 +104,15 @@ sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
 एक बार चलने के बाद, आप सर्वर की स्थिति जाँच सकते हैं और एक सिंथेसिस अनुरोध भेज सकते हैं:
 
 ```bash
-curl localhost:5000/api/health
+curl localhost:5062/api/health
 
-curl localhost:5000/api/engines \
+curl localhost:5062/api/engines \
   -H "Authorization: Bearer $TTS_TOKEN"
 
-curl "localhost:5000/api/voices?engine=silerotts&language=ru" \
+curl "localhost:5062/api/voices?engine=silerotts&language=ru" \
   -H "Authorization: Bearer $TTS_TOKEN"
 
-curl -X POST localhost:5000/api/tts \
+curl -X POST localhost:5062/api/tts \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"text":"Hello world","engine":"gtts"}' \
@@ -123,34 +123,34 @@ curl -X POST localhost:5000/api/tts \
 
 ```bash
 # इंस्टॉल किए गए और अनुपस्थित मॉडल, वही तालिका जो `ttsgen --list` प्रिंट करता है
-curl localhost:5000/api/models \
+curl localhost:5062/api/models \
   -H "Authorization: Bearer $TTS_TOKEN"
 
 # coquitts के लिए एक वॉइस सैंपल अपलोड करें (WAV); इसके बाद आवाज़ "maria" कहलाती है
-curl -X POST localhost:5000/api/voices \
+curl -X POST localhost:5062/api/voices \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -F file=@voice.wav -F name=maria -F engine=coquitts
 
-curl "localhost:5000/api/voices?engine=coquitts" \
+curl "localhost:5062/api/voices?engine=coquitts" \
   -H "Authorization: Bearer $TTS_TOKEN"
 
-curl "localhost:5000/api/voices/maria/audio?engine=coquitts&download=1" \
+curl "localhost:5062/api/voices/maria/audio?engine=coquitts&download=1" \
   -H "Authorization: Bearer $TTS_TOKEN" -o maria.wav
 
 # प्रतिक्रिया बॉडी के बजाय सर्वर-साइड इतिहास में सिंथेसाइज़ करें
-curl -X POST localhost:5000/api/history \
+curl -X POST localhost:5062/api/history \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"text":"Hola mundo","engine":"coquitts","language":"es","voice":"maria"}'
 
-curl "localhost:5000/api/history?limit=50&offset=0" \
+curl "localhost:5062/api/history?limit=50&offset=0" \
   -H "Authorization: Bearer $TTS_TOKEN"
 
 # एक आइटम का ऑडियो; download=1 के बिना यह <audio> के लिए इनलाइन परोसा जाता है
-curl "localhost:5000/api/history/<id>/audio?download=1" \
+curl "localhost:5062/api/history/<id>/audio?download=1" \
   -H "Authorization: Bearer $TTS_TOKEN" -o tts.wav
 
-curl -X DELETE localhost:5000/api/history/<id> \
+curl -X DELETE localhost:5062/api/history/<id> \
   -H "Authorization: Bearer $TTS_TOKEN"
 ```
 
@@ -159,7 +159,7 @@ curl -X DELETE localhost:5000/api/history/<id> \
 वही सर्वर OpenAI ऑडियो API का भी उत्तर देता है, इसलिए Open WebUI, SillyTavern, Home Assistant और आधिकारिक SDK इसकी ओर इंगित करते `base_url` और API कुंजी के रूप में bearer टोकन के साथ काम करते हैं:
 
 ```bash
-curl -X POST localhost:5000/v1/audio/speech \
+curl -X POST localhost:5062/v1/audio/speech \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"model":"tts-1","input":"Hello world","voice":"alloy","response_format":"mp3"}' \
@@ -169,7 +169,7 @@ curl -X POST localhost:5000/v1/audio/speech \
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:5000/v1", api_key="<one of TTS_TOKENS>")
+client = OpenAI(base_url="http://localhost:5062/v1", api_key="<one of TTS_TOKENS>")
 audio = client.audio.speech.create(model="coquitts", voice="maria", input="Hola mundo")
 audio.write_to_file("hola.mp3")
 ```
@@ -239,7 +239,7 @@ xdg-open https://localhost:8443     # TTS_WWW_TLS_PORT; स्व-हस्त�
 | `TTS_MAX_BODY_BYTES` | `2097152` | सबसे बड़ी JSON अनुरोध बॉडी (2 MiB)। |
 | `TTS_STREAM_MAX_CHARS` | `200` | `stream=true` के लिए चंक का आकार। |
 | `CORS_ORIGINS` | `*` | `/api/*` के लिए अनुमत ऑरिजिन। |
-| `TTS_PORT` | `5000` | `ttssrv` का पोर्ट। |
+| `TTS_PORT` | `5062` | `ttssrv` का पोर्ट। |
 | `TTS_WWW_PORT`, `TTS_WWW_TLS_PORT` | `8080`, `8443` | वेब UI के http और https पोर्ट। |
 | `COQUITTS_MODEL`, `COQUITTS_SAMPLE` | `xtts_v2`, `default.wav` | Coqui मॉडल और डिफ़ॉल्ट वॉइस सैंपल। |
 | `TZ` | `America/New_York` | लॉग और इतिहास में टाइमस्टैम्प के लिए समय क्षेत्र। |

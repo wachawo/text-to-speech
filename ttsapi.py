@@ -45,7 +45,7 @@ LOGGING = {
 logging.basicConfig(**LOGGING)  # type: ignore[arg-type]
 logger = logging.getLogger(__name__)
 
-DEFAULT_URL = "http://localhost:5000"
+DEFAULT_URL = "http://localhost:5062"
 DEFAULT_TIMEOUT = 120
 
 # Extension per response Content-Type; anything else falls back to sniffing the bytes.
@@ -146,7 +146,7 @@ Examples:
   %(prog)s "Hi" --engine coquitts           # ask server to use coquitts
 
 Configuration (read from process env, ./ttsgen.conf, ~/.config/ttsgen.conf, .env.local, .env):
-  TTS_URL    = http://localhost:5000   (server URL, default localhost:5000)
+  TTS_URL    = http://localhost:5062   (server URL, default localhost:5062)
   TTS_TOKEN  =                          (Bearer token; empty disables auth header)
         """,
     )

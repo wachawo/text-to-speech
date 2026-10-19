@@ -104,15 +104,15 @@ sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
 Uma vez em execução, você pode verificar o status do servidor e enviar uma solicitação de síntese:
 
 ```bash
-curl localhost:5000/api/health
+curl localhost:5062/api/health
 
-curl localhost:5000/api/engines \
+curl localhost:5062/api/engines \
   -H "Authorization: Bearer $TTS_TOKEN"
 
-curl "localhost:5000/api/voices?engine=silerotts&language=ru" \
+curl "localhost:5062/api/voices?engine=silerotts&language=ru" \
   -H "Authorization: Bearer $TTS_TOKEN"
 
-curl -X POST localhost:5000/api/tts \
+curl -X POST localhost:5062/api/tts \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"text":"Hello world","engine":"gtts"}' \
@@ -123,34 +123,34 @@ Modelos, vozes e histórico:
 
 ```bash
 # Modelos instalados e ausentes, a mesma tabela que `ttsgen --list` imprime
-curl localhost:5000/api/models \
+curl localhost:5062/api/models \
   -H "Authorization: Bearer $TTS_TOKEN"
 
 # Envia uma amostra de voz para o coquitts (WAV); a voz passa a se chamar "maria"
-curl -X POST localhost:5000/api/voices \
+curl -X POST localhost:5062/api/voices \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -F file=@voice.wav -F name=maria -F engine=coquitts
 
-curl "localhost:5000/api/voices?engine=coquitts" \
+curl "localhost:5062/api/voices?engine=coquitts" \
   -H "Authorization: Bearer $TTS_TOKEN"
 
-curl "localhost:5000/api/voices/maria/audio?engine=coquitts&download=1" \
+curl "localhost:5062/api/voices/maria/audio?engine=coquitts&download=1" \
   -H "Authorization: Bearer $TTS_TOKEN" -o maria.wav
 
 # Sintetiza para o histórico do servidor em vez do corpo da resposta
-curl -X POST localhost:5000/api/history \
+curl -X POST localhost:5062/api/history \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"text":"Hola mundo","engine":"coquitts","language":"es","voice":"maria"}'
 
-curl "localhost:5000/api/history?limit=50&offset=0" \
+curl "localhost:5062/api/history?limit=50&offset=0" \
   -H "Authorization: Bearer $TTS_TOKEN"
 
 # Áudio de um item; sem download=1 ele é servido inline para <audio>
-curl "localhost:5000/api/history/<id>/audio?download=1" \
+curl "localhost:5062/api/history/<id>/audio?download=1" \
   -H "Authorization: Bearer $TTS_TOKEN" -o tts.wav
 
-curl -X DELETE localhost:5000/api/history/<id> \
+curl -X DELETE localhost:5062/api/history/<id> \
   -H "Authorization: Bearer $TTS_TOKEN"
 ```
 
@@ -159,7 +159,7 @@ curl -X DELETE localhost:5000/api/history/<id> \
 O mesmo servidor também responde à API de áudio da OpenAI, então Open WebUI, SillyTavern, Home Assistant e os SDKs oficiais funcionam com `base_url` apontando para ele e o token bearer como chave de API:
 
 ```bash
-curl -X POST localhost:5000/v1/audio/speech \
+curl -X POST localhost:5062/v1/audio/speech \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"model":"tts-1","input":"Hello world","voice":"alloy","response_format":"mp3"}' \
@@ -169,7 +169,7 @@ curl -X POST localhost:5000/v1/audio/speech \
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:5000/v1", api_key="<one of TTS_TOKENS>")
+client = OpenAI(base_url="http://localhost:5062/v1", api_key="<one of TTS_TOKENS>")
 audio = client.audio.speech.create(model="coquitts", voice="maria", input="Hola mundo")
 audio.write_to_file("hola.mp3")
 ```
@@ -239,7 +239,7 @@ Toda configuração é uma variável de ambiente; `env.example` documenta todas 
 | `TTS_MAX_BODY_BYTES` | `2097152` | Maior corpo JSON de solicitação (2 MiB). |
 | `TTS_STREAM_MAX_CHARS` | `200` | Tamanho do trecho para `stream=true`. |
 | `CORS_ORIGINS` | `*` | Origens permitidas para `/api/*`. |
-| `TTS_PORT` | `5000` | Porta do `ttssrv`. |
+| `TTS_PORT` | `5062` | Porta do `ttssrv`. |
 | `TTS_WWW_PORT`, `TTS_WWW_TLS_PORT` | `8080`, `8443` | Portas http e https da interface web. |
 | `COQUITTS_MODEL`, `COQUITTS_SAMPLE` | `xtts_v2`, `default.wav` | Modelo do Coqui e amostra de voz padrão. |
 | `TZ` | `America/New_York` | Fuso horário para os carimbos de tempo nos logs e no histórico. |

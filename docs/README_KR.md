@@ -104,15 +104,15 @@ sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
 실행되면 서버 상태를 확인하고 합성 요청을 보낼 수 있습니다:
 
 ```bash
-curl localhost:5000/api/health
+curl localhost:5062/api/health
 
-curl localhost:5000/api/engines \
+curl localhost:5062/api/engines \
   -H "Authorization: Bearer $TTS_TOKEN"
 
-curl "localhost:5000/api/voices?engine=silerotts&language=ru" \
+curl "localhost:5062/api/voices?engine=silerotts&language=ru" \
   -H "Authorization: Bearer $TTS_TOKEN"
 
-curl -X POST localhost:5000/api/tts \
+curl -X POST localhost:5062/api/tts \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"text":"Hello world","engine":"gtts"}' \
@@ -123,34 +123,34 @@ curl -X POST localhost:5000/api/tts \
 
 ```bash
 # 설치된 모델과 누락된 모델, `ttsgen --list`가 출력하는 것과 같은 표
-curl localhost:5000/api/models \
+curl localhost:5062/api/models \
   -H "Authorization: Bearer $TTS_TOKEN"
 
 # coquitts용 음성 샘플(WAV) 업로드; 이후 음성 이름은 "maria"
-curl -X POST localhost:5000/api/voices \
+curl -X POST localhost:5062/api/voices \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -F file=@voice.wav -F name=maria -F engine=coquitts
 
-curl "localhost:5000/api/voices?engine=coquitts" \
+curl "localhost:5062/api/voices?engine=coquitts" \
   -H "Authorization: Bearer $TTS_TOKEN"
 
-curl "localhost:5000/api/voices/maria/audio?engine=coquitts&download=1" \
+curl "localhost:5062/api/voices/maria/audio?engine=coquitts&download=1" \
   -H "Authorization: Bearer $TTS_TOKEN" -o maria.wav
 
 # 응답 본문 대신 서버 측 히스토리로 합성
-curl -X POST localhost:5000/api/history \
+curl -X POST localhost:5062/api/history \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"text":"Hola mundo","engine":"coquitts","language":"es","voice":"maria"}'
 
-curl "localhost:5000/api/history?limit=50&offset=0" \
+curl "localhost:5062/api/history?limit=50&offset=0" \
   -H "Authorization: Bearer $TTS_TOKEN"
 
 # 항목 하나의 오디오; download=1이 없으면 <audio>용으로 인라인 제공
-curl "localhost:5000/api/history/<id>/audio?download=1" \
+curl "localhost:5062/api/history/<id>/audio?download=1" \
   -H "Authorization: Bearer $TTS_TOKEN" -o tts.wav
 
-curl -X DELETE localhost:5000/api/history/<id> \
+curl -X DELETE localhost:5062/api/history/<id> \
   -H "Authorization: Bearer $TTS_TOKEN"
 ```
 
@@ -159,7 +159,7 @@ curl -X DELETE localhost:5000/api/history/<id> \
 같은 서버가 OpenAI 오디오 API에도 응답하므로, Open WebUI, SillyTavern, Home Assistant, 공식 SDK는 `base_url`을 이 서버로 지정하고 bearer 토큰을 API 키로 사용하면 동작합니다:
 
 ```bash
-curl -X POST localhost:5000/v1/audio/speech \
+curl -X POST localhost:5062/v1/audio/speech \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"model":"tts-1","input":"Hello world","voice":"alloy","response_format":"mp3"}' \
@@ -169,7 +169,7 @@ curl -X POST localhost:5000/v1/audio/speech \
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:5000/v1", api_key="<one of TTS_TOKENS>")
+client = OpenAI(base_url="http://localhost:5062/v1", api_key="<one of TTS_TOKENS>")
 audio = client.audio.speech.create(model="coquitts", voice="maria", input="Hola mundo")
 audio.write_to_file("hola.mp3")
 ```
@@ -239,7 +239,7 @@ xdg-open https://localhost:8443     # TTS_WWW_TLS_PORT; 자체 서명 인증서,
 | `TTS_MAX_BODY_BYTES` | `2097152` | JSON 요청 본문 최대 크기(2 MiB). |
 | `TTS_STREAM_MAX_CHARS` | `200` | `stream=true`의 청크 크기. |
 | `CORS_ORIGINS` | `*` | `/api/*`에 허용되는 오리진. |
-| `TTS_PORT` | `5000` | `ttssrv`의 포트. |
+| `TTS_PORT` | `5062` | `ttssrv`의 포트. |
 | `TTS_WWW_PORT`, `TTS_WWW_TLS_PORT` | `8080`, `8443` | 웹 UI의 http 및 https 포트. |
 | `COQUITTS_MODEL`, `COQUITTS_SAMPLE` | `xtts_v2`, `default.wav` | Coqui 모델과 기본 음성 샘플. |
 | `TZ` | `America/New_York` | 로그와 히스토리의 타임스탬프에 쓰이는 시간대. |
