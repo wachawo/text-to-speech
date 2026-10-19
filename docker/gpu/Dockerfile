@@ -29,6 +29,6 @@ ENV PYTHONUSERBASE=/opt/data/userbase \
     PIP_CACHE_DIR=/opt/data/pip-cache \
     PYTHONPATH=/opt
 
-EXPOSE 5000
+EXPOSE 5062
 ENTRYPOINT ["sh", "/opt/ttssrv/entrypoint.sh"]
 CMD ["python3", "/opt/ttssrv/app1.py"]

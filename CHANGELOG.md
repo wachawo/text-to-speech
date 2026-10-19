@@ -9,6 +9,10 @@
 - The server logs a warning at start when auth is off (`TTS_TOKENS` empty).
 
 #### Changed
+- The default API port is 5062 instead of 5000 (`TTS_PORT`, the compose
+  files, the image `EXPOSE`, the `ttsapi` default `TTS_URL`, the examples and
+  the docs). A deployment that sets `TTS_PORT` keeps its port; one that relied
+  on the default now listens on 5062.
 - An engine that lists exactly one voice, which is also its default (coquitts
   with a single sample), offers only "default" in the Studio and the settings
   dialog instead of the same voice twice.

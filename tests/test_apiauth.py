@@ -115,4 +115,4 @@ def test_get_url_strips_trailing_slash(monkeypatch):
 def test_get_url_default_when_unset(monkeypatch):
     """With TTS_URL unset the client targets the local default server."""
     monkeypatch.delenv("TTS_URL", raising=False)
-    assert ttsapi.get_url() == "http://localhost:5000"
+    assert ttsapi.get_url() == "http://localhost:5062"

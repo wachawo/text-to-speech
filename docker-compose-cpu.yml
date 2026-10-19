@@ -17,7 +17,7 @@ services:
     environment:
       TZ:                   ${TZ:-America/New_York}
       TTS_HOST:             ${TTS_HOST:-0.0.0.0}
-      TTS_PORT:             ${TTS_PORT:-5000}
+      TTS_PORT:             ${TTS_PORT:-5062}
       TTS_DEBUG:            ${TTS_DEBUG:-False}
       TTS_LOG_FORMAT:       ${TTS_LOG_FORMAT:-text}
       TTS_TOKENS:           ${TTS_TOKENS:-}
@@ -42,7 +42,7 @@ services:
       PYTHONUSERBASE:       /opt/data/userbase
       PIP_CACHE_DIR:        /opt/data/pip-cache
     ports:
-      - "${TTS_PORT:-5000}:${TTS_PORT:-5000}"
+      - "${TTS_PORT:-5062}:${TTS_PORT:-5062}"
     volumes:
       - ./data:/opt/data
       - ./cache:/opt/cache
@@ -55,7 +55,7 @@ services:
       - /etc/timezone:/etc/timezone:ro
     healthcheck:
       test: ["CMD", "python3", "-c",
-             "import urllib.request; urllib.request.urlopen('http://localhost:${TTS_PORT:-5000}/api/health', timeout=5)"]
+             "import urllib.request; urllib.request.urlopen('http://localhost:${TTS_PORT:-5062}/api/health', timeout=5)"]
       interval: 30s
       timeout: 10s
       start_period: 600s
@@ -85,7 +85,7 @@ services:
       - tts_network
     environment:
       TZ:                   ${TZ:-America/New_York}
-      TTS_UPSTREAM:         ttssrv:${TTS_PORT:-5000}
+      TTS_UPSTREAM:         ttssrv:${TTS_PORT:-5062}
       TTS_WWW_TLS_PORT:     ${TTS_WWW_TLS_PORT:-8443}
     ports:
       - "${TTS_WWW_PORT:-8080}:80"

@@ -104,15 +104,15 @@ sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
 Once it is running, you can check the server status and send a synthesis request:
 
 ```bash
-curl localhost:5000/api/health
+curl localhost:5062/api/health
 
-curl localhost:5000/api/engines \
+curl localhost:5062/api/engines \
   -H "Authorization: Bearer $TTS_TOKEN"
 
-curl "localhost:5000/api/voices?engine=silerotts&language=ru" \
+curl "localhost:5062/api/voices?engine=silerotts&language=ru" \
   -H "Authorization: Bearer $TTS_TOKEN"
 
-curl -X POST localhost:5000/api/tts \
+curl -X POST localhost:5062/api/tts \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"text":"Hello world","engine":"gtts"}' \
@@ -123,34 +123,34 @@ Models, voices and history:
 
 ```bash
 # Installed and missing models, the same table `ttsgen --list` prints
-curl localhost:5000/api/models \
+curl localhost:5062/api/models \
   -H "Authorization: Bearer $TTS_TOKEN"
 
 # Upload a voice sample for coquitts (WAV); the voice is then "maria"
-curl -X POST localhost:5000/api/voices \
+curl -X POST localhost:5062/api/voices \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -F file=@voice.wav -F name=maria -F engine=coquitts
 
-curl "localhost:5000/api/voices?engine=coquitts" \
+curl "localhost:5062/api/voices?engine=coquitts" \
   -H "Authorization: Bearer $TTS_TOKEN"
 
-curl "localhost:5000/api/voices/maria/audio?engine=coquitts&download=1" \
+curl "localhost:5062/api/voices/maria/audio?engine=coquitts&download=1" \
   -H "Authorization: Bearer $TTS_TOKEN" -o maria.wav
 
 # Synthesize into the server-side history instead of the response body
-curl -X POST localhost:5000/api/history \
+curl -X POST localhost:5062/api/history \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"text":"Hola mundo","engine":"coquitts","language":"es","voice":"maria"}'
 
-curl "localhost:5000/api/history?limit=50&offset=0" \
+curl "localhost:5062/api/history?limit=50&offset=0" \
   -H "Authorization: Bearer $TTS_TOKEN"
 
 # Audio of one item; without download=1 it is served inline for <audio>
-curl "localhost:5000/api/history/<id>/audio?download=1" \
+curl "localhost:5062/api/history/<id>/audio?download=1" \
   -H "Authorization: Bearer $TTS_TOKEN" -o tts.wav
 
-curl -X DELETE localhost:5000/api/history/<id> \
+curl -X DELETE localhost:5062/api/history/<id> \
   -H "Authorization: Bearer $TTS_TOKEN"
 ```
 
@@ -159,7 +159,7 @@ curl -X DELETE localhost:5000/api/history/<id> \
 The same server also answers the OpenAI audio API, so Open WebUI, SillyTavern, Home Assistant and the official SDKs work with `base_url` pointing at it and the bearer token as the API key:
 
 ```bash
-curl -X POST localhost:5000/v1/audio/speech \
+curl -X POST localhost:5062/v1/audio/speech \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"model":"tts-1","input":"Hello world","voice":"alloy","response_format":"mp3"}' \
@@ -169,7 +169,7 @@ curl -X POST localhost:5000/v1/audio/speech \
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:5000/v1", api_key="<one of TTS_TOKENS>")
+client = OpenAI(base_url="http://localhost:5062/v1", api_key="<one of TTS_TOKENS>")
 audio = client.audio.speech.create(model="coquitts", voice="maria", input="Hola mundo")
 audio.write_to_file("hola.mp3")
 ```
@@ -242,7 +242,7 @@ Every setting is an environment variable; `env.example` documents them all and `
 | `TTS_STREAM_MAX_CHARS` | `200` | Chunk size for `stream=true`. |
 | `TTS_LOG_FORMAT` | `text` | Log format of the server: `text`, or `json` for one JSON object per line with `request_id` and the synthesis fields. |
 | `CORS_ORIGINS` | `*` | Allowed origins for `/api/*`. |
-| `TTS_PORT` | `5000` | Port of `ttssrv`. |
+| `TTS_PORT` | `5062` | Port of `ttssrv`. |
 | `TTS_WWW_PORT`, `TTS_WWW_TLS_PORT` | `8080`, `8443` | http and https ports of the web UI. |
 | `COQUITTS_MODEL`, `COQUITTS_SAMPLE` | `xtts_v2`, `default.wav` | Coqui model and the default voice sample. |
 | `TZ` | `America/New_York` | Time zone for timestamps in logs and history. |
@@ -259,7 +259,7 @@ Outside Docker the CLIs and the server read the same keys from, strongest first:
 - `GET /api/metrics` returns the uptime, the pool occupancy and per-engine counters and latency percentiles as JSON; `GET /metrics` exposes the same numbers for Prometheus. Both take the bearer token when `TTS_TOKENS` is set:
 
 ```bash
-curl localhost:5000/metrics -H "Authorization: Bearer $TTS_TOKEN"
+curl localhost:5062/metrics -H "Authorization: Bearer $TTS_TOKEN"
 ```
 
 #### Security
