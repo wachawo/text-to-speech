@@ -53,7 +53,7 @@ ttsgen "Hello world" -e pyttsx3 --file out.wav   # local synthesis (on Linux: ap
 ttsgen --list                      # engines and installed models
 ttsgen --install kokorotts -n      # install an engine and its models, no prompts
 
-docker compose -f docker-compose-cpu.yml up --build -d   # server on :5062, UI on :8080 / :8443
+docker compose -f docker-compose-cpu.yml up --build -d   # server on :5052, UI on https://localhost:5054
 ```
 
 CI runs `lint` (pre-commit and mypy), `test` (pytest) and `www` (npm) on every

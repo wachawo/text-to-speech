@@ -104,15 +104,15 @@ sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
 起動したら、サーバーの状態を確認したり、合成リクエストを送ったりできます。
 
 ```bash
-curl localhost:5062/api/health
+curl localhost:5052/api/health
 
-curl localhost:5062/api/engines \
+curl localhost:5052/api/engines \
   -H "Authorization: Bearer $TTS_TOKEN"
 
-curl "localhost:5062/api/voices?engine=silerotts&language=ru" \
+curl "localhost:5052/api/voices?engine=silerotts&language=ru" \
   -H "Authorization: Bearer $TTS_TOKEN"
 
-curl -X POST localhost:5062/api/tts \
+curl -X POST localhost:5052/api/tts \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"text":"Hello world","engine":"gtts"}' \
@@ -123,34 +123,34 @@ curl -X POST localhost:5062/api/tts \
 
 ```bash
 # インストール済みと未インストールのモデル。`ttsgen --list` が表示するのと同じ表
-curl localhost:5062/api/models \
+curl localhost:5052/api/models \
   -H "Authorization: Bearer $TTS_TOKEN"
 
 # coquitts用の音声サンプル（WAV）をアップロードする。以後この音声は "maria" になる
-curl -X POST localhost:5062/api/voices \
+curl -X POST localhost:5052/api/voices \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -F file=@voice.wav -F name=maria -F engine=coquitts
 
-curl "localhost:5062/api/voices?engine=coquitts" \
+curl "localhost:5052/api/voices?engine=coquitts" \
   -H "Authorization: Bearer $TTS_TOKEN"
 
-curl "localhost:5062/api/voices/maria/audio?engine=coquitts&download=1" \
+curl "localhost:5052/api/voices/maria/audio?engine=coquitts&download=1" \
   -H "Authorization: Bearer $TTS_TOKEN" -o maria.wav
 
 # レスポンス本文ではなく、サーバー側の履歴に合成する
-curl -X POST localhost:5062/api/history \
+curl -X POST localhost:5052/api/history \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"text":"Hola mundo","engine":"coquitts","language":"es","voice":"maria"}'
 
-curl "localhost:5062/api/history?limit=50&offset=0" \
+curl "localhost:5052/api/history?limit=50&offset=0" \
   -H "Authorization: Bearer $TTS_TOKEN"
 
 # 1件の音声。download=1 なしなら <audio> 向けにインラインで配信される
-curl "localhost:5062/api/history/<id>/audio?download=1" \
+curl "localhost:5052/api/history/<id>/audio?download=1" \
   -H "Authorization: Bearer $TTS_TOKEN" -o tts.wav
 
-curl -X DELETE localhost:5062/api/history/<id> \
+curl -X DELETE localhost:5052/api/history/<id> \
   -H "Authorization: Bearer $TTS_TOKEN"
 ```
 
@@ -159,7 +159,7 @@ curl -X DELETE localhost:5062/api/history/<id> \
 同じサーバーはOpenAIのオーディオAPIにも応答します。そのため、`base_url` をこのサーバーに向け、bearerトークンをAPIキーとして渡せば、Open WebUI、SillyTavern、Home Assistant、公式SDKがそのまま使えます。
 
 ```bash
-curl -X POST localhost:5062/v1/audio/speech \
+curl -X POST localhost:5052/v1/audio/speech \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"model":"tts-1","input":"Hello world","voice":"alloy","response_format":"mp3"}' \
@@ -169,7 +169,7 @@ curl -X POST localhost:5062/v1/audio/speech \
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:5062/v1", api_key="<one of TTS_TOKENS>")
+client = OpenAI(base_url="http://localhost:5052/v1", api_key="<one of TTS_TOKENS>")
 audio = client.audio.speech.create(model="coquitts", voice="maria", input="Hola mundo")
 audio.write_to_file("hola.mp3")
 ```
@@ -209,8 +209,7 @@ audio.write_to_file("hola.mp3")
 
 ```bash
 docker compose up --build -d
-xdg-open http://localhost:8080      # TTS_WWW_PORT。8080が使用中なら変更する
-xdg-open https://localhost:8443     # TTS_WWW_TLS_PORT。自己署名証明書なので、一度だけ受け入れる
+xdg-open https://localhost:5054     # TTS_WWW_PORT。自己署名証明書なので、一度だけ受け入れる
 ```
 
 - **Studio** - テキストを入力し、エンジン / 言語 / 音声を選んで、生成、再生、保存します。すべての結果は履歴リストに入ります。
@@ -239,8 +238,8 @@ xdg-open https://localhost:8443     # TTS_WWW_TLS_PORT。自己署名証明書�
 | `TTS_MAX_BODY_BYTES` | `2097152` | JSONリクエスト本文の上限（2 MiB）。 |
 | `TTS_STREAM_MAX_CHARS` | `200` | `stream=true` のチャンクサイズ。 |
 | `CORS_ORIGINS` | `*` | `/api/*` で許可するオリジン。 |
-| `TTS_PORT` | `5062` | `ttssrv` のポート。 |
-| `TTS_WWW_PORT`, `TTS_WWW_TLS_PORT` | `8080`, `8443` | Web UIのhttpとhttpsのポート。 |
+| `TTS_PORT` | `5052` | `ttssrv` のポート。 |
+| `TTS_WWW_PORT`, `TTS_WWW_SCHEME` | `5054`, `https` | Web UIのポートとモード: https（そのポートへのhttpはhttpsへリダイレクト）またはhttp。 |
 | `COQUITTS_MODEL`, `COQUITTS_SAMPLE` | `xtts_v2`, `default.wav` | Coquiのモデルとデフォルトの音声サンプル。 |
 | `TZ` | `America/New_York` | ログと履歴のタイムスタンプのタイムゾーン。 |
 
@@ -251,7 +250,7 @@ Docker以外では、CLIとサーバーは同じキーを次の優先順位（�
 #### セキュリティ
 
 - `TTS_TOKENS` を設定するまで認証はオフです。設定すると、`/api/health` を除くすべてのルートで `Authorization: Bearer <token>` が必要になり、Web UIはサインイン画面でトークンを求めます。
-- APIはすべてのインターフェースで待ち受け、composeファイルは `TTS_PORT`、`TTS_WWW_PORT`、`TTS_WWW_TLS_PORT` をホストに公開します。共有ネットワークではトークンを設定するか、オーバーライドファイルでポートを `127.0.0.1` にバインドしてください。
+- APIはすべてのインターフェースで待ち受け、composeファイルは `TTS_PORT` と `TTS_WWW_PORT` をホストに公開します。共有ネットワークではトークンを設定するか、オーバーライドファイルでポートを `127.0.0.1` にバインドしてください。
 - httpsリスナーは初回起動時に発行された自己署名証明書を使います。これはLAN向けです。インターネット上では、本物の証明書を持つ自前のリバースプロキシの背後にUIを置いてください。
 - 音声サンプル、履歴、証明書は `./data` の下にあります。バックアップを取り、ビルドコンテキストから除外してください。
 

@@ -209,7 +209,6 @@ module.exports = {
       // kept off `data` (see mounted): Vue would make it reactive and walk
       // every field the browser owns.
       playing: null,
-      tlsPort: '',
       // The microphone take, once there is one: the Blob UPLOAD sends, the
       // object URL the preview plays, and what the recorder measured. The
       // recorder itself is kept off `data` for the same reason the Audio
@@ -225,7 +224,6 @@ module.exports = {
 
   created: function () {
     this.fetchVoices();
-    this.fetchUiConfig();
   },
 
   mounted: function () {
@@ -272,13 +270,6 @@ module.exports = {
 
     canRecord: function () {
       return this.hasRecorder && window.TtsRecorder.supported();
-    },
-
-    /* The https address of this same UI, for the REC explanation. The port
-       comes from nginx (/ui-config.json); without an answer the address is
-       printed without one. */
-    httpsUrl: function () {
-      return 'https://' + window.location.hostname + (this.tlsPort ? ':' + this.tlsPort : '');
     },
 
     takeSilent: function () {
@@ -395,24 +386,16 @@ module.exports = {
       this.takePeak = 0;
     },
 
-    fetchUiConfig: function () {
-      var self = this;
-      this.$http.get('/ui-config.json')
-        .then(function (resp) {
-          var port = resp.data && resp.data.tls_port;
-          self.tlsPort = /^\d+$/.test(String(port)) ? String(port) : '';
-        })
-        .catch(function () { self.tlsPort = ''; });
-    },
-
     /* What blocks REC and the two ways out, in the info bar on demand. */
     explainRec: function () {
       if (!this.hasRecorder) {
         this.info = 'recorder.js did not load - reload the page';
         return;
       }
+      // With TTS_WWW_SCHEME=https (the default) the page is always https, so
+      // this is a deployment set to http.
       this.info = 'The browser gives the microphone only to https or localhost. ' +
-        'Open ' + this.httpsUrl + ' (accept the certificate once), ' +
+        'Serve the UI with TTS_WWW_SCHEME=https, ' +
         'or mark ' + window.location.origin + ' as a secure origin in the browser settings';
     },
 

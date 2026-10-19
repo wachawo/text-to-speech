@@ -17,7 +17,7 @@ services:
     environment:
       TZ:                         ${TZ:-America/New_York}
       TTS_HOST:                   ${TTS_HOST:-0.0.0.0}
-      TTS_PORT:                   ${TTS_PORT:-5062}
+      TTS_PORT:                   ${TTS_PORT:-5052}
       TTS_DEBUG:                  ${TTS_DEBUG:-False}
       TTS_LOG_FORMAT:             ${TTS_LOG_FORMAT:-text}
       TTS_TOKENS:                 ${TTS_TOKENS:-}
@@ -44,7 +44,7 @@ services:
       NVIDIA_VISIBLE_DEVICES:     "all"
       NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
     ports:
-      - "${TTS_PORT:-5062}:${TTS_PORT:-5062}"
+      - "${TTS_PORT:-5052}:${TTS_PORT:-5052}"
     volumes:
       - ./data:/opt/data
       - ./cache:/opt/cache
@@ -57,7 +57,7 @@ services:
       - /etc/timezone:/etc/timezone:ro
     healthcheck:
       test: ["CMD", "python3", "-c",
-             "import urllib.request; urllib.request.urlopen('http://localhost:${TTS_PORT:-5062}/api/health', timeout=5)"]
+             "import urllib.request; urllib.request.urlopen('http://localhost:${TTS_PORT:-5052}/api/health', timeout=5)"]
       interval: 30s
       timeout: 10s
       start_period: 600s
@@ -98,11 +98,12 @@ services:
       - tts_network
     environment:
       TZ:                         ${TZ:-America/New_York}
-      TTS_UPSTREAM:               ttssrv:${TTS_PORT:-5062}
-      TTS_WWW_TLS_PORT:           ${TTS_WWW_TLS_PORT:-8443}
+      TTS_UPSTREAM:               ttssrv:${TTS_PORT:-5052}
+      TTS_WWW_PORT:               ${TTS_WWW_PORT:-5054}
+      TTS_WWW_SCHEME:             ${TTS_WWW_SCHEME:-https}
     ports:
-      - "${TTS_WWW_PORT:-8080}:80"
-      - "${TTS_WWW_TLS_PORT:-8443}:443"
+      # One port in the mode TTS_WWW_SCHEME names; nginx listens on the same number.
+      - "${TTS_WWW_PORT:-5054}:${TTS_WWW_PORT:-5054}"
     volumes:
       - ./www:/usr/share/nginx/html:ro
       - ./data/certs:/etc/nginx/certs
@@ -114,7 +115,7 @@ services:
       ttssrv:
         condition: service_started
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/nginx-healthz"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/nginx-healthz"]
       interval: 30s
       timeout: 5s
       retries: 3

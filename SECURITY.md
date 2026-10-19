@@ -35,11 +35,11 @@ the server further, know that:
 - Authentication is off unless `TTS_TOKENS` is set. Without it every client
   that can reach the port can synthesize, upload voice samples and read the
   history.
-- `ttssrv` listens on all interfaces (`TTS_HOST=0.0.0.0`) on port 5062 by
+- `ttssrv` listens on all interfaces (`TTS_HOST=0.0.0.0`) on port 5052 by
   default. Bind it to `127.0.0.1` or keep it behind the bundled nginx when the
   host has a public address.
 - The web UI's certificate is self-signed and generated on first start. It is
   there so browsers allow the microphone on the LAN; it is not a substitute for
   a real certificate.
 - On the internet, run the stack behind your own reverse proxy with a real
-  certificate, set `TTS_TOKENS`, and do not publish port 5062 directly.
+  certificate, set `TTS_TOKENS`, and do not publish port 5052 directly.

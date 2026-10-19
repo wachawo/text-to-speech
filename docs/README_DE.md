@@ -104,15 +104,15 @@ sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
 Sobald der Server läuft, kannst du seinen Status prüfen und eine Synthese-Anfrage senden:
 
 ```bash
-curl localhost:5062/api/health
+curl localhost:5052/api/health
 
-curl localhost:5062/api/engines \
+curl localhost:5052/api/engines \
   -H "Authorization: Bearer $TTS_TOKEN"
 
-curl "localhost:5062/api/voices?engine=silerotts&language=ru" \
+curl "localhost:5052/api/voices?engine=silerotts&language=ru" \
   -H "Authorization: Bearer $TTS_TOKEN"
 
-curl -X POST localhost:5062/api/tts \
+curl -X POST localhost:5052/api/tts \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"text":"Hello world","engine":"gtts"}' \
@@ -123,34 +123,34 @@ Modelle, Stimmen und Verlauf:
 
 ```bash
 # Installierte und fehlende Modelle, dieselbe Tabelle, die `ttsgen --list` ausgibt
-curl localhost:5062/api/models \
+curl localhost:5052/api/models \
   -H "Authorization: Bearer $TTS_TOKEN"
 
 # Eine Stimmprobe für coquitts hochladen (WAV); die Stimme heißt danach "maria"
-curl -X POST localhost:5062/api/voices \
+curl -X POST localhost:5052/api/voices \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -F file=@voice.wav -F name=maria -F engine=coquitts
 
-curl "localhost:5062/api/voices?engine=coquitts" \
+curl "localhost:5052/api/voices?engine=coquitts" \
   -H "Authorization: Bearer $TTS_TOKEN"
 
-curl "localhost:5062/api/voices/maria/audio?engine=coquitts&download=1" \
+curl "localhost:5052/api/voices/maria/audio?engine=coquitts&download=1" \
   -H "Authorization: Bearer $TTS_TOKEN" -o maria.wav
 
 # In den serverseitigen Verlauf synthetisieren statt in den Antwortkörper
-curl -X POST localhost:5062/api/history \
+curl -X POST localhost:5052/api/history \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"text":"Hola mundo","engine":"coquitts","language":"es","voice":"maria"}'
 
-curl "localhost:5062/api/history?limit=50&offset=0" \
+curl "localhost:5052/api/history?limit=50&offset=0" \
   -H "Authorization: Bearer $TTS_TOKEN"
 
 # Audio eines Eintrags; ohne download=1 wird es inline für <audio> ausgeliefert
-curl "localhost:5062/api/history/<id>/audio?download=1" \
+curl "localhost:5052/api/history/<id>/audio?download=1" \
   -H "Authorization: Bearer $TTS_TOKEN" -o tts.wav
 
-curl -X DELETE localhost:5062/api/history/<id> \
+curl -X DELETE localhost:5052/api/history/<id> \
   -H "Authorization: Bearer $TTS_TOKEN"
 ```
 
@@ -159,7 +159,7 @@ curl -X DELETE localhost:5062/api/history/<id> \
 Derselbe Server beantwortet auch die OpenAI-Audio-API, sodass Open WebUI, SillyTavern, Home Assistant und die offiziellen SDKs funktionieren, wenn `base_url` auf ihn zeigt und das Bearer-Token als API-Schlüssel dient:
 
 ```bash
-curl -X POST localhost:5062/v1/audio/speech \
+curl -X POST localhost:5052/v1/audio/speech \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"model":"tts-1","input":"Hello world","voice":"alloy","response_format":"mp3"}' \
@@ -169,7 +169,7 @@ curl -X POST localhost:5062/v1/audio/speech \
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:5062/v1", api_key="<one of TTS_TOKENS>")
+client = OpenAI(base_url="http://localhost:5052/v1", api_key="<one of TTS_TOKENS>")
 audio = client.audio.speech.create(model="coquitts", voice="maria", input="Hola mundo")
 audio.write_to_file("hola.mp3")
 ```
@@ -209,8 +209,7 @@ Beide Compose-Dateien starten auch `ttswww`, einen nginx-Container, der die Web-
 
 ```bash
 docker compose up --build -d
-xdg-open http://localhost:8080      # TTS_WWW_PORT; ändere ihn, falls 8080 belegt ist
-xdg-open https://localhost:8443     # TTS_WWW_TLS_PORT; selbstsigniertes Zertifikat, einmal akzeptieren
+xdg-open https://localhost:5054     # TTS_WWW_PORT; selbstsigniertes Zertifikat, einmal akzeptieren
 ```
 
 - **Studio** - Text eingeben, Engine / Sprache / Stimme wählen, generieren, anhören, speichern; jedes Ergebnis landet in einer Verlaufsliste.
@@ -239,8 +238,8 @@ Jede Einstellung ist eine Umgebungsvariable; `env.example` dokumentiert sie alle
 | `TTS_MAX_BODY_BYTES` | `2097152` | Größter JSON-Anfragekörper (2 MiB). |
 | `TTS_STREAM_MAX_CHARS` | `200` | Abschnittsgröße für `stream=true`. |
 | `CORS_ORIGINS` | `*` | Erlaubte Origins für `/api/*`. |
-| `TTS_PORT` | `5062` | Port von `ttssrv`. |
-| `TTS_WWW_PORT`, `TTS_WWW_TLS_PORT` | `8080`, `8443` | http- und https-Ports der Web-Oberfläche. |
+| `TTS_PORT` | `5052` | Port von `ttssrv`. |
+| `TTS_WWW_PORT`, `TTS_WWW_SCHEME` | `5054`, `https` | Port der Web-Oberfläche und ihr Modus: https (http auf diesem Port wird umgeleitet) oder http. |
 | `COQUITTS_MODEL`, `COQUITTS_SAMPLE` | `xtts_v2`, `default.wav` | Coqui-Modell und die Standard-Stimmprobe. |
 | `TZ` | `America/New_York` | Zeitzone für Zeitstempel in Logs und Verlauf. |
 
@@ -251,7 +250,7 @@ Außerhalb von Docker lesen die CLIs und der Server dieselben Schlüssel aus, st
 #### Sicherheit
 
 - Die Authentifizierung ist aus, bis du `TTS_TOKENS` setzt. Danach erfordert jede Route außer `/api/health` `Authorization: Bearer <token>`, und die Web-Oberfläche fragt auf einem Anmeldebildschirm nach dem Token.
-- Die API lauscht auf allen Schnittstellen, und die Compose-Dateien veröffentlichen `TTS_PORT`, `TTS_WWW_PORT` und `TTS_WWW_TLS_PORT` auf dem Host. In einem geteilten Netzwerk setze ein Token oder binde die Ports in einer Override-Datei an `127.0.0.1`.
+- Die API lauscht auf allen Schnittstellen, und die Compose-Dateien veröffentlichen `TTS_PORT` und `TTS_WWW_PORT` auf dem Host. In einem geteilten Netzwerk setze ein Token oder binde die Ports in einer Override-Datei an `127.0.0.1`.
 - Der https-Listener verwendet ein beim ersten Start erzeugtes selbstsigniertes Zertifikat; es ist für ein LAN gedacht. Im Internet stelle die Oberfläche hinter deinen eigenen Reverse-Proxy mit einem echten Zertifikat.
 - Stimmproben, Verlauf und Zertifikate liegen unter `./data`; sichere das Verzeichnis und halte es aus dem Build-Kontext heraus.
 

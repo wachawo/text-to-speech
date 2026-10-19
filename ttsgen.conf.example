@@ -77,7 +77,7 @@ KOKOROTTS_MODELS=cache/kokorotts
 # HTTP API server (used by `ttssrv` run on this host; Docker Compose passes only ./.env
 # to the container, so a server in Docker reads none of the ttsgen.conf files).
 TTS_HOST=0.0.0.0
-TTS_PORT=5062
+TTS_PORT=5052
 TTS_DEBUG=False
 # Log format of ttssrv: text is the human format shared with nginx, json is one
 # JSON object per line with request_id and the synthesis fields (engine, ms, ok).
@@ -101,5 +101,5 @@ TTS_MAX_SAMPLE_BYTES=16777216
 
 # HTTP API client (used by `ttsapi` to reach a remote `ttssrv`).
 # TTS_TOKEN must match one of TTS_TOKENS on the server when auth is enabled.
-TTS_URL=http://localhost:5062
+TTS_URL=http://localhost:5052
 # TTS_TOKEN=alice-token
