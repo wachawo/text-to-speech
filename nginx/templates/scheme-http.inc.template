@@ -1,0 +1,5 @@
+# Included by default.conf when TTS_WWW_SCHEME=http. Rendered to
+# /etc/nginx/conf.d/scheme-http.inc: the .inc suffix keeps it out of the
+# conf.d/*.conf glob of nginx.conf, which would load it at http level.
+# Plain http only: browsers then refuse the microphone except on localhost.
+listen ${TTS_WWW_PORT};

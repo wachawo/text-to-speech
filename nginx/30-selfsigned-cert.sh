@@ -8,6 +8,11 @@
 # certificate under the same two names to replace it.
 set -eu
 
+# Plain http needs no certificate.
+if [ "${TTS_WWW_SCHEME:-https}" = "http" ]; then
+    exit 0
+fi
+
 CERT_DIR=/etc/nginx/certs
 CERT="$CERT_DIR/tts.crt"
 KEY="$CERT_DIR/tts.key"

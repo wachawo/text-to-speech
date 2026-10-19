@@ -64,12 +64,12 @@ DEFAULT_USER_CONFIG = """\
 # KOKOROTTS_MODELS=cache/kokorotts
 
 # HTTP client (used by `ttsapi` to reach a remote `ttssrv`)
-# TTS_URL=http://localhost:5062
+# TTS_URL=http://localhost:5052
 # TTS_TOKEN=
 
 # HTTP server (used by `ttssrv` run on this host; Docker Compose reads only ./.env)
 # TTS_HOST=0.0.0.0
-# TTS_PORT=5062
+# TTS_PORT=5052
 # TTS_DEBUG=False
 # TTS_TOKENS=SuP3rS3cr3tK3y!
 # TTS_POOL_SIZE=1

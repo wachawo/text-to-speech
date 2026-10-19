@@ -104,15 +104,15 @@ sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
 После запуска можно проверить состояние сервера и отправить запрос на синтез:
 
 ```bash
-curl localhost:5062/api/health
+curl localhost:5052/api/health
 
-curl localhost:5062/api/engines \
+curl localhost:5052/api/engines \
   -H "Authorization: Bearer $TTS_TOKEN"
 
-curl "localhost:5062/api/voices?engine=silerotts&language=ru" \
+curl "localhost:5052/api/voices?engine=silerotts&language=ru" \
   -H "Authorization: Bearer $TTS_TOKEN"
 
-curl -X POST localhost:5062/api/tts \
+curl -X POST localhost:5052/api/tts \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"text":"Hello world","engine":"gtts"}' \
@@ -123,34 +123,34 @@ curl -X POST localhost:5062/api/tts \
 
 ```bash
 # Установленные и отсутствующие модели, та же таблица, что печатает `ttsgen --list`
-curl localhost:5062/api/models \
+curl localhost:5052/api/models \
   -H "Authorization: Bearer $TTS_TOKEN"
 
 # Загрузить образец голоса для coquitts (WAV); после этого голос называется "maria"
-curl -X POST localhost:5062/api/voices \
+curl -X POST localhost:5052/api/voices \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -F file=@voice.wav -F name=maria -F engine=coquitts
 
-curl "localhost:5062/api/voices?engine=coquitts" \
+curl "localhost:5052/api/voices?engine=coquitts" \
   -H "Authorization: Bearer $TTS_TOKEN"
 
-curl "localhost:5062/api/voices/maria/audio?engine=coquitts&download=1" \
+curl "localhost:5052/api/voices/maria/audio?engine=coquitts&download=1" \
   -H "Authorization: Bearer $TTS_TOKEN" -o maria.wav
 
 # Синтезировать в историю на сервере вместо тела ответа
-curl -X POST localhost:5062/api/history \
+curl -X POST localhost:5052/api/history \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"text":"Hola mundo","engine":"coquitts","language":"es","voice":"maria"}'
 
-curl "localhost:5062/api/history?limit=50&offset=0" \
+curl "localhost:5052/api/history?limit=50&offset=0" \
   -H "Authorization: Bearer $TTS_TOKEN"
 
 # Аудио одной записи; без download=1 отдаётся inline для <audio>
-curl "localhost:5062/api/history/<id>/audio?download=1" \
+curl "localhost:5052/api/history/<id>/audio?download=1" \
   -H "Authorization: Bearer $TTS_TOKEN" -o tts.wav
 
-curl -X DELETE localhost:5062/api/history/<id> \
+curl -X DELETE localhost:5052/api/history/<id> \
   -H "Authorization: Bearer $TTS_TOKEN"
 ```
 
@@ -159,7 +159,7 @@ curl -X DELETE localhost:5062/api/history/<id> \
 Тот же сервер отвечает и на OpenAI audio API, поэтому Open WebUI, SillyTavern, Home Assistant и официальные SDK работают с ним, если `base_url` указывает на сервер, а bearer-токен передаётся как API-ключ:
 
 ```bash
-curl -X POST localhost:5062/v1/audio/speech \
+curl -X POST localhost:5052/v1/audio/speech \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"model":"tts-1","input":"Hello world","voice":"alloy","response_format":"mp3"}' \
@@ -169,7 +169,7 @@ curl -X POST localhost:5062/v1/audio/speech \
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:5062/v1", api_key="<one of TTS_TOKENS>")
+client = OpenAI(base_url="http://localhost:5052/v1", api_key="<one of TTS_TOKENS>")
 audio = client.audio.speech.create(model="coquitts", voice="maria", input="Hola mundo")
 audio.write_to_file("hola.mp3")
 ```
@@ -209,8 +209,7 @@ audio.write_to_file("hola.mp3")
 
 ```bash
 docker compose up --build -d
-xdg-open http://localhost:8080      # TTS_WWW_PORT; поменяйте, если 8080 занят
-xdg-open https://localhost:8443     # TTS_WWW_TLS_PORT; самоподписанный сертификат, примите его один раз
+xdg-open https://localhost:5054     # TTS_WWW_PORT; самоподписанный сертификат, примите его один раз
 ```
 
 - **Studio** - ввести текст, выбрать движок / язык / голос, сгенерировать, прослушать, сохранить; каждый результат попадает в список истории.
@@ -239,8 +238,8 @@ xdg-open https://localhost:8443     # TTS_WWW_TLS_PORT; самоподписан
 | `TTS_MAX_BODY_BYTES` | `2097152` | Максимальный размер JSON-тела запроса (2 MiB). |
 | `TTS_STREAM_MAX_CHARS` | `200` | Размер фрагмента для `stream=true`. |
 | `CORS_ORIGINS` | `*` | Разрешённые origin для `/api/*`. |
-| `TTS_PORT` | `5062` | Порт `ttssrv`. |
-| `TTS_WWW_PORT`, `TTS_WWW_TLS_PORT` | `8080`, `8443` | http- и https-порты веб-интерфейса. |
+| `TTS_PORT` | `5052` | Порт `ttssrv`. |
+| `TTS_WWW_PORT`, `TTS_WWW_SCHEME` | `5054`, `https` | Порт веб-интерфейса и его режим: https (http на этот порт перенаправляется) или http. |
 | `COQUITTS_MODEL`, `COQUITTS_SAMPLE` | `xtts_v2`, `default.wav` | Модель Coqui и образец голоса по умолчанию. |
 | `TZ` | `America/New_York` | Часовой пояс для меток времени в логах и истории. |
 
@@ -251,7 +250,7 @@ xdg-open https://localhost:8443     # TTS_WWW_TLS_PORT; самоподписан
 #### Безопасность
 
 - Аутентификация выключена, пока не задан `TTS_TOKENS`. После этого каждый маршрут, кроме `/api/health`, требует `Authorization: Bearer <token>`, а веб-интерфейс запрашивает токен на экране входа.
-- API слушает на всех интерфейсах, а compose-файлы публикуют `TTS_PORT`, `TTS_WWW_PORT` и `TTS_WWW_TLS_PORT` на хосте. В общей сети задайте токен или привяжите порты к `127.0.0.1` в override-файле.
+- API слушает на всех интерфейсах, а compose-файлы публикуют `TTS_PORT` и `TTS_WWW_PORT` на хосте. В общей сети задайте токен или привяжите порты к `127.0.0.1` в override-файле.
 - https-листенер использует самоподписанный сертификат, созданный при первом запуске; он рассчитан на локальную сеть. В интернете ставьте интерфейс за собственный reverse proxy с настоящим сертификатом.
 - Образцы голоса, история и сертификаты лежат в `./data`; делайте резервные копии и не включайте каталог в контекст сборки.
 

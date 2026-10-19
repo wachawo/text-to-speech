@@ -86,7 +86,7 @@ load_config()
 # Config
 TRUE_VALUES = ("1", "true", "yes", "on", "enabled")
 TTS_HOST = os.getenv("TTS_HOST", "0.0.0.0")
-TTS_PORT = int(os.getenv("TTS_PORT", "5062"))
+TTS_PORT = int(os.getenv("TTS_PORT", "5052"))
 TTS_DEBUG = os.getenv("TTS_DEBUG", "False").lower() in TRUE_VALUES
 # text: the human format shared with nginx; json: one object per line with request_id and the synthesis fields.
 TTS_LOG_FORMAT = os.getenv("TTS_LOG_FORMAT", "text").strip().lower()

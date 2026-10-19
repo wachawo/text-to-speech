@@ -1,0 +1,16 @@
+# Included by default.conf when TTS_WWW_SCHEME=https (the default). Rendered
+# to /etc/nginx/conf.d/scheme-https.inc: the .inc suffix keeps it out of the
+# conf.d/*.conf glob of nginx.conf, which would load it at http level.
+
+# Browsers allow the microphone (the Voices screen's REC) only on a secure
+# page or on localhost, so over the LAN the UI has to be https. The
+# certificate is self-signed by 30-selfsigned-cert.sh unless a real pair is
+# mounted.
+listen ${TTS_WWW_PORT} ssl;
+ssl_certificate     /etc/nginx/certs/tts.crt;
+ssl_certificate_key /etc/nginx/certs/tts.key;
+ssl_protocols       TLSv1.2 TLSv1.3;
+
+# A plain http request on this port gets nginx's 497; send it to https on the
+# same host and port, as the client typed them ($http_host carries the port).
+error_page 497 =301 https://$http_host$request_uri;

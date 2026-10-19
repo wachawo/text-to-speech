@@ -640,7 +640,7 @@ router.beforeEach(function (to, from, next) {
 /* Every API request carries the token the browser holds; a 401 from any of
    them means the token is gone or wrong, so it is forgotten and the operator
    is sent to sign in with the destination kept. Only /api/ - the token is the
-   server's and nginx's own files (/ui-config.json) have no use for it. The
+   server's and nginx's own files have no use for it. The
    sign-in screen's own probe is excluded: its 401 is the answer "wrong
    token", not a lost session. */
 const apiRequest = function (config) {

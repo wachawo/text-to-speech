@@ -104,15 +104,15 @@ sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
 启动后，你可以检查服务器状态并发送合成请求：
 
 ```bash
-curl localhost:5062/api/health
+curl localhost:5052/api/health
 
-curl localhost:5062/api/engines \
+curl localhost:5052/api/engines \
   -H "Authorization: Bearer $TTS_TOKEN"
 
-curl "localhost:5062/api/voices?engine=silerotts&language=ru" \
+curl "localhost:5052/api/voices?engine=silerotts&language=ru" \
   -H "Authorization: Bearer $TTS_TOKEN"
 
-curl -X POST localhost:5062/api/tts \
+curl -X POST localhost:5052/api/tts \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"text":"Hello world","engine":"gtts"}' \
@@ -123,34 +123,34 @@ curl -X POST localhost:5062/api/tts \
 
 ```bash
 # 已安装和缺失的模型，与 `ttsgen --list` 打印的表格相同
-curl localhost:5062/api/models \
+curl localhost:5052/api/models \
   -H "Authorization: Bearer $TTS_TOKEN"
 
 # 为 coquitts 上传声音样本（WAV）；此后该声音名为 "maria"
-curl -X POST localhost:5062/api/voices \
+curl -X POST localhost:5052/api/voices \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -F file=@voice.wav -F name=maria -F engine=coquitts
 
-curl "localhost:5062/api/voices?engine=coquitts" \
+curl "localhost:5052/api/voices?engine=coquitts" \
   -H "Authorization: Bearer $TTS_TOKEN"
 
-curl "localhost:5062/api/voices/maria/audio?engine=coquitts&download=1" \
+curl "localhost:5052/api/voices/maria/audio?engine=coquitts&download=1" \
   -H "Authorization: Bearer $TTS_TOKEN" -o maria.wav
 
 # 合成到服务器端的历史记录中，而不是返回到响应体
-curl -X POST localhost:5062/api/history \
+curl -X POST localhost:5052/api/history \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"text":"Hola mundo","engine":"coquitts","language":"es","voice":"maria"}'
 
-curl "localhost:5062/api/history?limit=50&offset=0" \
+curl "localhost:5052/api/history?limit=50&offset=0" \
   -H "Authorization: Bearer $TTS_TOKEN"
 
 # 单个条目的音频；不带 download=1 时以内联方式提供，可直接用于 <audio>
-curl "localhost:5062/api/history/<id>/audio?download=1" \
+curl "localhost:5052/api/history/<id>/audio?download=1" \
   -H "Authorization: Bearer $TTS_TOKEN" -o tts.wav
 
-curl -X DELETE localhost:5062/api/history/<id> \
+curl -X DELETE localhost:5052/api/history/<id> \
   -H "Authorization: Bearer $TTS_TOKEN"
 ```
 
@@ -159,7 +159,7 @@ curl -X DELETE localhost:5062/api/history/<id> \
 同一个服务器还响应 OpenAI 音频 API，因此只要把 `base_url` 指向它并将 bearer 令牌用作 API key，Open WebUI、SillyTavern、Home Assistant 和官方 SDK 都可以直接使用：
 
 ```bash
-curl -X POST localhost:5062/v1/audio/speech \
+curl -X POST localhost:5052/v1/audio/speech \
   -H "Authorization: Bearer $TTS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"model":"tts-1","input":"Hello world","voice":"alloy","response_format":"mp3"}' \
@@ -169,7 +169,7 @@ curl -X POST localhost:5062/v1/audio/speech \
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:5062/v1", api_key="<one of TTS_TOKENS>")
+client = OpenAI(base_url="http://localhost:5052/v1", api_key="<one of TTS_TOKENS>")
 audio = client.audio.speech.create(model="coquitts", voice="maria", input="Hola mundo")
 audio.write_to_file("hola.mp3")
 ```
@@ -209,8 +209,7 @@ audio.write_to_file("hola.mp3")
 
 ```bash
 docker compose up --build -d
-xdg-open http://localhost:8080      # TTS_WWW_PORT；如果 8080 被占用请修改
-xdg-open https://localhost:8443     # TTS_WWW_TLS_PORT；自签名证书，接受一次即可
+xdg-open https://localhost:5054     # TTS_WWW_PORT；自签名证书，接受一次即可
 ```
 
 - **Studio** - 输入文本，选择引擎 / 语言 / 声音，生成、试听、保存；每个结果都会进入历史列表。
@@ -239,8 +238,8 @@ xdg-open https://localhost:8443     # TTS_WWW_TLS_PORT；自签名证书，接�
 | `TTS_MAX_BODY_BYTES` | `2097152` | JSON 请求体的最大大小（2 MiB）。 |
 | `TTS_STREAM_MAX_CHARS` | `200` | `stream=true` 时的分块大小。 |
 | `CORS_ORIGINS` | `*` | `/api/*` 允许的来源。 |
-| `TTS_PORT` | `5062` | `ttssrv` 的端口。 |
-| `TTS_WWW_PORT`, `TTS_WWW_TLS_PORT` | `8080`, `8443` | Web UI 的 http 和 https 端口。 |
+| `TTS_PORT` | `5052` | `ttssrv` 的端口。 |
+| `TTS_WWW_PORT`, `TTS_WWW_SCHEME` | `5054`, `https` | Web UI 的端口及其模式：https（该端口上的 http 请求会重定向到 https）或 http。 |
 | `COQUITTS_MODEL`, `COQUITTS_SAMPLE` | `xtts_v2`, `default.wav` | Coqui 模型和默认声音样本。 |
 | `TZ` | `America/New_York` | 日志和历史记录中时间戳的时区。 |
 
@@ -251,7 +250,7 @@ xdg-open https://localhost:8443     # TTS_WWW_TLS_PORT；自签名证书，接�
 #### 安全
 
 - 在设置 `TTS_TOKENS` 之前，认证是关闭的。设置之后，除 `/api/health` 之外的每个路由都需要 `Authorization: Bearer <token>`，Web UI 也会在登录界面要求输入令牌。
-- API 监听所有网络接口，compose 文件会在主机上发布 `TTS_PORT`、`TTS_WWW_PORT` 和 `TTS_WWW_TLS_PORT`。在共享网络中请设置令牌，或在 override 文件中将端口绑定到 `127.0.0.1`。
+- API 监听所有网络接口，compose 文件会在主机上发布 `TTS_PORT` 和 `TTS_WWW_PORT`。在共享网络中请设置令牌，或在 override 文件中将端口绑定到 `127.0.0.1`。
 - https 监听器使用首次启动时生成的自签名证书；它面向局域网。在互联网上，请把 UI 放在你自己的、带真实证书的反向代理之后。
 - 声音样本、历史记录和证书位于 `./data` 下；请备份它，并将其排除在构建上下文之外。
 
