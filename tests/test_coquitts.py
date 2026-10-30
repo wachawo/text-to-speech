@@ -381,6 +381,38 @@ def test_generate_raises_tts_exception_when_output_file_empty(engine, monkeypatc
     assert str(excinfo.value) == "Coqui TTS failed to generate audio"
 
 
+def test_generate_sentence_past_xtts_tokens_is_validation_error(engine, monkeypatch):
+    """XTTS's 400-token assertion on one long sentence is a 400 ('Text too long for coquitts'), not a 500."""
+
+    class LongSentenceTTS(FakeTTS):
+        """FakeTTS variant that fails the way xtts.py asserts on an over-long sentence."""
+
+        def tts_to_file(self, text, file_path, language=None, speaker_wav=None):
+            """Raise the assertion XTTS raises past gpt_max_text_tokens."""
+            raise AssertionError(" \u2757 XTTS can only generate text with a maximum of 400 tokens.")
+
+    monkeypatch.setattr(engine, "TTS", LongSentenceTTS)
+    with pytest.raises(ValidationError) as excinfo:
+        engine.generate("hi", {"language": "en"})
+    assert str(excinfo.value) == "Text too long for coquitts: a sentence exceeds the 400 tokens of XTTS"
+
+
+def test_generate_other_assertion_stays_tts_exception(engine, monkeypatch):
+    """An assertion that does not name the token limit is still an engine failure."""
+
+    class AssertTTS(FakeTTS):
+        """FakeTTS variant whose synthesis trips an unrelated assertion."""
+
+        def tts_to_file(self, text, file_path, language=None, speaker_wav=None):
+            """Raise an assertion unrelated to the text."""
+            raise AssertionError("speaker embedding is empty")
+
+    monkeypatch.setattr(engine, "TTS", AssertTTS)
+    with pytest.raises(TTSException) as excinfo:
+        engine.generate("hi", {"language": "en"})
+    assert not isinstance(excinfo.value, ValidationError)
+
+
 @pytest.mark.parametrize("language", ["xx", "sv"])
 def test_generate_unsupported_language_is_validation_error(engine, monkeypatch, language):
     """A language outside the xtts_v2 list is a bad request, refused before any model load and without a path."""

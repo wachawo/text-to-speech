@@ -45,7 +45,8 @@ def generate(text: str, config: dict) -> bytes:
 
     Raises:
         EngineNotAvailableError: gTTS is not installed.
-        ValidationError: Text exceeds MAX_TEXT_LENGTH, or gTTS does not speak the language.
+        ValidationError: Text exceeds MAX_TEXT_LENGTH, has nothing to pronounce, or
+            gTTS does not speak the language.
         TTSException: The remote synthesis call failed.
     """
     if not AVAILABLE:
@@ -74,6 +75,11 @@ def generate(text: str, config: dict) -> bytes:
 
         return audio_buffer.getvalue()
 
+    except AssertionError as exc:
+        # gTTS drops punctuation before it asks Google, and asserts that
+        # something is left ("No text to send to TTS API") before any request:
+        # a text of only "..." is the caller's, not a failed synthesis.
+        raise ValidationError("Text cannot be empty for gtts: nothing in it can be pronounced") from exc
     except Exception as exc:
         raise TTSException(f"gTTS generation failed: {exc}") from exc
 

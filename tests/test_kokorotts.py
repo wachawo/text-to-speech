@@ -629,3 +629,45 @@ def test_invalid_request_voice_is_still_a_validation_error_with_env_set(engine, 
     monkeypatch.setenv("KOKOROTTS_VOICE", "am_adam")
     with pytest.raises(ValidationError, match="af_nobody"):
         engine.generate("hi", {"language": "en", "voice": "af_nobody"})
+
+
+# Input kokoro-onnx refuses
+
+
+@pytest.mark.parametrize(
+    ("failure", "message"),
+    [
+        (
+            IndexError("index 510 is out of bounds for axis 0 with size 510"),
+            "Text too long for kokorotts: a passage without punctuation exceeds 510 phonemes",
+        ),
+        (
+            ValueError("need at least one array to concatenate"),
+            "Text cannot be empty for kokorotts: nothing in it can be pronounced",
+        ),
+    ],
+)
+def test_generate_refused_input_is_validation_error(engine, monkeypatch, kokoro_dir, failure, message):
+    """What kokoro-onnx raises for a long unpunctuated passage or a text with nothing to say is a 400, not a 500."""
+
+    def refuse(self, text, voice, speed, lang):
+        """Fail the way kokoro-onnx does on this input."""
+        raise failure
+
+    monkeypatch.setattr(engine.Kokoro, "create", refuse)
+    with pytest.raises(ValidationError) as excinfo:
+        engine.generate("-", {"language": "en"})
+    assert str(excinfo.value) == message
+
+
+def test_generate_other_value_error_stays_tts_exception(engine, monkeypatch, kokoro_dir):
+    """A ValueError other than the empty batch list is still an engine failure."""
+
+    def fail(self, text, voice, speed, lang):
+        """Fail with an unrelated ValueError."""
+        raise ValueError("bad onnx input shape")
+
+    monkeypatch.setattr(engine.Kokoro, "create", fail)
+    with pytest.raises(TTSException) as excinfo:
+        engine.generate("hello", {"language": "en"})
+    assert not isinstance(excinfo.value, ValidationError)

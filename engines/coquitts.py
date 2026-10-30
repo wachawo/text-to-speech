@@ -125,8 +125,9 @@ def generate(text: str, config: dict) -> bytes:
 
     Raises:
         EngineNotAvailableError: Coqui TTS is not installed.
-        ValidationError: Text exceeds MAX_TEXT_LENGTH, xtts_v2 does not speak
-            the language, or the voice name is invalid or has no sample.
+        ValidationError: Text exceeds MAX_TEXT_LENGTH or holds a sentence past
+            the 400 tokens of XTTS, xtts_v2 does not speak the language, or the
+            voice name is invalid or has no sample.
         CustomError: The default voice sample WAV (COQUITTS_SAMPLE) is missing.
         TTSException: Model lookup or synthesis failed.
     """
@@ -194,6 +195,12 @@ def generate(text: str, config: dict) -> bytes:
     except TTSException:
         # Already says what went wrong; wrapping it again would repeat it.
         raise
+    except AssertionError as exc:
+        # XTTS asserts each sentence fits its 400 text tokens (about 700
+        # characters of English); commas do not split a sentence.
+        if "maximum of 400 tokens" in str(exc):
+            raise ValidationError("Text too long for coquitts: a sentence exceeds the 400 tokens of XTTS") from exc
+        raise TTSException(f"Coqui TTS generation failed: {exc}") from exc
     except Exception as exc:
         if "model" in str(exc).lower() and "not found" in str(exc).lower():
             raise TTSException(f"Coqui TTS model not found.\nError: {exc}") from exc
