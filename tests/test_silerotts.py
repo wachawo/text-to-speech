@@ -366,8 +366,21 @@ def test_generate_unknown_voice_raises_validation_error(engine, monkeypatch):
 
 # Long text - Silero voices at most ~62.5 s of speech per apply_tts call
 
-# What Silero raises once a call would pass its 5000-frame cap.
+# What Silero raises for ANY RuntimeError of its model call, the 5000-frame
+# cap included; only the RuntimeError it was raised while handling differs.
 SILERO_TOO_LONG_ERROR = "Model couldn't generate your text, probably it's too long"
+SPEECH_CAP_ERROR = "The size of tensor a (5519) must match the size of tensor b (5000) at non-singleton dimension 0"
+OUT_OF_MEMORY_ERROR = "DefaultCPUAllocator: not enough memory: you tried to allocate 123456789 bytes."
+
+
+def raise_like_silero(inner_message):
+    """Raise Silero's wrapper exception while handling a RuntimeError, as its apply_tts does."""
+    try:
+        raise RuntimeError(inner_message)
+    except RuntimeError:
+        # No "from": Silero chains implicitly, so the RuntimeError is only __context__.
+        raise Exception(SILERO_TOO_LONG_ERROR)  # noqa: B904
+
 
 # Twelve sentences, 707 characters: past SILERO_CHUNK_CHARS, under the ~780
 # characters of prose where one real call already fails.
@@ -392,7 +405,7 @@ class CapStubModel(VoiceStubModel):
         """Refuse an over-cap or unpronounceable text, else return a 10-sample block at the call's level."""
         self.texts.append(text)
         if len(text) > self.limit:
-            raise Exception(SILERO_TOO_LONG_ERROR)
+            raise_like_silero(SPEECH_CAP_ERROR)
         if not any(char.isalpha() for char in text):
             raise ValueError()
         return VoiceStubTensor(np.full(10, len(self.texts) / 100, dtype="float32"))
@@ -445,24 +458,79 @@ def test_generate_unbroken_run_is_cut_between_words(engine, monkeypatch):
     assert " ".join(model.texts) == text
 
 
-def test_generate_piece_silero_refuses_as_too_long_is_validation_error(engine, monkeypatch):
-    """A piece still past one call's cap is a 400 ('Text too long for silerotts'), never a TTSException 500."""
-    install_cap_model(engine, monkeypatch, limit=100)
-    with pytest.raises(ValidationError, match="^Text too long for silerotts: a piece of 1[0-9][0-9] characters"):
+def test_generate_piece_silero_refuses_as_too_long_is_cut_again(engine, monkeypatch):
+    """A piece past one call's cap is halved at a boundary and voiced, not refused: short sentences outrun prose."""
+    model = install_cap_model(engine, monkeypatch, limit=100)
+    text = "Why? " * 40
+
+    audio = engine.generate(text, {"language": "en"})
+
+    voiced = [piece for piece in model.texts if len(piece) <= 100]
+    assert any(len(piece) > 100 for piece in model.texts)
+    assert " ".join(voiced) == text.strip()
+    assert all(piece.endswith("?") for piece in voiced)
+    assert len(wav_samples(audio)) == 10 * len(voiced)
+
+
+def test_generate_piece_that_cannot_be_cut_any_more_is_validation_error(engine, monkeypatch):
+    """A piece Silero refuses down to a single character is a 400 ('Text too long for silerotts'), not a 500."""
+    install_cap_model(engine, monkeypatch, limit=0)
+    with pytest.raises(ValidationError, match="^Text too long for silerotts: 'S' runs past"):
         engine.generate(LONG_PROSE, {"language": "en"})
 
 
-def test_generate_other_model_failure_stays_tts_exception(engine, monkeypatch):
-    """An apply_tts failure that is not the length cap is still an engine failure."""
+class FaultyModel(VoiceStubModel):
+    """Silero stand-in whose synthesis fails for a reason unrelated to the text."""
 
-    class BrokenModel(VoiceStubModel):
-        """Silero stand-in whose synthesis fails for a reason unrelated to the text."""
+    def __init__(self, fault):
+        """Store the callable that raises the fault and start an empty call log."""
+        super().__init__(["en_0"])
+        self.fault = fault
+        self.texts = []
 
-        def apply_tts(self, text, speaker, sample_rate):
-            """Fail like a broken torch runtime."""
-            raise RuntimeError("CUDA error: device-side assert triggered")
+    def apply_tts(self, text, speaker, sample_rate):
+        """Record the text, then fail."""
+        self.texts.append(text)
+        self.fault()
 
-    model = BrokenModel(["en_0"])
+
+def raise_bare_silero_error():
+    """Raise Silero's wrapper message with no RuntimeError behind it."""
+    raise Exception(SILERO_TOO_LONG_ERROR)
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        pytest.param(lambda: raise_like_silero(OUT_OF_MEMORY_ERROR), id="silero-wrapped-out-of-memory"),
+        pytest.param(raise_bare_silero_error, id="silero-message-without-cause"),
+        pytest.param(lambda: raise_like_silero("CUDA error: device-side assert triggered"), id="silero-wrapped-cuda"),
+    ],
+)
+def test_generate_engine_fault_behind_silero_too_long_message_stays_tts_exception(engine, monkeypatch, fault):
+    """Silero says 'probably it's too long' for every model failure; only the speech cap is the caller's 400.
+
+    Out of memory is a 500 the balancer fails over on, and the piece is not cut
+    and retried as if it were too long.
+    """
+    model = FaultyModel(fault)
+    monkeypatch.setattr(engine, "AVAILABLE", True)
+    monkeypatch.setattr(engine.torch.hub, "load", lambda **kw: (model, "example"))
+    text = "Hello there, this is a sentence. And here is a second one, of about the same length."
+    with pytest.raises(TTSException, match="Silero TTS generation failed") as excinfo:
+        engine.generate(text, {"language": "en"})
+    assert not isinstance(excinfo.value, ValidationError)
+    assert model.texts == [text]
+
+
+def test_generate_runtime_error_from_the_model_stays_tts_exception(engine, monkeypatch):
+    """An apply_tts RuntimeError that reaches the engine unwrapped is still an engine failure."""
+
+    def raise_runtime_error():
+        """Fail like a broken torch runtime."""
+        raise RuntimeError("CUDA error: device-side assert triggered")
+
+    model = FaultyModel(raise_runtime_error)
     monkeypatch.setattr(engine, "AVAILABLE", True)
     monkeypatch.setattr(engine.torch.hub, "load", lambda **kw: (model, "example"))
     with pytest.raises(TTSException) as excinfo:

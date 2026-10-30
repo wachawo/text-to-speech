@@ -112,9 +112,11 @@
   characters of English prose, 250 of "Oh... "), although it accepts up to
   50,000 characters: one Silero call voices at most 5000 frames. A long text
   is now voiced in pieces of up to 150 characters, cut at sentence, comma or
-  word boundaries, and joined into one WAV; a piece Silero still refuses is a
-  400 (`Text too long for silerotts: ...`). A balancer that cools a server
-  down on a 500 no longer cools every Silero server for one caller's text.
+  word boundaries, and joined into one WAV; a piece Silero still refuses as
+  too long is cut again, and only one that cannot be cut is a 400 (`Text too
+  long for silerotts: ...`). A balancer that cools a server down on a 500 no
+  longer cools every Silero server for one caller's text, while a real Silero
+  fault (out of memory) stays a 500.
 - Input an engine refuses was a 500 instead of a 400: punctuation-only text
   on gtts, text with nothing to pronounce (`-`) or a passage of 510 phonemes
   without punctuation on kokorotts, and a sentence past 400 tokens on
