@@ -342,7 +342,8 @@ def generate(text: str, config: dict) -> bytes:
 
     Raises:
         EngineNotAvailableError: kokoro-onnx / soundfile are not installed.
-        ValidationError: Text exceeds MAX_TEXT_LENGTH, or the voice spec is
+        ValidationError: Text exceeds MAX_TEXT_LENGTH, has nothing to pronounce,
+            holds a passage too long without punctuation, or the voice spec is
             malformed or names an unknown voice.
         TTSException: Model files are missing, or synthesis failed.
     """
@@ -377,6 +378,17 @@ def generate(text: str, config: dict) -> bytes:
     try:
         with INFERENCE_LOCK:
             samples, sample_rate = kokoro.create(text, voice=voice, speed=speed, lang=lang_code)
+    except IndexError as exc:
+        # kokoro-onnx splits phonemes only at . , ! ? ; and indexes the voice
+        # style by the batch length; a run of 510 phonemes without one of them
+        # is one row past the style table.
+        raise ValidationError("Text too long for kokorotts: a passage without punctuation exceeds 510 phonemes") from exc
+    except ValueError as exc:
+        # Nothing pronounceable ("-", a zero-width space) phonemizes to no
+        # batch at all, and kokoro-onnx concatenates the empty list.
+        if "need at least one array" not in str(exc):
+            raise TTSException(f"Kokoro TTS generation failed ({type(exc).__name__}): {exc}") from exc
+        raise ValidationError("Text cannot be empty for kokorotts: nothing in it can be pronounced") from exc
     except Exception as exc:
         raise TTSException(f"Kokoro TTS generation failed ({type(exc).__name__}): {exc}") from exc
 

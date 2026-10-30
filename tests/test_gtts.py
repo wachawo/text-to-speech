@@ -129,6 +129,19 @@ def test_generate_unsupported_language_is_validation_error(engine, monkeypatch):
     assert str(excinfo.value) == "Language 'xx' is not supported by gtts"
 
 
+@pytest.mark.parametrize("text", ["...", ",;:"])
+def test_generate_punctuation_only_text_is_validation_error(engine, monkeypatch, text):
+    """A text gTTS has nothing to send for is a bad request (400), not a synthesis failure (500).
+
+    The real gTTS class is used: it tokenizes the text and asserts that something
+    is left before it opens any connection.
+    """
+    monkeypatch.setattr(engine, "gTTS", RealGTTS)
+    with pytest.raises(ValidationError) as excinfo:
+        engine.generate(text, {"language": "en"})
+    assert str(excinfo.value) == "Text cannot be empty for gtts: nothing in it can be pronounced"
+
+
 def test_generate_holds_the_inference_lock_around_the_request(engine, monkeypatch):
     """The request to Google runs under INFERENCE_LOCK, one at a time per process."""
     seen = []

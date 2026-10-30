@@ -364,6 +364,202 @@ def test_generate_unknown_voice_raises_validation_error(engine, monkeypatch):
         engine.generate("hello", {"language": "ru", "voice": "nonexistent"})
 
 
+# Long text - Silero voices at most ~62.5 s of speech per apply_tts call
+
+# What Silero raises for ANY RuntimeError of its model call, the 5000-frame
+# cap included; only the RuntimeError it was raised while handling differs.
+SILERO_TOO_LONG_ERROR = "Model couldn't generate your text, probably it's too long"
+SPEECH_CAP_ERROR = "The size of tensor a (5519) must match the size of tensor b (5000) at non-singleton dimension 0"
+OUT_OF_MEMORY_ERROR = "DefaultCPUAllocator: not enough memory: you tried to allocate 123456789 bytes."
+
+
+def raise_like_silero(inner_message):
+    """Raise Silero's wrapper exception while handling a RuntimeError, as its apply_tts does."""
+    try:
+        raise RuntimeError(inner_message)
+    except RuntimeError:
+        # No "from": Silero chains implicitly, so the RuntimeError is only __context__.
+        raise Exception(SILERO_TOO_LONG_ERROR)  # noqa: B904
+
+
+# Twelve sentences, 707 characters: past SILERO_CHUNK_CHARS, under the ~780
+# characters of prose where one real call already fails.
+LONG_PROSE = " ".join(f"Sentence number {word} is an ordinary line of English prose to read." for word in "abcdefghijkl")
+
+
+class CapStubModel(VoiceStubModel):
+    """Silero stand-in that refuses a text past `limit` characters the way the real model does.
+
+    A text without a letter gets Silero's bare ValueError, since the model drops
+    digits and punctuation it has no symbol for. Each call returns 10 samples at
+    its own level, so the order of the joined pieces shows in the WAV.
+    """
+
+    def __init__(self, limit):
+        """Store the character cap and start an empty call log."""
+        super().__init__(["en_0", "en_1"])
+        self.limit = limit
+        self.texts = []
+
+    def apply_tts(self, text, speaker, sample_rate):
+        """Refuse an over-cap or unpronounceable text, else return a 10-sample block at the call's level."""
+        self.texts.append(text)
+        if len(text) > self.limit:
+            raise_like_silero(SPEECH_CAP_ERROR)
+        if not any(char.isalpha() for char in text):
+            raise ValueError()
+        return VoiceStubTensor(np.full(10, len(self.texts) / 100, dtype="float32"))
+
+
+def install_cap_model(engine, monkeypatch, limit):
+    """Patch torch.hub.load to return a CapStubModel and hand it back."""
+    model = CapStubModel(limit)
+    monkeypatch.setattr(engine, "AVAILABLE", True)
+    monkeypatch.setattr(engine.torch.hub, "load", lambda **kw: (model, "example"))
+    return model
+
+
+def wav_samples(audio):
+    """Return the 16-bit samples of a mono WAV."""
+    with wave.open(io.BytesIO(audio), "rb") as w:
+        return np.frombuffer(w.readframes(w.getnframes()), dtype="<i2")
+
+
+def test_generate_voices_text_past_one_call_in_pieces(engine, monkeypatch):
+    """A text one Silero call cannot take is voiced piece by piece and joined into one WAV, not a 500."""
+    model = install_cap_model(engine, monkeypatch, limit=300)
+
+    audio = engine.generate(LONG_PROSE, {"language": "en", "voice": "en_1"})
+
+    assert len(model.texts) > 1
+    assert all(len(text) <= engine.SILERO_CHUNK_CHARS for text in model.texts)
+    # Every word reaches the model once, in order, cut only between sentences.
+    assert " ".join(model.texts) == LONG_PROSE
+    assert all(text.endswith(".") for text in model.texts)
+    samples = wav_samples(audio)
+    assert len(samples) == 10 * len(model.texts)
+    levels = [int(block[0]) for block in samples.reshape(-1, 10)]
+    assert levels == sorted(levels)
+
+
+def test_generate_short_text_is_one_call_with_the_text_unchanged(engine, monkeypatch):
+    """Text within SILERO_CHUNK_CHARS reaches Silero in one call, commas and all."""
+    model = install_cap_model(engine, monkeypatch, limit=300)
+    engine.generate("Hello, world. How are you?", {"language": "en"})
+    assert model.texts == ["Hello, world. How are you?"]
+
+
+def test_generate_unbroken_run_is_cut_between_words(engine, monkeypatch):
+    """A long run with no punctuation is cut at spaces into pieces Silero takes."""
+    model = install_cap_model(engine, monkeypatch, limit=300)
+    text = " ".join(["word"] * 200)
+    engine.generate(text, {"language": "en"})
+    assert len(model.texts) > 1
+    assert " ".join(model.texts) == text
+
+
+def test_generate_piece_silero_refuses_as_too_long_is_cut_again(engine, monkeypatch):
+    """A piece past one call's cap is halved at a boundary and voiced, not refused: short sentences outrun prose."""
+    model = install_cap_model(engine, monkeypatch, limit=100)
+    text = "Why? " * 40
+
+    audio = engine.generate(text, {"language": "en"})
+
+    voiced = [piece for piece in model.texts if len(piece) <= 100]
+    assert any(len(piece) > 100 for piece in model.texts)
+    assert " ".join(voiced) == text.strip()
+    assert all(piece.endswith("?") for piece in voiced)
+    assert len(wav_samples(audio)) == 10 * len(voiced)
+
+
+def test_generate_piece_that_cannot_be_cut_any_more_is_validation_error(engine, monkeypatch):
+    """A piece Silero refuses down to a single character is a 400 ('Text too long for silerotts'), not a 500."""
+    install_cap_model(engine, monkeypatch, limit=0)
+    with pytest.raises(ValidationError, match="^Text too long for silerotts: 'S' runs past"):
+        engine.generate(LONG_PROSE, {"language": "en"})
+
+
+class FaultyModel(VoiceStubModel):
+    """Silero stand-in whose synthesis fails for a reason unrelated to the text."""
+
+    def __init__(self, fault):
+        """Store the callable that raises the fault and start an empty call log."""
+        super().__init__(["en_0"])
+        self.fault = fault
+        self.texts = []
+
+    def apply_tts(self, text, speaker, sample_rate):
+        """Record the text, then fail."""
+        self.texts.append(text)
+        self.fault()
+
+
+def raise_bare_silero_error():
+    """Raise Silero's wrapper message with no RuntimeError behind it."""
+    raise Exception(SILERO_TOO_LONG_ERROR)
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        pytest.param(lambda: raise_like_silero(OUT_OF_MEMORY_ERROR), id="silero-wrapped-out-of-memory"),
+        pytest.param(raise_bare_silero_error, id="silero-message-without-cause"),
+        pytest.param(lambda: raise_like_silero("CUDA error: device-side assert triggered"), id="silero-wrapped-cuda"),
+    ],
+)
+def test_generate_engine_fault_behind_silero_too_long_message_stays_tts_exception(engine, monkeypatch, fault):
+    """Silero says 'probably it's too long' for every model failure; only the speech cap is the caller's 400.
+
+    Out of memory is a 500 the balancer fails over on, and the piece is not cut
+    and retried as if it were too long.
+    """
+    model = FaultyModel(fault)
+    monkeypatch.setattr(engine, "AVAILABLE", True)
+    monkeypatch.setattr(engine.torch.hub, "load", lambda **kw: (model, "example"))
+    text = "Hello there, this is a sentence. And here is a second one, of about the same length."
+    with pytest.raises(TTSException, match="Silero TTS generation failed") as excinfo:
+        engine.generate(text, {"language": "en"})
+    assert not isinstance(excinfo.value, ValidationError)
+    assert model.texts == [text]
+
+
+def test_generate_runtime_error_from_the_model_stays_tts_exception(engine, monkeypatch):
+    """An apply_tts RuntimeError that reaches the engine unwrapped is still an engine failure."""
+
+    def raise_runtime_error():
+        """Fail like a broken torch runtime."""
+        raise RuntimeError("CUDA error: device-side assert triggered")
+
+    model = FaultyModel(raise_runtime_error)
+    monkeypatch.setattr(engine, "AVAILABLE", True)
+    monkeypatch.setattr(engine.torch.hub, "load", lambda **kw: (model, "example"))
+    with pytest.raises(TTSException) as excinfo:
+        engine.generate("hello", {"language": "en"})
+    assert not isinstance(excinfo.value, ValidationError)
+
+
+def test_generate_skips_a_piece_with_nothing_to_pronounce(engine, monkeypatch):
+    """A digits-only piece of a long text voices nothing, as inside a single call, and the rest plays."""
+    digits = ", ".join(str(number) for number in range(1000, 1100)) + "."
+    model = install_cap_model(engine, monkeypatch, limit=300)
+    text = f"Here are the numbers. {digits} That was all of them."
+
+    audio = engine.generate(text, {"language": "en"})
+
+    silent = [piece for piece in model.texts if not any(char.isalpha() for char in piece)]
+    assert silent and len(silent) < len(model.texts)
+    assert len(wav_samples(audio)) == 10 * (len(model.texts) - len(silent))
+
+
+def test_generate_text_with_nothing_to_pronounce_is_still_validation_error(engine, monkeypatch):
+    """A text Silero voices nothing of keeps its 400, whether it is one piece or several."""
+    install_cap_model(engine, monkeypatch, limit=300)
+    with pytest.raises(ValidationError, match="no pronounceable characters"):
+        engine.generate("123", {"language": "en"})
+    with pytest.raises(ValidationError, match="no pronounceable characters"):
+        engine.generate(", ".join(str(number) for number in range(100)), {"language": "en"})
+
+
 # Import-time side effects, hub dir handling and concurrency
 
 
