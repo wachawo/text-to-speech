@@ -364,6 +364,134 @@ def test_generate_unknown_voice_raises_validation_error(engine, monkeypatch):
         engine.generate("hello", {"language": "ru", "voice": "nonexistent"})
 
 
+# Long text - Silero voices at most ~62.5 s of speech per apply_tts call
+
+# What Silero raises once a call would pass its 5000-frame cap.
+SILERO_TOO_LONG_ERROR = "Model couldn't generate your text, probably it's too long"
+
+# Twelve sentences, 707 characters: past SILERO_CHUNK_CHARS, under the ~780
+# characters of prose where one real call already fails.
+LONG_PROSE = " ".join(f"Sentence number {word} is an ordinary line of English prose to read." for word in "abcdefghijkl")
+
+
+class CapStubModel(VoiceStubModel):
+    """Silero stand-in that refuses a text past `limit` characters the way the real model does.
+
+    A text without a letter gets Silero's bare ValueError, since the model drops
+    digits and punctuation it has no symbol for. Each call returns 10 samples at
+    its own level, so the order of the joined pieces shows in the WAV.
+    """
+
+    def __init__(self, limit):
+        """Store the character cap and start an empty call log."""
+        super().__init__(["en_0", "en_1"])
+        self.limit = limit
+        self.texts = []
+
+    def apply_tts(self, text, speaker, sample_rate):
+        """Refuse an over-cap or unpronounceable text, else return a 10-sample block at the call's level."""
+        self.texts.append(text)
+        if len(text) > self.limit:
+            raise Exception(SILERO_TOO_LONG_ERROR)
+        if not any(char.isalpha() for char in text):
+            raise ValueError()
+        return VoiceStubTensor(np.full(10, len(self.texts) / 100, dtype="float32"))
+
+
+def install_cap_model(engine, monkeypatch, limit):
+    """Patch torch.hub.load to return a CapStubModel and hand it back."""
+    model = CapStubModel(limit)
+    monkeypatch.setattr(engine, "AVAILABLE", True)
+    monkeypatch.setattr(engine.torch.hub, "load", lambda **kw: (model, "example"))
+    return model
+
+
+def wav_samples(audio):
+    """Return the 16-bit samples of a mono WAV."""
+    with wave.open(io.BytesIO(audio), "rb") as w:
+        return np.frombuffer(w.readframes(w.getnframes()), dtype="<i2")
+
+
+def test_generate_voices_text_past_one_call_in_pieces(engine, monkeypatch):
+    """A text one Silero call cannot take is voiced piece by piece and joined into one WAV, not a 500."""
+    model = install_cap_model(engine, monkeypatch, limit=300)
+
+    audio = engine.generate(LONG_PROSE, {"language": "en", "voice": "en_1"})
+
+    assert len(model.texts) > 1
+    assert all(len(text) <= engine.SILERO_CHUNK_CHARS for text in model.texts)
+    # Every word reaches the model once, in order, cut only between sentences.
+    assert " ".join(model.texts) == LONG_PROSE
+    assert all(text.endswith(".") for text in model.texts)
+    samples = wav_samples(audio)
+    assert len(samples) == 10 * len(model.texts)
+    levels = [int(block[0]) for block in samples.reshape(-1, 10)]
+    assert levels == sorted(levels)
+
+
+def test_generate_short_text_is_one_call_with_the_text_unchanged(engine, monkeypatch):
+    """Text within SILERO_CHUNK_CHARS reaches Silero in one call, commas and all."""
+    model = install_cap_model(engine, monkeypatch, limit=300)
+    engine.generate("Hello, world. How are you?", {"language": "en"})
+    assert model.texts == ["Hello, world. How are you?"]
+
+
+def test_generate_unbroken_run_is_cut_between_words(engine, monkeypatch):
+    """A long run with no punctuation is cut at spaces into pieces Silero takes."""
+    model = install_cap_model(engine, monkeypatch, limit=300)
+    text = " ".join(["word"] * 200)
+    engine.generate(text, {"language": "en"})
+    assert len(model.texts) > 1
+    assert " ".join(model.texts) == text
+
+
+def test_generate_piece_silero_refuses_as_too_long_is_validation_error(engine, monkeypatch):
+    """A piece still past one call's cap is a 400 ('Text too long for silerotts'), never a TTSException 500."""
+    install_cap_model(engine, monkeypatch, limit=100)
+    with pytest.raises(ValidationError, match="^Text too long for silerotts: a piece of 1[0-9][0-9] characters"):
+        engine.generate(LONG_PROSE, {"language": "en"})
+
+
+def test_generate_other_model_failure_stays_tts_exception(engine, monkeypatch):
+    """An apply_tts failure that is not the length cap is still an engine failure."""
+
+    class BrokenModel(VoiceStubModel):
+        """Silero stand-in whose synthesis fails for a reason unrelated to the text."""
+
+        def apply_tts(self, text, speaker, sample_rate):
+            """Fail like a broken torch runtime."""
+            raise RuntimeError("CUDA error: device-side assert triggered")
+
+    model = BrokenModel(["en_0"])
+    monkeypatch.setattr(engine, "AVAILABLE", True)
+    monkeypatch.setattr(engine.torch.hub, "load", lambda **kw: (model, "example"))
+    with pytest.raises(TTSException) as excinfo:
+        engine.generate("hello", {"language": "en"})
+    assert not isinstance(excinfo.value, ValidationError)
+
+
+def test_generate_skips_a_piece_with_nothing_to_pronounce(engine, monkeypatch):
+    """A digits-only piece of a long text voices nothing, as inside a single call, and the rest plays."""
+    digits = ", ".join(str(number) for number in range(1000, 1100)) + "."
+    model = install_cap_model(engine, monkeypatch, limit=300)
+    text = f"Here are the numbers. {digits} That was all of them."
+
+    audio = engine.generate(text, {"language": "en"})
+
+    silent = [piece for piece in model.texts if not any(char.isalpha() for char in piece)]
+    assert silent and len(silent) < len(model.texts)
+    assert len(wav_samples(audio)) == 10 * (len(model.texts) - len(silent))
+
+
+def test_generate_text_with_nothing_to_pronounce_is_still_validation_error(engine, monkeypatch):
+    """A text Silero voices nothing of keeps its 400, whether it is one piece or several."""
+    install_cap_model(engine, monkeypatch, limit=300)
+    with pytest.raises(ValidationError, match="no pronounceable characters"):
+        engine.generate("123", {"language": "en"})
+    with pytest.raises(ValidationError, match="no pronounceable characters"):
+        engine.generate(", ".join(str(number) for number in range(100)), {"language": "en"})
+
+
 # Import-time side effects, hub dir handling and concurrency
 
 

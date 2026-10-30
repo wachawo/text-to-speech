@@ -16,6 +16,7 @@ import numpy as np
 
 # Local imports
 from libs.cached_loader import load_cached
+from libs.cli import chunk_text
 from libs.exceptions import EngineNotAvailableError, TTSException, ValidationError
 from libs.models import models_directory
 
@@ -23,6 +24,20 @@ logger = logging.getLogger(__name__)
 
 # Silero is fast offline; protect single calls from runaway memory.
 MAX_TEXT_LENGTH = 50_000
+
+# One apply_tts call voices at most 5000 mel frames, about 62.5 s of speech:
+# every transformer in the v3 models adds a positional table of 5000 rows. The
+# cap is on speech, not characters, so where it falls depends on the voice and
+# the punctuation: ordinary English prose on en_1 stopped at about 780
+# characters, "Oh... Oh... " at 250. Longer text is voiced in pieces of at most
+# this many characters (cut at sentence, then comma, then word boundaries); the
+# worst text measured gave 45 s of speech for 150 characters.
+SILERO_CHUNK_CHARS = 150
+
+# The tail of the exception Silero raises once a call would pass that cap. It
+# re-raises the RuntimeError of the positional table as a bare Exception, so
+# the message is the only thing that tells it apart from an engine failure.
+SILERO_TOO_LONG = "probably it's too long"
 
 # Cache loaded models by (model_id, device) to avoid re-running torch.hub.load
 # on every call. Mirrors engines/coquitts.py:TTS_CACHE. Without this, each
@@ -170,6 +185,33 @@ def list_voices(language: str = "en") -> dict:
     return {"voices": speakers, "default": default_speaker}
 
 
+def synthesize_piece(model, piece: str, speaker: str, sample_rate: int) -> bytes:
+    """Voice one piece in a single apply_tts call and return it as 16-bit PCM.
+
+    Returns b"" for a piece with nothing to pronounce (Silero's bare ValueError),
+    so the pieces around it still play. A piece that runs past the speech cap
+    is a ValidationError: it can only be an unbroken word or a run of pauses
+    the chunker had no boundary to cut at.
+    """
+    try:
+        # Generate audio (float32 mono waveform in [-1, 1]).
+        with INFERENCE_LOCK:
+            audio_tensor = model.apply_tts(text=piece, speaker=speaker, sample_rate=sample_rate)
+    except ValueError as exc:
+        if str(exc):
+            raise
+        return b""
+    except Exception as exc:
+        if SILERO_TOO_LONG in str(exc):
+            raise ValidationError(
+                f"Text too long for silerotts: a piece of {len(piece)} characters runs past "
+                "the 62.5 s of speech one Silero call can voice"
+            ) from exc
+        raise
+    samples = audio_tensor.squeeze().detach().cpu().numpy()
+    return (np.clip(samples, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
+
+
 def generate(text: str, config: dict) -> bytes:
     """
     Generate TTS and return audio as bytes.
@@ -214,16 +256,22 @@ def generate(text: str, config: dict) -> bytes:
                 f"Unknown voice '{speaker}' for language '{language}'. " f"Available: {', '.join(sorted(speakers))}"
             )
 
-        # Generate audio (float32 mono waveform in [-1, 1]).
-        with INFERENCE_LOCK:
-            audio_tensor = model.apply_tts(text=text, speaker=speaker, sample_rate=sample_rate)
+        # One call per piece, joined as PCM: a text past one call's speech cap
+        # was a 500 at any length under MAX_TEXT_LENGTH. Short text stays one
+        # piece and one call; blank text reaches Silero as is and gets its
+        # refusal below. A piece with nothing to pronounce (only digits, say)
+        # voices nothing, as it did inside the whole text.
+        pieces = chunk_text(text, max_len=SILERO_CHUNK_CHARS) or [text]
+        pcm16 = b"".join(synthesize_piece(model, piece, speaker, sample_rate) for piece in pieces)
+        if not pcm16:
+            # Nothing in any piece was pronounceable: the refusal below, as for
+            # a short text Silero voices nothing of.
+            raise ValueError()
 
         # Encode WAV with the stdlib `wave` module instead of torchaudio.save():
         # in torchaudio >= 2.9 save() routes through the torchcodec backend, whose
         # encoder cannot write to a file-like object (it needs a real path +
         # extension) and raises "Couldn't allocate AVFormatContext" on a BytesIO.
-        samples = audio_tensor.squeeze().detach().cpu().numpy()
-        pcm16 = (np.clip(samples, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
         audio_buffer = io.BytesIO()
         with wave.open(audio_buffer, "wb") as wav_file:
             wav_file.setnchannels(1)
