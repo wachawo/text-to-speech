@@ -225,13 +225,24 @@ def test_write_audio_concatenates_wav_chunks_into_a_pipe(tmp_path):
     a, b = tmp_path / "a.part", tmp_path / "b.part"
     silent_wav(a, ms=100)
     silent_wav(b, ms=200)
+    expected = io.BytesIO()
+    write_audio([str(a), str(b)], expected)
     read_fd, write_fd = os.pipe()
+    received: list[bytes] = []
     with os.fdopen(read_fd, "rb") as reader:
+
+        def drain_pipe() -> None:
+            """Read the pipe while write_audio writes, so a small pipe buffer cannot block it."""
+            received.append(reader.read())
+
+        drainer = threading.Thread(target=drain_pipe)
+        drainer.start()
         with os.fdopen(write_fd, "wb") as writer:
             assert writer.seekable() is False
             write_audio([str(a), str(b)], writer)
-        data = reader.read()
-    with wave.open(io.BytesIO(data), "rb") as merged:
+        drainer.join()
+    assert received[0] == expected.getvalue()
+    with wave.open(io.BytesIO(received[0]), "rb") as merged:
         assert merged.getnframes() == int(22050 * 0.3)
 
 
