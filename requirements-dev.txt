@@ -6,7 +6,7 @@
 
 # Lint / format / typecheck / test runner
 black>=26.10.1,<27
-ruff>=0.16.10
+ruff>=0.17.6
 pre-commit>=4.6.2
 mypy>=2.4.0,<3
 pytest>=9.1.1
